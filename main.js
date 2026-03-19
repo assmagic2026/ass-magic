@@ -18,8 +18,8 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 const playlist = [
   {
     title: 'かかとがフランスパン7',
-    src: './list/かかとがフランスパン7.mp3',
-    art: './list/phonto 28.JPG',
+    src: './list/track-01.mp3',
+    art: './list/cover-01.jpg',
     href: 'https://big-up.style/458G0ndX8N'
   }
 ];
