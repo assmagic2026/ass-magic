@@ -167,12 +167,12 @@ const SKY_PALETTES = {
     nightHorizon: new THREE.Color(0x10233f)
   },
   inverted: {
-    dayZenith: new THREE.Color(0xe9ffe7),
-    dayHorizon: new THREE.Color(0xfdfffb),
-    duskZenith: new THREE.Color(0xd9f3c8),
-    duskHorizon: new THREE.Color(0xf8ffe8),
-    nightZenith: new THREE.Color(0x332f00),
-    nightHorizon: new THREE.Color(0x5b4e00)
+    dayZenith: new THREE.Color(0x65b7ff),
+    dayHorizon: new THREE.Color(0xcbe8ff),
+    duskZenith: new THREE.Color(0x5b4f96),
+    duskHorizon: new THREE.Color(0xff9f5a),
+    nightZenith: new THREE.Color(0x06111f),
+    nightHorizon: new THREE.Color(0x10233f)
   }
 };
 
@@ -1630,6 +1630,7 @@ const input = {
 
 const stickArea = document.getElementById('stick-area');
 const stickHandle = document.getElementById('stick-handle');
+const skyThemeWash = document.getElementById('sky-theme-wash');
 const themeFlash = document.getElementById('theme-flash');
 const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
@@ -1655,6 +1656,7 @@ const speedLockValue = document.getElementById('speed-lock-value');
 const STICK_LIMIT = 50;
 const tempStick = new THREE.Vector2();
 const tempProjected = new THREE.Vector3();
+const tempCameraDir = new THREE.Vector3();
 const accelPointers = new Set();
 let speedLockSelection = 40;
 let speedLockPointerId = null;
@@ -1777,6 +1779,35 @@ function updateThemeFlash(dt) {
 
   themeFlash.style.opacity = `${opacity.toFixed(3)}`;
   themeFlash.style.background = `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,0.96) 0px, rgba(255,255,255,0.92) ${inner.toFixed(1)}px, rgba(255,255,255,0.34) ${mid.toFixed(1)}px, rgba(255,255,255,0) ${radius.toFixed(1)}px)`;
+}
+
+function updateInvertedSkyWash() {
+  if (!skyThemeWash) return;
+  if (!themeState.inverted) {
+    if (skyThemeWash.style.opacity !== '0') {
+      skyThemeWash.style.opacity = '0';
+      skyThemeWash.style.background = 'none';
+    }
+    return;
+  }
+
+  camera.getWorldDirection(tempCameraDir);
+  const sunView = tempCameraDir.dot(SUN_DIRECTION);
+  const dayMix = THREE.MathUtils.clamp((sunView + 0.08) / 0.62, 0, 1);
+  const nightMix = THREE.MathUtils.clamp((-sunView + 0.08) / 0.72, 0, 1);
+  const green = new THREE.Color(0xdfffd8);
+  const yellow = new THREE.Color(0xffea84);
+  const wash = yellow.clone().lerp(green, dayMix);
+  const alpha = 0.22 + dayMix * 0.4 + nightMix * 0.18;
+  const midAlpha = alpha * 0.68;
+  const lowerAlpha = alpha * 0.18;
+
+  skyThemeWash.style.opacity = '1';
+  skyThemeWash.style.background = `linear-gradient(180deg,
+    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, ${alpha.toFixed(3)}) 0%,
+    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, ${midAlpha.toFixed(3)}) 42%,
+    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, ${lowerAlpha.toFixed(3)}) 68%,
+    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, 0.0) 78%)`;
 }
 
 function queueFlap() {
@@ -2664,6 +2695,7 @@ function tick() {
   checkThemeTriggerCollision(previousPos, state.pos);
   updateClouds(dt);
   updateCamera(dt);
+  updateInvertedSkyWash();
   updateThemeFlash(dt);
   updateTrackVisualizer();
   updateLyricsLayout();
