@@ -49,6 +49,7 @@ bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
 let lastLyricsCurrent = '';
 let lyricsVisible = false;
+let lyricsEnabled = true;
 
 function syncTrackUi() {
   const track = playlist[currentTrackIndex];
@@ -81,6 +82,12 @@ function refreshTrackControls() {
   const isPlaying = !bgm.paused;
   trackToggle.classList.toggle('is-playing', isPlaying);
   trackToggle.setAttribute('aria-label', isPlaying ? 'Stop' : 'Play');
+}
+
+function refreshLyricsToggle() {
+  if (!lyricsToggle) return;
+  lyricsToggle.classList.toggle('is-active', lyricsEnabled);
+  lyricsToggle.setAttribute('aria-pressed', lyricsEnabled ? 'true' : 'false');
 }
 
 function playCurrentTrack() {
@@ -1135,6 +1142,7 @@ const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
 const trackToggle = document.getElementById('track-toggle');
 const trackNext = document.getElementById('track-next');
+const lyricsToggle = document.getElementById('lyrics-toggle');
 const lyricsPanel = document.getElementById('lyrics-panel');
 const lyricsCurrent = document.getElementById('lyrics-current');
 const menuToggle = document.getElementById('menu-toggle');
@@ -1364,7 +1372,7 @@ if (trackCard) {
   });
 }
 
-for (const control of [trackToggle, trackNext]) {
+for (const control of [trackToggle, trackNext, lyricsToggle]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -1391,6 +1399,14 @@ trackNext?.addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
   nextTrack();
+});
+
+lyricsToggle?.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  lyricsEnabled = !lyricsEnabled;
+  refreshLyricsToggle();
+  updateLyricsUi();
 });
 
 for (const control of [menuToggle, siteMenuBackdrop, ...menuNavButtons]) {
@@ -1496,6 +1512,7 @@ bgm.addEventListener('ended', () => {
 loadTrack(0, false);
 refreshSpeedLockUi();
 refreshTrackControls();
+refreshLyricsToggle();
 setMenuPage(activeMenuPage);
 
 window.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -1939,7 +1956,7 @@ function updateLyricsUi() {
 
   const track = playlist[currentTrackIndex];
   const lyrics = track?.lyrics ?? [];
-  const shouldShow = lyrics.length > 0 && !bgm.paused;
+  const shouldShow = lyricsEnabled && lyrics.length > 0 && !bgm.paused;
 
   if (!shouldShow) {
     if (lyricsVisible) {
