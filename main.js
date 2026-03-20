@@ -28,8 +28,18 @@ let bgmPending = false;
 function syncTrackUi() {
   const track = playlist[currentTrackIndex];
   if (trackCard) {
-    trackCard.href = track.href;
     trackCard.setAttribute('aria-label', track.title);
+    if (track.href) {
+      trackCard.href = track.href;
+      trackCard.setAttribute('target', '_blank');
+      trackCard.setAttribute('rel', 'noreferrer noopener');
+      trackCard.classList.remove('is-disabled');
+    } else {
+      trackCard.removeAttribute('href');
+      trackCard.removeAttribute('target');
+      trackCard.removeAttribute('rel');
+      trackCard.classList.add('is-disabled');
+    }
   }
   if (trackArt) {
     trackArt.src = encodeURI(track.art);

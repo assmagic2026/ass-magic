@@ -36,6 +36,9 @@ html, body {
   background: #0a0f16;
   box-shadow: 0 12px 30px rgba(0,0,0,0.2);
 }
+#track-card.is-disabled {
+  cursor: default;
+}
 #track-card::after {
   content: "";
   position: absolute;

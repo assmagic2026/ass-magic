@@ -52,5 +52,11 @@ export const playlist = [
     src: './list/yuzuyu/track-09.mp3',
     art: './list/yuzuyu/cover-09.jpg',
     href: 'https://big-up.style/uht4uonEPG'
+  },
+  {
+    title: 'GRAVITY',
+    src: './list/gravity/track-10.mp3',
+    art: './list/gravity/cover-10.jpg',
+    href: ''
   }
 ];
