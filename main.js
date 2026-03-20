@@ -151,6 +151,12 @@ const CAT_PREVIEW_HEIGHT = 4.6;
 const CAT_PREVIEW_ALTITUDE = 0.18;
 const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
 const CAT_PREVIEW_LOOKAHEAD_SPEED = 40;
+const INVERT_WORLD_FILTER = 'invert(1) hue-rotate(180deg) saturate(0.94) brightness(1.05)';
+const THEME_TRIGGER_COOLDOWN = 7.0;
+const THEME_FLASH_DURATION = 0.42;
+const PLAYER_THEME_HIT_RADIUS = 1.45;
+const THEME_ARM_DISTANCE = 24;
+const THEME_STARTUP_GRACE = 0.9;
 
 const P = {
   GLIDE_SPEED: 12,
@@ -369,6 +375,50 @@ function placeDirectedOnSphere(object, direction, forward, altitude, roll = 0) {
   object.position.copy(up).multiplyScalar(getSurfaceRadius(up) + altitude);
   object.quaternion.copy(createBasisQuaternion(tangentForward, up));
   object.rotateZ(roll);
+}
+
+const themeTriggerZones = [];
+const themeBoundsBox = new THREE.Box3();
+const themeBoundsSphere = new THREE.Sphere();
+const themeSegment = new THREE.Vector3();
+const themeOffset = new THREE.Vector3();
+const themeClosestPoint = new THREE.Vector3();
+const themeZoneCenter = new THREE.Vector3();
+const themeProjected = new THREE.Vector3();
+
+function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 1.7) {
+  object.updateMatrixWorld(true);
+  themeBoundsBox.setFromObject(object);
+  if (themeBoundsBox.isEmpty()) return;
+  themeBoundsBox.getBoundingSphere(themeBoundsSphere);
+  if (!Number.isFinite(themeBoundsSphere.radius) || themeBoundsSphere.radius <= 0) return;
+  const localCenter = object.worldToLocal(themeBoundsSphere.center.clone());
+  themeTriggerZones.push({
+    object,
+    localCenter,
+    radius: Math.max(minRadius, themeBoundsSphere.radius * radiusScale)
+  });
+}
+
+function registerThemeTriggersFromChildren(group, radiusScale = 0.82, minRadius = 1.7) {
+  group.updateMatrixWorld(true);
+  for (const child of group.children) {
+    if (!child.visible) continue;
+    registerThemeTriggerFromObject(child, radiusScale, minRadius);
+  }
+}
+
+function getSegmentSphereHit(start, end, center, radius) {
+  themeSegment.subVectors(end, start);
+  const lengthSq = themeSegment.lengthSq();
+  if (lengthSq < 0.000001) {
+    return start.distanceToSquared(center) <= radius * radius ? 0 : null;
+  }
+
+  themeOffset.subVectors(start, center);
+  const t = THREE.MathUtils.clamp(-themeOffset.dot(themeSegment) / lengthSq, 0, 1);
+  themeClosestPoint.copy(start).addScaledVector(themeSegment, t);
+  return themeClosestPoint.distanceToSquared(center) <= radius * radius ? t : null;
 }
 
 const GLB_COMPONENT_ARRAYS = {
@@ -892,6 +942,7 @@ sanctuary.add(sanctuaryLight);
 
 alignObjectToSphere(sanctuary, NIGHT_CENTER, 0.9, 0.24);
 scene.add(sanctuary);
+registerThemeTriggerFromObject(sanctuary, 0.58, 11.5);
 
 const planetGeo = new THREE.IcosahedronGeometry(PLANET_RADIUS, 4);
 const planetColors = [];
@@ -975,6 +1026,7 @@ dayBlocks.add(dayBlocksBase);
 const dayBlockAxes = getSurfaceAxes(DAY_BLOCKS_DIR);
 placeDirectedOnSphere(dayBlocks, DAY_BLOCKS_DIR, dayBlockAxes.axisB, 0.45, 0);
 scene.add(dayBlocks);
+registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
 
 // Visual Upgrade Phase 1 landmark hierarchy removed.
 
@@ -992,6 +1044,7 @@ for (let i = 0; i < V.BEACON_COUNT; i++) {
   beaconGroup.add(beacon);
 }
 scene.add(beaconGroup);
+registerThemeTriggersFromChildren(beaconGroup, 0.9, 1.8);
 
 const atmosphereMat = new THREE.ShaderMaterial({
   transparent: true,
@@ -1160,6 +1213,10 @@ scene.add(clouds);
 scene.add(cloudVeils);
 scene.add(nightFog);
 scene.add(nightMist);
+registerThemeTriggersFromChildren(nightWorld, 0.78, 2.0);
+registerThemeTriggersFromChildren(clouds, 0.8, 2.2);
+registerThemeTriggersFromChildren(cloudVeils, 0.84, 2.4);
+registerThemeTriggersFromChildren(nightFog, 0.84, 2.2);
 
 const player = new THREE.Group();
 const bodyMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
@@ -1400,6 +1457,17 @@ const state = {
   diveEnergy: 0,
   wasOnGround: true
 };
+const startPosition = state.pos.clone();
+const themeState = {
+  inverted: false,
+  cooldown: 0,
+  flashActive: false,
+  flashTime: 0,
+  flashWorldPoint: new THREE.Vector3(),
+  armed: false,
+  startupGrace: THEME_STARTUP_GRACE,
+  clearRequired: false
+};
 
 function placeCatPreviewAnchor() {
   const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
@@ -1544,6 +1612,7 @@ const input = {
 
 const stickArea = document.getElementById('stick-area');
 const stickHandle = document.getElementById('stick-handle');
+const themeFlash = document.getElementById('theme-flash');
 const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
 const trackToggle = document.getElementById('track-toggle');
@@ -1572,6 +1641,114 @@ const accelPointers = new Set();
 let speedLockSelection = 40;
 let speedLockPointerId = null;
 let activeMenuPage = 'about';
+
+function applyWorldInversion() {
+  canvas.style.filter = themeState.inverted ? INVERT_WORLD_FILTER : 'none';
+}
+
+function isInsideThemeTrigger(point) {
+  for (const zone of themeTriggerZones) {
+    zone.object.updateMatrixWorld(true);
+    themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
+    const limit = zone.radius + PLAYER_THEME_HIT_RADIUS;
+    if (point.distanceToSquared(themeZoneCenter) <= limit * limit) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function startThemeFlash(worldPoint) {
+  themeState.flashActive = true;
+  themeState.flashTime = 0;
+  themeState.flashWorldPoint.copy(worldPoint);
+}
+
+function toggleWorldInversion(contactPoint) {
+  if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
+  themeState.inverted = !themeState.inverted;
+  themeState.cooldown = THEME_TRIGGER_COOLDOWN;
+  themeState.clearRequired = true;
+  applyWorldInversion();
+  startThemeFlash(contactPoint);
+}
+
+function checkThemeTriggerCollision(start, end) {
+  if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
+
+  let bestT = Infinity;
+  let bestPoint = null;
+
+  for (const zone of themeTriggerZones) {
+    zone.object.updateMatrixWorld(true);
+    themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
+    const t = getSegmentSphereHit(start, end, themeZoneCenter, zone.radius + PLAYER_THEME_HIT_RADIUS);
+    if (t !== null && t < bestT) {
+      bestT = t;
+      bestPoint = themeClosestPoint.clone();
+    }
+  }
+
+  if (bestPoint) toggleWorldInversion(bestPoint);
+}
+
+function updateThemeSystem(dt) {
+  if (themeState.cooldown > 0) {
+    themeState.cooldown = Math.max(0, themeState.cooldown - dt);
+  }
+
+  if (themeState.clearRequired && !isInsideThemeTrigger(state.pos)) {
+    themeState.clearRequired = false;
+  }
+
+  if (!themeState.armed) {
+    themeState.startupGrace = Math.max(0, themeState.startupGrace - dt);
+    if (
+      themeState.startupGrace <= 0 &&
+      state.pos.distanceTo(startPosition) >= THEME_ARM_DISTANCE &&
+      !isInsideThemeTrigger(state.pos)
+    ) {
+      themeState.armed = true;
+    }
+  }
+}
+
+function updateThemeFlash(dt) {
+  if (!themeFlash) return;
+  if (!themeState.flashActive) {
+    if (themeFlash.style.opacity !== '0') {
+      themeFlash.style.opacity = '0';
+      themeFlash.style.background = 'none';
+    }
+    return;
+  }
+
+  themeState.flashTime += dt;
+  const progress = THREE.MathUtils.clamp(themeState.flashTime / THEME_FLASH_DURATION, 0, 1);
+  if (progress >= 1) {
+    themeState.flashActive = false;
+    themeFlash.style.opacity = '0';
+    themeFlash.style.background = 'none';
+    return;
+  }
+
+  themeProjected.copy(themeState.flashWorldPoint).project(camera);
+  let x = (themeProjected.x * 0.5 + 0.5) * window.innerWidth;
+  let y = (-themeProjected.y * 0.5 + 0.5) * window.innerHeight;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || themeProjected.z > 1.25) {
+    x = window.innerWidth * 0.5;
+    y = window.innerHeight * 0.5;
+  }
+
+  const eased = 1 - Math.pow(1 - progress, 2);
+  const radius = 80 + eased * Math.max(window.innerWidth, window.innerHeight) * 0.78;
+  const inner = radius * 0.18;
+  const mid = radius * 0.46;
+  const opacity = 0.84 * (1 - progress);
+
+  themeFlash.style.opacity = `${opacity.toFixed(3)}`;
+  themeFlash.style.background = `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,0.96) 0px, rgba(255,255,255,0.92) ${inner.toFixed(1)}px, rgba(255,255,255,0.34) ${mid.toFixed(1)}px, rgba(255,255,255,0) ${radius.toFixed(1)}px)`;
+}
 
 function queueFlap() {
   input.flapQueued = true;
@@ -2446,14 +2623,19 @@ function snapCameraOnce() {
 
 snapCameraOnce();
 updateLyricsLayout();
+applyWorldInversion();
 
 const clock = new THREE.Clock();
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
+  const previousPos = state.pos.clone();
   updateColorCycle();
   updatePlayer(dt);
+  updateThemeSystem(dt);
+  checkThemeTriggerCollision(previousPos, state.pos);
   updateClouds(dt);
   updateCamera(dt);
+  updateThemeFlash(dt);
   updateTrackVisualizer();
   updateLyricsLayout();
   updateLyricsUi();
