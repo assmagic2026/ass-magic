@@ -58,5 +58,11 @@ export const playlist = [
     src: './list/gravity/track-10.mp3',
     art: './list/gravity/cover-10.jpg',
     href: 'https://big-up.style/Y5GBS49L5h'
+  },
+  {
+    title: 'ζζζζζ',
+    src: './list/zeta/track-11.mp3',
+    art: './list/zeta/cover-11.jpg',
+    href: 'https://big-up.style/To8vjErb0t'
   }
 ];
