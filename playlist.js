@@ -46,5 +46,11 @@ export const playlist = [
     src: './list/umifurikake/track-08.mp3',
     art: './list/umifurikake/cover-08.jpg',
     href: 'https://big-up.style/rKdkoIAPgn'
+  },
+  {
+    title: 'ゆず湯',
+    src: './list/yuzuyu/track-09.mp3',
+    art: './list/yuzuyu/cover-09.jpg',
+    href: 'https://big-up.style/uht4uonEPG'
   }
 ];
