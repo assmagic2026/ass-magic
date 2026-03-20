@@ -48,7 +48,6 @@ const BGM_BASE_VOLUME = 0.42;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
 let lastLyricsCurrent = '';
-let lastLyricsNext = '';
 let lyricsVisible = false;
 
 function syncTrackUi() {
@@ -1138,7 +1137,6 @@ const trackToggle = document.getElementById('track-toggle');
 const trackNext = document.getElementById('track-next');
 const lyricsPanel = document.getElementById('lyrics-panel');
 const lyricsCurrent = document.getElementById('lyrics-current');
-const lyricsNext = document.getElementById('lyrics-next');
 const menuToggle = document.getElementById('menu-toggle');
 const siteMenu = document.getElementById('site-menu');
 const siteMenuBackdrop = document.getElementById('site-menu-backdrop');
@@ -1937,7 +1935,7 @@ function updateTrackVisualizer() {
 }
 
 function updateLyricsUi() {
-  if (!lyricsPanel || !lyricsCurrent || !lyricsNext) return;
+  if (!lyricsPanel || !lyricsCurrent) return;
 
   const track = playlist[currentTrackIndex];
   const lyrics = track?.lyrics ?? [];
@@ -1948,9 +1946,7 @@ function updateLyricsUi() {
       lyricsPanel.classList.remove('is-visible', 'is-idle');
       lyricsPanel.setAttribute('aria-hidden', 'true');
       lyricsCurrent.textContent = '';
-      lyricsNext.textContent = '';
       lastLyricsCurrent = '';
-      lastLyricsNext = '';
       lyricsVisible = false;
     }
     return;
@@ -1963,16 +1959,10 @@ function updateLyricsUi() {
   }
 
   const currentText = currentIndex >= 0 ? lyrics[currentIndex].text : '';
-  const nextIndex = currentIndex < 0 ? 0 : currentIndex + 1;
-  const nextText = nextIndex < lyrics.length ? lyrics[nextIndex].text : '';
 
   if (currentText !== lastLyricsCurrent) {
     lyricsCurrent.textContent = currentText || '\u00a0';
     lastLyricsCurrent = currentText;
-  }
-  if (nextText !== lastLyricsNext) {
-    lyricsNext.textContent = nextText;
-    lastLyricsNext = nextText;
   }
 
   lyricsPanel.classList.toggle('is-idle', !currentText);
