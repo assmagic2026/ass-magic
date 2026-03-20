@@ -70,5 +70,11 @@ export const playlist = [
     src: './list/memento/track-12.mp3',
     art: './list/memento/cover-12.jpg',
     href: 'https://big-up.style/BSNLzaU5LM'
+  },
+  {
+    title: 'TENGU',
+    src: './list/tengu/track-13.mp3',
+    art: './list/tengu/cover-13.jpg',
+    href: 'https://big-up.style/vRhoHN25nE'
   }
 ];
