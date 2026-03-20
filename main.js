@@ -1372,7 +1372,7 @@ if (trackCard) {
   });
 }
 
-for (const control of [trackToggle, trackNext, lyricsToggle]) {
+for (const control of [trackToggle, trackNext]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
     e.preventDefault();
@@ -1409,7 +1409,17 @@ function toggleLyricsDisplay(e) {
   updateLyricsUi();
 }
 
-lyricsToggle?.addEventListener('pointerdown', toggleLyricsDisplay);
+if (lyricsToggle) {
+  lyricsToggle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  lyricsToggle.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  lyricsToggle.addEventListener('click', toggleLyricsDisplay);
+}
 
 for (const control of [menuToggle, siteMenuBackdrop, ...menuNavButtons]) {
   if (!control) continue;
