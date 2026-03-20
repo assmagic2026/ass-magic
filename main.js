@@ -1632,6 +1632,7 @@ const stickArea = document.getElementById('stick-area');
 const stickHandle = document.getElementById('stick-handle');
 const skyThemeWash = document.getElementById('sky-theme-wash');
 const themeFlash = document.getElementById('theme-flash');
+const viewportMeta = document.querySelector('meta[name="viewport"]');
 const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
 const trackToggle = document.getElementById('track-toggle');
@@ -1677,9 +1678,25 @@ function applyWorldInversion() {
   applySkyPalette(themeState.inverted ? 'inverted' : 'normal');
   lyricsPanel?.classList.toggle('is-inverted', themeState.inverted);
   if (lyricsCurrent) {
-    lyricsCurrent.style.color = '';
-    lyricsCurrent.style.textShadow = '';
+    if (themeState.inverted) {
+      lyricsCurrent.style.setProperty('color', 'rgba(10, 12, 14, 0.96)', 'important');
+      lyricsCurrent.style.setProperty('-webkit-text-fill-color', 'rgba(10, 12, 14, 0.96)', 'important');
+      lyricsCurrent.style.setProperty('text-shadow', 'none', 'important');
+    } else {
+      lyricsCurrent.style.removeProperty('color');
+      lyricsCurrent.style.removeProperty('-webkit-text-fill-color');
+      lyricsCurrent.style.removeProperty('text-shadow');
+    }
   }
+}
+
+function forceViewportReset() {
+  if (!viewportMeta) return;
+  const baseContent = 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+  viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content');
+  requestAnimationFrame(() => {
+    viewportMeta.setAttribute('content', baseContent);
+  });
 }
 
 function isInsideThemeTrigger(point) {
@@ -2178,6 +2195,7 @@ setMenuPage(activeMenuPage);
 
 window.addEventListener('gesturestart', (e) => e.preventDefault());
 window.addEventListener('gesturechange', (e) => e.preventDefault());
+window.addEventListener('gestureend', () => forceViewportReset());
 window.addEventListener('dblclick', (e) => e.preventDefault());
 window.addEventListener('touchmove', (e) => {
   if (e.touches.length > 1) e.preventDefault();
@@ -2193,7 +2211,15 @@ document.addEventListener('touchend', (e) => {
     e.preventDefault();
   }
   lastTouchEnd = now;
+  if (window.visualViewport && window.visualViewport.scale > 1.01) {
+    setTimeout(forceViewportReset, 0);
+  }
 }, { passive: false });
+window.visualViewport?.addEventListener('resize', () => {
+  if (window.visualViewport.scale > 1.01) {
+    forceViewportReset();
+  }
+});
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') {
