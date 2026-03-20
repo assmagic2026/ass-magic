@@ -1401,13 +1401,15 @@ trackNext?.addEventListener('pointerup', (e) => {
   nextTrack();
 });
 
-lyricsToggle?.addEventListener('pointerup', (e) => {
+function toggleLyricsDisplay(e) {
   e.preventDefault();
   e.stopPropagation();
   lyricsEnabled = !lyricsEnabled;
   refreshLyricsToggle();
   updateLyricsUi();
-});
+}
+
+lyricsToggle?.addEventListener('pointerdown', toggleLyricsDisplay);
 
 for (const control of [menuToggle, siteMenuBackdrop, ...menuNavButtons]) {
   if (!control) continue;
