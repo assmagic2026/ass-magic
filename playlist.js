@@ -3,7 +3,18 @@ export const playlist = [
     title: 'かかとがフランスパン',
     src: './list/1kakato/track-01.mp3',
     art: './list/1kakato/cover-01.jpg',
-    href: 'https://big-up.style/458G0ndX8N'
+    href: 'https://big-up.style/458G0ndX8N',
+    lyrics: [
+      { at: '00:22.00', text: '水に触れても' },
+      { at: '00:26.00', text: 'すぐに　渇いてしまう' },
+      { at: '00:34.00', text: 'ここは　体の端っこ' },
+      { at: '00:40.00', text: '忘れられた岸辺' },
+      { at: '00:55.00', text: 'かかとがガサガサ' },
+      { at: '01:00.00', text: 'フランスパンみたい' },
+      { at: '01:05.00', text: 'かかとがガサガサ' },
+      { at: '01:11.00', text: 'フランスパンみたい' },
+      { at: '01:18.00', text: 'バターぬりぬり　召しあがれ' }
+    ]
   },
   {
     title: 'Super Night',

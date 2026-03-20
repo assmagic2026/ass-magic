@@ -16,7 +16,30 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x0a0d12, 90, 560);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 800);
-const playlist = playlistData.slice();
+
+function parseLyricTimestamp(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return 0;
+  const parts = value.trim().split(':');
+  if (parts.length === 0) return 0;
+  let seconds = 0;
+  for (const part of parts) {
+    seconds = seconds * 60 + Number(part || 0);
+  }
+  return Number.isFinite(seconds) ? seconds : 0;
+}
+
+const playlist = playlistData.map((track) => ({
+  ...track,
+  lyrics: Array.isArray(track.lyrics)
+    ? track.lyrics
+      .map((line) => ({
+        time: parseLyricTimestamp(line.at ?? line.time ?? 0),
+        text: line.text ?? ''
+      }))
+      .sort((a, b) => a.time - b.time)
+    : []
+}));
 let currentTrackIndex = 0;
 let randomTrackQueue = [];
 const bgm = new Audio();
@@ -24,6 +47,9 @@ bgm.preload = 'auto';
 const BGM_BASE_VOLUME = 0.42;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
+let lastLyricsCurrent = '';
+let lastLyricsNext = '';
+let lyricsVisible = false;
 
 function syncTrackUi() {
   const track = playlist[currentTrackIndex];
@@ -67,6 +93,7 @@ function playCurrentTrack() {
     playResult.then(() => {
       setRecordSpinning(true);
       refreshTrackControls();
+      updateLyricsUi();
       bgmPending = false;
     }).catch(() => {
       bgmPending = false;
@@ -74,6 +101,7 @@ function playCurrentTrack() {
   } else {
     setRecordSpinning(true);
     refreshTrackControls();
+    updateLyricsUi();
     bgmPending = false;
   }
 }
@@ -88,6 +116,7 @@ function loadTrack(index, autoplay = false) {
   syncTrackUi();
   setRecordSpinning(false);
   refreshTrackControls();
+  updateLyricsUi();
   if (autoplay) playCurrentTrack();
 }
 
@@ -1107,6 +1136,9 @@ const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
 const trackToggle = document.getElementById('track-toggle');
 const trackNext = document.getElementById('track-next');
+const lyricsPanel = document.getElementById('lyrics-panel');
+const lyricsCurrent = document.getElementById('lyrics-current');
+const lyricsNext = document.getElementById('lyrics-next');
 const menuToggle = document.getElementById('menu-toggle');
 const siteMenu = document.getElementById('site-menu');
 const siteMenuBackdrop = document.getElementById('site-menu-backdrop');
@@ -1180,6 +1212,7 @@ function stopCurrentTrack() {
   bgm.volume = BGM_BASE_VOLUME;
   setRecordSpinning(false);
   refreshTrackControls();
+  updateLyricsUi();
 }
 
 function nextTrack() {
@@ -1903,6 +1936,53 @@ function updateTrackVisualizer() {
   }
 }
 
+function updateLyricsUi() {
+  if (!lyricsPanel || !lyricsCurrent || !lyricsNext) return;
+
+  const track = playlist[currentTrackIndex];
+  const lyrics = track?.lyrics ?? [];
+  const shouldShow = lyrics.length > 0 && !bgm.paused;
+
+  if (!shouldShow) {
+    if (lyricsVisible) {
+      lyricsPanel.classList.remove('is-visible', 'is-idle');
+      lyricsPanel.setAttribute('aria-hidden', 'true');
+      lyricsCurrent.textContent = '';
+      lyricsNext.textContent = '';
+      lastLyricsCurrent = '';
+      lastLyricsNext = '';
+      lyricsVisible = false;
+    }
+    return;
+  }
+
+  let currentIndex = -1;
+  for (let i = 0; i < lyrics.length; i++) {
+    if (lyrics[i].time <= bgm.currentTime + 0.02) currentIndex = i;
+    else break;
+  }
+
+  const currentText = currentIndex >= 0 ? lyrics[currentIndex].text : '';
+  const nextIndex = currentIndex < 0 ? 0 : currentIndex + 1;
+  const nextText = nextIndex < lyrics.length ? lyrics[nextIndex].text : '';
+
+  if (currentText !== lastLyricsCurrent) {
+    lyricsCurrent.textContent = currentText || '\u00a0';
+    lastLyricsCurrent = currentText;
+  }
+  if (nextText !== lastLyricsNext) {
+    lyricsNext.textContent = nextText;
+    lastLyricsNext = nextText;
+  }
+
+  lyricsPanel.classList.toggle('is-idle', !currentText);
+  if (!lyricsVisible) {
+    lyricsPanel.classList.add('is-visible');
+    lyricsPanel.setAttribute('aria-hidden', 'false');
+    lyricsVisible = true;
+  }
+}
+
 window.addEventListener('resize', () => {
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -1933,6 +2013,7 @@ function tick() {
   updateClouds(dt);
   updateCamera(dt);
   updateTrackVisualizer();
+  updateLyricsUi();
   renderer.render(scene, camera);
 
   const info = document.getElementById('info');
