@@ -34,5 +34,11 @@ export const playlist = [
     src: './list/apoptosis/track-06.mp3',
     art: './list/apoptosis/cover-06.jpg',
     href: 'https://big-up.style/KuagmXeQMw'
+  },
+  {
+    title: '心象風景と原子物理的世界構造',
+    src: './list/shinsho/track-07.mp3',
+    art: './list/shinsho/cover-07.jpg',
+    href: 'https://big-up.style/toTTK06Gb5'
   }
 ];
