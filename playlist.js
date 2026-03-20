@@ -76,5 +76,11 @@ export const playlist = [
     src: './list/tengu/track-13.mp3',
     art: './list/tengu/cover-13.jpg',
     href: 'https://big-up.style/vRhoHN25nE'
+  },
+  {
+    title: 'λλλλλ',
+    src: './list/lambda/track-14.mp3',
+    art: './list/lambda/cover-14.jpg',
+    href: 'https://big-up.style/HtMqf9Im2l'
   }
 ];
