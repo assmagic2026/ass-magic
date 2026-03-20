@@ -22,5 +22,11 @@ export const playlist = [
     src: './list/onion/track-04.mp3',
     art: './list/onion/cover-04.jpg',
     href: 'https://big-up.style/BqVnpsALAJ'
+  },
+  {
+    title: '永遠のウツボ',
+    src: './list/utsubo/track-05.mp3',
+    art: './list/utsubo/cover-05.jpg',
+    href: 'https://big-up.style/7R4HwhoIJR'
   }
 ];
