@@ -157,6 +157,24 @@ const THEME_FLASH_DURATION = 0.42;
 const PLAYER_THEME_HIT_RADIUS = 1.45;
 const THEME_ARM_DISTANCE = 24;
 const THEME_STARTUP_GRACE = 0.9;
+const SKY_PALETTES = {
+  normal: {
+    dayZenith: new THREE.Color(0x65b7ff),
+    dayHorizon: new THREE.Color(0xcbe8ff),
+    duskZenith: new THREE.Color(0x5b4f96),
+    duskHorizon: new THREE.Color(0xff9f5a),
+    nightZenith: new THREE.Color(0x06111f),
+    nightHorizon: new THREE.Color(0x10233f)
+  },
+  inverted: {
+    dayZenith: new THREE.Color(0xe9ffe7),
+    dayHorizon: new THREE.Color(0xfdfffb),
+    duskZenith: new THREE.Color(0xd9f3c8),
+    duskHorizon: new THREE.Color(0xf8ffe8),
+    nightZenith: new THREE.Color(0x332f00),
+    nightHorizon: new THREE.Color(0x5b4e00)
+  }
+};
 
 const P = {
   GLIDE_SPEED: 12,
@@ -1642,8 +1660,19 @@ let speedLockSelection = 40;
 let speedLockPointerId = null;
 let activeMenuPage = 'about';
 
+function applySkyPalette(mode) {
+  const palette = SKY_PALETTES[mode] ?? SKY_PALETTES.normal;
+  skyMat.uniforms.dayZenith.value.copy(palette.dayZenith);
+  skyMat.uniforms.dayHorizon.value.copy(palette.dayHorizon);
+  skyMat.uniforms.duskZenith.value.copy(palette.duskZenith);
+  skyMat.uniforms.duskHorizon.value.copy(palette.duskHorizon);
+  skyMat.uniforms.nightZenith.value.copy(palette.nightZenith);
+  skyMat.uniforms.nightHorizon.value.copy(palette.nightHorizon);
+}
+
 function applyWorldInversion() {
   canvas.style.filter = themeState.inverted ? INVERT_WORLD_FILTER : 'none';
+  applySkyPalette(themeState.inverted ? 'inverted' : 'normal');
 }
 
 function isInsideThemeTrigger(point) {
