@@ -28,5 +28,11 @@ export const playlist = [
     src: './list/utsubo/track-05.mp3',
     art: './list/utsubo/cover-05.jpg',
     href: 'https://big-up.style/7R4HwhoIJR'
+  },
+  {
+    title: 'Apoptosis',
+    src: './list/apoptosis/track-06.mp3',
+    art: './list/apoptosis/cover-06.jpg',
+    href: 'https://big-up.style/KuagmXeQMw'
   }
 ];
