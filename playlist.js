@@ -10,5 +10,11 @@ export const playlist = [
     src: './list/night/track-02.mp3',
     art: './list/night/cover-02.jpg',
     href: 'https://big-up.style/bSXcccjamK'
+  },
+  {
+    title: '人間いなくなれ',
+    src: './list/ningen/track-03.mp3',
+    art: './list/ningen/cover-03.jpg',
+    href: 'https://big-up.style/Au3Xft1poa'
   }
 ];
