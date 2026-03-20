@@ -64,5 +64,11 @@ export const playlist = [
     src: './list/zeta/track-11.mp3',
     art: './list/zeta/cover-11.jpg',
     href: 'https://big-up.style/To8vjErb0t'
+  },
+  {
+    title: 'memento mori',
+    src: './list/memento/track-12.mp3',
+    art: './list/memento/cover-12.jpg',
+    href: 'https://big-up.style/BSNLzaU5LM'
   }
 ];
