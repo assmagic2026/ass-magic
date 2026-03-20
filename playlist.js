@@ -16,5 +16,11 @@ export const playlist = [
     src: './list/ningen/track-03.mp3',
     art: './list/ningen/cover-03.jpg',
     href: 'https://big-up.style/Au3Xft1poa'
+  },
+  {
+    title: 'Onion life',
+    src: './list/onion/track-04.mp3',
+    art: './list/onion/cover-04.jpg',
+    href: 'https://big-up.style/BqVnpsALAJ'
   }
 ];
