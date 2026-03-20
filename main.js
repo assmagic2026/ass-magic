@@ -1675,6 +1675,7 @@ function applySkyPalette(mode) {
 function applyWorldInversion() {
   canvas.style.filter = themeState.inverted ? INVERT_WORLD_FILTER : 'none';
   applySkyPalette(themeState.inverted ? 'inverted' : 'normal');
+  lyricsPanel?.classList.toggle('is-inverted', themeState.inverted);
 }
 
 function isInsideThemeTrigger(point) {
