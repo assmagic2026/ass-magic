@@ -57,6 +57,6 @@ export const playlist = [
     title: 'GRAVITY',
     src: './list/gravity/track-10.mp3',
     art: './list/gravity/cover-10.jpg',
-    href: ''
+    href: 'https://big-up.style/Y5GBS49L5h'
   }
 ];
