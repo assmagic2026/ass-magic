@@ -68,21 +68,20 @@ html, body {
   position: fixed;
   top: 220px;
   left: 18px;
-  width: 132px;
-  padding: 6px;
+  width: 136px;
+  padding: 8px;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: 38px 28px;
   grid-template-areas:
     "toggle next"
-    "lyrics next";
+    "lyrics lyrics";
   gap: 6px;
   pointer-events: auto;
-  background: linear-gradient(180deg, rgba(8, 14, 22, 0.26), rgba(8, 14, 22, 0.14));
+  background: linear-gradient(180deg, rgba(8, 14, 22, 0.34), rgba(8, 14, 22, 0.18));
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 18px;
+  border-radius: 20px;
   box-shadow:
-    0 12px 26px rgba(0,0,0,0.12),
+    0 12px 26px rgba(0,0,0,0.14),
     inset 0 1px 0 rgba(255,255,255,0.05);
   backdrop-filter: blur(12px);
 }
@@ -101,12 +100,10 @@ html, body {
     0 5px 12px rgba(0,0,0,0.16);
 }
 #track-toggle { grid-area: toggle; }
-#track-next {
-  grid-area: next;
-  min-height: 72px;
-}
+#track-next { grid-area: next; }
 #lyrics-toggle {
   grid-area: lyrics;
+  height: 28px;
   background: linear-gradient(180deg, rgba(14, 23, 34, 0.92), rgba(8, 13, 20, 0.82));
 }
 #lyrics-toggle.is-active {
@@ -120,8 +117,8 @@ html, body {
   display: block;
   color: #eff8ff;
   font-size: 9px;
-  letter-spacing: 0.16em;
-  text-indent: 0.16em;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
   text-transform: uppercase;
 }
 .track-icon {
@@ -615,6 +612,24 @@ html, body {
   padding: 6px 10px; background: rgba(0,0,0,0.45); border-radius: 8px; font-size: 11px;
   pointer-events: none;
 }
+#site-footer {
+  position: fixed;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 180px));
+  color: rgba(240, 247, 255, 0.68);
+  font-size: 9px;
+  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-align: center;
+  pointer-events: none;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+#site-footer div:last-child {
+  margin-top: 2px;
+  color: rgba(240, 247, 255, 0.5);
+}
 @keyframes record-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -689,19 +704,21 @@ html, body {
   #track-controls {
     top: 174px;
     left: 10px;
-    width: 104px;
+    width: 108px;
     padding: 5px;
     gap: 4px;
-    grid-template-rows: 30px 24px;
-    border-radius: 16px;
+    border-radius: 18px;
   }
-  #track-next {
-    min-height: 58px;
+  .track-btn {
+    height: 30px;
+  }
+  #lyrics-toggle {
+    height: 24px;
   }
   .track-btn-label {
     font-size: 8px;
-    letter-spacing: 0.1em;
-    text-indent: 0.1em;
+    letter-spacing: 0.12em;
+    text-indent: 0.12em;
   }
   #track-toggle .toggle-icon {
     width: 11px;
@@ -751,5 +768,11 @@ html, body {
   #info {
     left: 8px;
     bottom: 8px;
+  }
+  #site-footer {
+    width: min(280px, calc(100vw - 124px));
+    bottom: 6px;
+    font-size: 8px;
+    line-height: 1.3;
   }
 }
