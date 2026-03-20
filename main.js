@@ -50,6 +50,7 @@ let bgmPending = false;
 let lastLyricsCurrent = '';
 let lyricsVisible = false;
 let lyricsEnabled = true;
+let lastLyricsPanelY = null;
 
 function syncTrackUi() {
   const track = playlist[currentTrackIndex];
@@ -146,6 +147,10 @@ const DAY_BLOCKS_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, 0.42)
   .addScaledVector(NIGHT_AXIS_B, -0.16)
   .normalize();
+const CAT_PREVIEW_HEIGHT = 4.6;
+const CAT_PREVIEW_ALTITUDE = 0.18;
+const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
+const CAT_PREVIEW_LOOKAHEAD_SPEED = 40;
 
 const P = {
   GLIDE_SPEED: 12,
@@ -364,6 +369,265 @@ function placeDirectedOnSphere(object, direction, forward, altitude, roll = 0) {
   object.position.copy(up).multiplyScalar(getSurfaceRadius(up) + altitude);
   object.quaternion.copy(createBasisQuaternion(tangentForward, up));
   object.rotateZ(roll);
+}
+
+const GLB_COMPONENT_ARRAYS = {
+  5120: Int8Array,
+  5121: Uint8Array,
+  5122: Int16Array,
+  5123: Uint16Array,
+  5125: Uint32Array,
+  5126: Float32Array
+};
+
+const GLB_COMPONENT_READERS = {
+  5120: 'getInt8',
+  5121: 'getUint8',
+  5122: 'getInt16',
+  5123: 'getUint16',
+  5125: 'getUint32',
+  5126: 'getFloat32'
+};
+
+const GLB_TYPE_SIZES = {
+  SCALAR: 1,
+  VEC2: 2,
+  VEC3: 3,
+  VEC4: 4,
+  MAT4: 16
+};
+
+const GLB_ATTRIBUTE_NAMES = {
+  POSITION: 'position',
+  NORMAL: 'normal',
+  TEXCOORD_0: 'uv'
+};
+
+function parseGlb(arrayBuffer) {
+  const view = new DataView(arrayBuffer);
+  if (view.getUint32(0, true) !== 0x46546c67) {
+    throw new Error('Invalid GLB header');
+  }
+
+  const decoder = new TextDecoder();
+  let offset = 12;
+  let document = null;
+  let binChunk = null;
+
+  while (offset < view.byteLength) {
+    const chunkLength = view.getUint32(offset, true);
+    const chunkType = view.getUint32(offset + 4, true);
+    offset += 8;
+
+    const chunk = arrayBuffer.slice(offset, offset + chunkLength);
+    offset += chunkLength;
+
+    if (chunkType === 0x4e4f534a) {
+      document = JSON.parse(decoder.decode(new Uint8Array(chunk)));
+    } else if (chunkType === 0x004e4942) {
+      binChunk = chunk;
+    }
+  }
+
+  if (!document || !binChunk) {
+    throw new Error('GLB is missing required chunks');
+  }
+
+  return { document, binChunk };
+}
+
+function collectNodeSubtree(nodes, rootNodeIndex) {
+  const subtree = new Set();
+  const stack = [rootNodeIndex];
+  while (stack.length) {
+    const nodeIndex = stack.pop();
+    if (subtree.has(nodeIndex)) continue;
+    subtree.add(nodeIndex);
+    const children = nodes[nodeIndex]?.children ?? [];
+    for (const childIndex of children) {
+      stack.push(childIndex);
+    }
+  }
+  return subtree;
+}
+
+function getAccessorData(document, binChunk, accessorIndex, accessorCache) {
+  if (accessorCache.has(accessorIndex)) {
+    return accessorCache.get(accessorIndex);
+  }
+
+  const accessor = document.accessors?.[accessorIndex];
+  const bufferView = document.bufferViews?.[accessor?.bufferView];
+  if (!accessor || !bufferView) {
+    throw new Error(`Missing accessor ${accessorIndex}`);
+  }
+  if (accessor.sparse) {
+    throw new Error('Sparse accessors are not supported in this preview loader');
+  }
+
+  const ArrayType = GLB_COMPONENT_ARRAYS[accessor.componentType];
+  const itemSize = GLB_TYPE_SIZES[accessor.type];
+  if (!ArrayType || !itemSize) {
+    throw new Error(`Unsupported accessor format: ${accessor.componentType} ${accessor.type}`);
+  }
+
+  const componentBytes = ArrayType.BYTES_PER_ELEMENT;
+  const elementBytes = componentBytes * itemSize;
+  const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+  const byteStride = bufferView.byteStride || elementBytes;
+  const length = accessor.count * itemSize;
+  let array;
+
+  if ((byteOffset % componentBytes) === 0 && byteStride === elementBytes) {
+    array = new ArrayType(binChunk, byteOffset, length);
+  } else {
+    array = new ArrayType(length);
+    const reader = GLB_COMPONENT_READERS[accessor.componentType];
+    const dataView = new DataView(binChunk);
+    for (let i = 0; i < accessor.count; i++) {
+      const base = byteOffset + i * byteStride;
+      for (let j = 0; j < itemSize; j++) {
+        array[i * itemSize + j] = dataView[reader](base + j * componentBytes, true);
+      }
+    }
+  }
+
+  const parsed = {
+    array,
+    itemSize,
+    normalized: !!accessor.normalized,
+    count: accessor.count
+  };
+  accessorCache.set(accessorIndex, parsed);
+  return parsed;
+}
+
+function createStaticGlbMaterial(document, materialIndex, materialCache, options = {}) {
+  const cacheKey = `${materialIndex ?? 'default'}:${options.unlit ? 'unlit' : 'lit'}`;
+  if (materialCache.has(cacheKey)) {
+    return materialCache.get(cacheKey);
+  }
+
+  const materialDef = document.materials?.[materialIndex] ?? {};
+  const pbr = materialDef.pbrMetallicRoughness ?? {};
+  const baseColorFactor = pbr.baseColorFactor ?? [1, 1, 1, 1];
+  const materialParams = {
+    color: new THREE.Color(baseColorFactor[0], baseColorFactor[1], baseColorFactor[2]),
+    opacity: baseColorFactor[3] ?? 1,
+    transparent: materialDef.alphaMode === 'BLEND' || (baseColorFactor[3] ?? 1) < 1,
+    depthWrite: materialDef.alphaMode !== 'BLEND',
+    side: materialDef.doubleSided ? THREE.DoubleSide : THREE.FrontSide,
+    fog: false
+  };
+  const material = options.unlit
+    ? new THREE.MeshBasicMaterial(materialParams)
+    : new THREE.MeshStandardMaterial({
+      ...materialParams,
+      roughness: pbr.roughnessFactor ?? 0.92,
+      metalness: pbr.metallicFactor ?? 0
+    });
+
+  if (!options.unlit && Array.isArray(materialDef.emissiveFactor)) {
+    material.emissive.setRGB(
+      materialDef.emissiveFactor[0] ?? 0,
+      materialDef.emissiveFactor[1] ?? 0,
+      materialDef.emissiveFactor[2] ?? 0
+    );
+  }
+  material.toneMapped = false;
+  material.userData.sourceMaterialIndex = materialIndex ?? -1;
+
+  materialCache.set(cacheKey, material);
+  return material;
+}
+
+function createStaticGlbPrimitive(document, binChunk, primitive, accessorCache, materialCache, options = {}) {
+  const geometry = new THREE.BufferGeometry();
+  for (const [attributeName, accessorIndex] of Object.entries(primitive.attributes ?? {})) {
+    const targetName = GLB_ATTRIBUTE_NAMES[attributeName];
+    if (!targetName) continue;
+    const accessor = getAccessorData(document, binChunk, accessorIndex, accessorCache);
+    geometry.setAttribute(
+      targetName,
+      new THREE.BufferAttribute(accessor.array, accessor.itemSize, accessor.normalized)
+    );
+  }
+
+  if (primitive.indices !== undefined) {
+    const indexAccessor = getAccessorData(document, binChunk, primitive.indices, accessorCache);
+    geometry.setIndex(new THREE.BufferAttribute(indexAccessor.array, 1, indexAccessor.normalized));
+  }
+
+  if (!geometry.getAttribute('normal')) {
+    geometry.computeVertexNormals();
+  }
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+
+  const material = createStaticGlbMaterial(document, primitive.material, materialCache, options);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  return mesh;
+}
+
+async function loadStaticGlbNode(url, rootNodeIndex, options = {}) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to load ${url}: ${response.status}`);
+  }
+
+  const { document, binChunk } = parseGlb(await response.arrayBuffer());
+  const nodes = document.nodes ?? [];
+  const meshes = document.meshes ?? [];
+  const subtree = collectNodeSubtree(nodes, rootNodeIndex);
+  const excludedNodes = new Set(options.excludeNodes ?? []);
+
+  const accessorCache = new Map();
+  const materialCache = new Map();
+  const nodeCache = new Map();
+
+  function buildNode(nodeIndex) {
+    if (nodeCache.has(nodeIndex)) return nodeCache.get(nodeIndex);
+
+    const nodeDef = nodes[nodeIndex] ?? {};
+    const object = new THREE.Group();
+    object.name = nodeDef.name || `node-${nodeIndex}`;
+
+    if (nodeDef.matrix) {
+      object.matrix.fromArray(nodeDef.matrix);
+      object.matrix.decompose(object.position, object.quaternion, object.scale);
+    } else {
+      if (nodeDef.translation) object.position.fromArray(nodeDef.translation);
+      if (nodeDef.rotation) object.quaternion.fromArray(nodeDef.rotation);
+      if (nodeDef.scale) object.scale.fromArray(nodeDef.scale);
+    }
+
+    const meshIndex = nodeDef.mesh;
+    if (meshIndex !== undefined && meshes[meshIndex]) {
+      const primitives = meshes[meshIndex].primitives ?? [];
+      for (const primitive of primitives) {
+        if (primitive.mode !== undefined && primitive.mode !== 4) continue;
+        const mesh = createStaticGlbPrimitive(document, binChunk, primitive, accessorCache, materialCache, options);
+        object.add(mesh);
+      }
+    }
+
+    nodeCache.set(nodeIndex, object);
+    for (const childIndex of nodeDef.children ?? []) {
+      if (!subtree.has(childIndex) || excludedNodes.has(childIndex)) continue;
+      object.add(buildNode(childIndex));
+    }
+
+    return object;
+  }
+
+  if (excludedNodes.has(rootNodeIndex)) {
+    throw new Error(`Root node ${rootNodeIndex} is excluded`);
+  }
+  const root = buildNode(rootNodeIndex);
+  root.updateMatrixWorld(true);
+  return root;
 }
 
 function getOffsetDirection(center, angle, spread, ellipse = 1) {
@@ -1092,6 +1356,23 @@ scene.add(shadow);
 
 scene.add(player);
 
+const catPreviewAnchor = new THREE.Group();
+catPreviewAnchor.visible = false;
+const catPreviewShadow = new THREE.Mesh(
+  new THREE.CircleGeometry(1, 18),
+  new THREE.MeshBasicMaterial({
+    color: 0x051019,
+    transparent: true,
+    opacity: 0.16,
+    depthWrite: false
+  })
+);
+catPreviewShadow.rotation.x = -Math.PI * 0.5;
+catPreviewShadow.position.y = 0.04;
+catPreviewShadow.scale.set(1.1, 0.9, 1);
+catPreviewAnchor.add(catPreviewShadow);
+scene.add(catPreviewAnchor);
+
 const seagullState = {
   posePitch: 0
 };
@@ -1119,6 +1400,131 @@ const state = {
   diveEnergy: 0,
   wasOnGround: true
 };
+
+function placeCatPreviewAnchor() {
+  const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
+  const lookAheadAngle = (CAT_PREVIEW_LOOKAHEAD_SPEED * CAT_PREVIEW_LOOKAHEAD_SECONDS) / startRadius;
+  const catDirection = startUp.clone().applyAxisAngle(startRight, lookAheadAngle).normalize();
+  const towardStart = startUp.clone()
+    .addScaledVector(catDirection, -startUp.dot(catDirection))
+    .normalize();
+  placeDirectedOnSphere(catPreviewAnchor, catDirection, towardStart, CAT_PREVIEW_ALTITUDE);
+}
+
+function recolorCatPreview(catRoot) {
+  const furBrown = new THREE.Color(0x3a2318);
+
+  catRoot.traverse((object) => {
+    if (!object.isMesh || !object.material?.color) return;
+    const materialIndex = object.material.userData?.sourceMaterialIndex;
+    if (materialIndex >= 1 && materialIndex <= 7) {
+      object.material.color.copy(furBrown);
+    }
+  });
+}
+
+function addCatPreviewAccents(catRoot, size) {
+  const brownMat = new THREE.MeshBasicMaterial({ color: 0x3a2318, toneMapped: false, fog: false });
+  const blueMat = new THREE.MeshBasicMaterial({ color: 0x73b7ff, toneMapped: false, fog: false });
+  const noseMat = new THREE.MeshBasicMaterial({ color: 0x25150f, toneMapped: false, fog: false });
+  const accentGroup = new THREE.Group();
+
+  const eyePatchGeo = new THREE.SphereGeometry(0.18, 10, 8);
+  const eyeGeo = new THREE.SphereGeometry(0.075, 10, 8);
+  const earGeo = new THREE.ConeGeometry(0.16, 0.34, 4);
+  const whiskerGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.62, 5);
+  const noseGeo = new THREE.SphereGeometry(0.06, 8, 6);
+
+  const headX = -size.x * 0.44;
+  const eyeY = size.y * 0.7;
+  const eyeZ = size.z * 0.17;
+  const whiskerBaseX = headX - 0.05;
+  const whiskerBaseY = size.y * 0.62;
+  const whiskerSpread = 0.16;
+
+  for (const side of [-1, 1]) {
+    const patch = new THREE.Mesh(eyePatchGeo, brownMat);
+    patch.scale.set(1.18, 0.86, 0.52);
+    patch.position.set(headX, eyeY, side * eyeZ);
+    accentGroup.add(patch);
+
+    const eye = new THREE.Mesh(eyeGeo, blueMat);
+    eye.position.set(headX - 0.1, eyeY + 0.01, side * eyeZ);
+    accentGroup.add(eye);
+
+    const ear = new THREE.Mesh(earGeo, brownMat);
+    ear.position.set(-size.x * 0.27, size.y * 0.92, side * size.z * 0.2);
+    ear.rotation.z = side * -0.2;
+    ear.rotation.x = -0.14;
+    accentGroup.add(ear);
+
+    for (let i = 0; i < 3; i++) {
+      const whisker = new THREE.Mesh(whiskerGeo, noseMat);
+      whisker.position.set(whiskerBaseX, whiskerBaseY + (i - 1) * 0.09, side * (size.z * 0.08 + i * whiskerSpread * 0.34));
+      whisker.rotation.z = Math.PI * 0.5;
+      whisker.rotation.y = side * (0.2 + i * 0.12);
+      whisker.rotation.x = (i - 1) * 0.08;
+      accentGroup.add(whisker);
+    }
+  }
+
+  const nose = new THREE.Mesh(noseGeo, noseMat);
+  nose.scale.set(1.2, 0.9, 1.1);
+  nose.position.set(headX - 0.16, size.y * 0.61, 0);
+  accentGroup.add(nose);
+
+  const mouth = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.22, 4), noseMat);
+  mouth.position.set(headX - 0.18, size.y * 0.54, 0);
+  mouth.rotation.z = Math.PI * 0.5;
+  accentGroup.add(mouth);
+
+  const tailBand = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.86, 4, 6), brownMat);
+  tailBand.position.set(size.x * 0.34, size.y * 0.5, 0);
+  tailBand.rotation.z = Math.PI * 0.5;
+  tailBand.rotation.y = 0.22;
+  accentGroup.add(tailBand);
+
+  catRoot.add(accentGroup);
+}
+
+async function initCatPreview() {
+  placeCatPreviewAnchor();
+  try {
+    const catModel = await loadStaticGlbNode('./neko.glb', 19, { excludeNodes: [16, 17, 20], unlit: true });
+    const catOffset = new THREE.Group();
+    catPreviewAnchor.add(catOffset);
+    catOffset.add(catModel);
+
+    catModel.updateMatrixWorld(true);
+
+    const bounds = new THREE.Box3().setFromObject(catModel);
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    catModel.position.set(-center.x, -bounds.min.y, -center.z);
+    recolorCatPreview(catModel);
+    addCatPreviewAccents(catModel, size);
+
+    // Keep the model upright, then turn the whole preview back toward the player.
+    catModel.rotation.y = -Math.PI * 0.5;
+    catOffset.rotation.y = Math.PI;
+
+    const scale = CAT_PREVIEW_HEIGHT / Math.max(size.y, 0.001);
+    catOffset.scale.setScalar(scale);
+    catOffset.updateMatrixWorld(true);
+
+    const scaledBounds = new THREE.Box3().setFromObject(catOffset);
+    const scaledSize = scaledBounds.getSize(new THREE.Vector3());
+    catPreviewShadow.scale.set(
+      THREE.MathUtils.clamp(scaledSize.x * 0.42, 0.9, 2.4),
+      THREE.MathUtils.clamp(scaledSize.z * 0.42, 0.75, 2.1),
+      1
+    );
+
+    catPreviewAnchor.visible = true;
+  } catch (error) {
+    console.error('Failed to load cat preview:', error);
+  }
+}
 
 let bobPhase = Math.random() * Math.PI * 2;
 
@@ -1161,6 +1567,7 @@ const speedLockThumb = document.getElementById('speed-lock-thumb');
 const speedLockValue = document.getElementById('speed-lock-value');
 const STICK_LIMIT = 50;
 const tempStick = new THREE.Vector2();
+const tempProjected = new THREE.Vector3();
 const accelPointers = new Set();
 let speedLockSelection = 40;
 let speedLockPointerId = null;
@@ -1941,6 +2348,7 @@ function updateCamera(dt) {
     camera.updateProjectionMatrix();
   }
   camera.lookAt(target);
+  camera.updateMatrixWorld();
   atmosphereMat.uniforms.cameraPos.value.copy(camera.position);
 }
 
@@ -1960,6 +2368,18 @@ function updateTrackVisualizer() {
     const scale = 0.24 + pulse * 1.45;
     visualizerBars[i].style.transform = `scaleY(${scale.toFixed(3)})`;
     visualizerBars[i].style.opacity = `${(0.48 + pulse * 0.46).toFixed(3)}`;
+  }
+}
+
+function updateLyricsLayout() {
+  if (!lyricsPanel || !stickArea) return;
+  tempProjected.copy(state.pos).project(camera);
+  const playerScreenY = (1 - tempProjected.y) * 0.5 * window.innerHeight;
+  const stickTop = stickArea.getBoundingClientRect().top;
+  const midpointY = THREE.MathUtils.clamp((playerScreenY + stickTop) * 0.5, 88, window.innerHeight - 120);
+  if (lastLyricsPanelY === null || Math.abs(midpointY - lastLyricsPanelY) > 1) {
+    lyricsPanel.style.top = `${midpointY.toFixed(1)}px`;
+    lastLyricsPanelY = midpointY;
   }
 }
 
@@ -2008,6 +2428,8 @@ window.addEventListener('resize', () => {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
+  lastLyricsPanelY = null;
+  updateLyricsLayout();
 });
 
 function snapCameraOnce() {
@@ -2023,6 +2445,7 @@ function snapCameraOnce() {
 }
 
 snapCameraOnce();
+updateLyricsLayout();
 
 const clock = new THREE.Clock();
 function tick() {
@@ -2032,6 +2455,7 @@ function tick() {
   updateClouds(dt);
   updateCamera(dt);
   updateTrackVisualizer();
+  updateLyricsLayout();
   updateLyricsUi();
   renderer.render(scene, camera);
 

@@ -575,8 +575,8 @@ html, body {
 #lyrics-panel {
   position: fixed;
   left: 50%;
-  bottom: 392px;
-  transform: translateX(-50%) translateY(8px);
+  top: 50%;
+  transform: translate(-50%, calc(-50% + 8px));
   width: min(420px, calc(100vw - 180px));
   padding: 0;
   pointer-events: none;
@@ -585,7 +585,7 @@ html, body {
 }
 #lyrics-panel.is-visible {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+  transform: translate(-50%, -50%);
 }
 #lyrics-current,
 #lyrics-panel {
@@ -618,17 +618,21 @@ html, body {
   bottom: 8px;
   transform: translateX(-50%);
   width: min(520px, calc(100vw - 180px));
-  color: rgba(240, 247, 255, 0.68);
+  color: rgba(240, 247, 255, 0.54);
   font-size: 9px;
   line-height: 1.35;
   letter-spacing: 0.02em;
   text-align: center;
   pointer-events: none;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  opacity: 0.72;
 }
-#site-footer div:last-child {
+#site-footer .footer-note {
   margin-top: 2px;
-  color: rgba(240, 247, 255, 0.5);
+  color: rgba(240, 247, 255, 0.4);
+}
+#site-footer .footer-short {
+  display: none;
 }
 @keyframes record-spin {
   from { transform: rotate(0deg); }
@@ -759,7 +763,6 @@ html, body {
   }
   #lyrics-panel {
     width: min(250px, calc(100vw - 120px));
-    bottom: 332px;
   }
   #lyrics-current {
     font-size: 15px;
@@ -770,9 +773,23 @@ html, body {
     bottom: 8px;
   }
   #site-footer {
-    width: min(280px, calc(100vw - 124px));
+    left: auto;
+    right: 10px;
     bottom: 6px;
+    transform: none;
+    width: auto;
     font-size: 8px;
     line-height: 1.3;
+    text-align: right;
+    color: rgba(240, 247, 255, 0.44);
+    text-shadow: none;
+    opacity: 0.64;
+  }
+  #site-footer .footer-full,
+  #site-footer .footer-note {
+    display: none;
+  }
+  #site-footer .footer-short {
+    display: block;
   }
 }
