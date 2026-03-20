@@ -1677,13 +1677,8 @@ function applyWorldInversion() {
   applySkyPalette(themeState.inverted ? 'inverted' : 'normal');
   lyricsPanel?.classList.toggle('is-inverted', themeState.inverted);
   if (lyricsCurrent) {
-    if (themeState.inverted) {
-      lyricsCurrent.style.color = 'rgba(10, 12, 14, 0.96)';
-      lyricsCurrent.style.textShadow = '0 1px 4px rgba(255,255,255,0.28), 0 6px 18px rgba(255,255,255,0.12)';
-    } else {
-      lyricsCurrent.style.color = 'rgba(249, 252, 255, 0.98)';
-      lyricsCurrent.style.textShadow = '0 2px 6px rgba(0,0,0,0.34), 0 10px 24px rgba(0,0,0,0.18)';
-    }
+    lyricsCurrent.style.color = '';
+    lyricsCurrent.style.textShadow = '';
   }
 }
 
