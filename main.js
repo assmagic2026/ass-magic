@@ -1,4 +1,5 @@
 import * as THREE from './three.module.js';
+import { playlist as playlistData } from './playlist.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({
@@ -15,15 +16,9 @@ const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x0a0d12, 90, 560);
 
 const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 800);
-const playlist = [
-  {
-    title: 'かかとがフランスパン7',
-    src: './list/track-01.mp3',
-    art: './list/cover-01.jpg',
-    href: 'https://big-up.style/458G0ndX8N'
-  }
-];
+const playlist = playlistData.slice();
 let currentTrackIndex = 0;
+let randomTrackQueue = [];
 const bgm = new Audio();
 bgm.preload = 'auto';
 const BGM_BASE_VOLUME = 0.42;
@@ -1178,7 +1173,35 @@ function stopCurrentTrack() {
 }
 
 function nextTrack() {
-  loadTrack(currentTrackIndex + 1, true);
+  loadTrack(getNextRandomTrackIndex(), true);
+}
+
+function shuffleIndices(indices) {
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = indices[i];
+    indices[i] = indices[j];
+    indices[j] = tmp;
+  }
+  return indices;
+}
+
+function refillRandomTrackQueue(excludeIndex = currentTrackIndex) {
+  const indices = [];
+  for (let i = 0; i < playlist.length; i++) {
+    if (playlist.length > 1 && i === excludeIndex) continue;
+    indices.push(i);
+  }
+  randomTrackQueue = shuffleIndices(indices);
+}
+
+function getNextRandomTrackIndex() {
+  if (playlist.length <= 1) return 0;
+  if (!randomTrackQueue.length) {
+    refillRandomTrackQueue(currentTrackIndex);
+  }
+  const nextIndex = randomTrackQueue.shift();
+  return typeof nextIndex === 'number' ? nextIndex : currentTrackIndex;
 }
 
 function setMenuPage(pageId) {
