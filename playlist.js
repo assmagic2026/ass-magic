@@ -40,5 +40,11 @@ export const playlist = [
     src: './list/shinsho/track-07.mp3',
     art: './list/shinsho/cover-07.jpg',
     href: 'https://big-up.style/toTTK06Gb5'
+  },
+  {
+    title: '海のFURIKAKEプラスチック',
+    src: './list/umifurikake/track-08.mp3',
+    art: './list/umifurikake/cover-08.jpg',
+    href: 'https://big-up.style/rKdkoIAPgn'
   }
 ];
