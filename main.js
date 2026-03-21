@@ -541,6 +541,7 @@ const themeOffset = new THREE.Vector3();
 const themeClosestPoint = new THREE.Vector3();
 const themeZoneCenter = new THREE.Vector3();
 const themeProjected = new THREE.Vector3();
+const themeFlashScreen = new THREE.Vector2();
 
 function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 1.7, extra = {}) {
   object.updateMatrixWorld(true);
@@ -1622,6 +1623,7 @@ const themeState = {
   flashActive: false,
   flashTime: 0,
   flashWorldPoint: new THREE.Vector3(),
+  flashScreenPoint: new THREE.Vector2(window.innerWidth * 0.5, window.innerHeight * 0.5),
   armed: false,
   startupGrace: THEME_STARTUP_GRACE,
   clearRequired: false
@@ -1892,6 +1894,15 @@ function startThemeFlash(worldPoint) {
   themeState.flashActive = true;
   themeState.flashTime = 0;
   themeState.flashWorldPoint.copy(worldPoint);
+  themeProjected.copy(worldPoint).project(camera);
+  let x = (themeProjected.x * 0.5 + 0.5) * window.innerWidth;
+  let y = (-themeProjected.y * 0.5 + 0.5) * window.innerHeight;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || themeProjected.z > 1.25) {
+    x = window.innerWidth * 0.5;
+    y = window.innerHeight * 0.5;
+  }
+  themeFlashScreen.set(x, y);
+  themeState.flashScreenPoint.copy(themeFlashScreen);
 }
 
 function toggleWorldInversion(contactPoint) {
@@ -1971,13 +1982,8 @@ function updateThemeFlash(dt) {
     return;
   }
 
-  themeProjected.copy(themeState.flashWorldPoint).project(camera);
-  let x = (themeProjected.x * 0.5 + 0.5) * window.innerWidth;
-  let y = (-themeProjected.y * 0.5 + 0.5) * window.innerHeight;
-  if (!Number.isFinite(x) || !Number.isFinite(y) || themeProjected.z > 1.25) {
-    x = window.innerWidth * 0.5;
-    y = window.innerHeight * 0.5;
-  }
+  const x = themeState.flashScreenPoint.x;
+  const y = themeState.flashScreenPoint.y;
 
   const eased = 1 - Math.pow(1 - progress, 2);
   const radius = 150 + eased * Math.max(window.innerWidth, window.innerHeight) * 1.18;
