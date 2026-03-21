@@ -43,13 +43,16 @@ const playlist = playlistData.map((track) => ({
 }));
 let currentTrackIndex = 0;
 let randomTrackQueue = [];
-const bgm = new Audio();
+const bgm = document.getElementById('bgm-audio') || new Audio();
 bgm.preload = 'auto';
+bgm.playsInline = true;
+bgm.crossOrigin = 'anonymous';
 const BGM_BASE_VOLUME = 0.42;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
 let bgmLastAttemptAt = 0;
 let lastTrackControlActionAt = 0;
+let bgmUnlocked = false;
 let lastLyricsCurrent = '';
 let lyricsVisible = false;
 let lyricsEnabled = true;
@@ -117,6 +120,28 @@ function playCurrentTrack() {
     refreshTrackControls();
     updateLyricsUi();
     bgmPending = false;
+  }
+}
+
+async function unlockBgmFromGesture() {
+  if (bgmUnlocked) return true;
+  try {
+    const previousTime = Number.isFinite(bgm.currentTime) ? bgm.currentTime : 0;
+    const previousMuted = bgm.muted;
+    bgm.muted = true;
+    const unlockResult = bgm.play();
+    if (unlockResult && typeof unlockResult.then === 'function') {
+      await unlockResult;
+    }
+    bgm.pause();
+    bgm.currentTime = previousTime;
+    bgm.muted = previousMuted;
+    bgmUnlocked = true;
+    return true;
+  } catch (error) {
+    bgm.muted = false;
+    console.warn('BGM unlock attempt failed:', error);
+    return false;
   }
 }
 
@@ -1977,14 +2002,17 @@ function updateThemeFlash(dt) {
   const glow = radius * 0.38;
   const shock = radius * 0.72;
   const ring = radius * 0.96;
+  const whiteRing = radius * 1.12;
   const veil = 0.62 * (1 - progress * 0.82);
   const ringAlpha = Math.max(0, 0.82 * (1 - progress * 0.72));
+  const whiteAlpha = Math.max(0, 0.56 * (1 - progress * 0.88));
 
   themeFlash.style.opacity = '1';
   themeFlash.style.transform = `scale(${(1 + 0.02 * (1 - progress)).toFixed(4)})`;
   themeFlash.style.background = [
     `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0.98) 0px, rgba(0,0,0,0.9) ${core.toFixed(1)}px, rgba(0,0,0,0.42) ${glow.toFixed(1)}px, rgba(0,0,0,0) ${shock.toFixed(1)}px)`,
     `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0) ${(ring * 0.56).toFixed(1)}px, rgba(0,0,0,${ringAlpha.toFixed(3)}) ${ring.toFixed(1)}px, rgba(0,0,0,0) ${(ring * 1.22).toFixed(1)}px)`,
+    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,0) ${(whiteRing * 0.7).toFixed(1)}px, rgba(255,255,255,${whiteAlpha.toFixed(3)}) ${whiteRing.toFixed(1)}px, rgba(255,255,255,0) ${(whiteRing * 1.16).toFixed(1)}px)`,
     `linear-gradient(rgba(0,0,0,${veil.toFixed(3)}), rgba(0,0,0,${(veil * 0.4).toFixed(3)}))`
   ].join(', ');
 }
@@ -2503,7 +2531,9 @@ function handlePointerDown(e) {
     return;
   }
 
-  ensureBgm();
+  unlockBgmFromGesture().finally(() => {
+    ensureBgm();
+  });
 
   if (stickArea && input.stickId === null) {
     const rect = stickArea.getBoundingClientRect();
@@ -2579,7 +2609,9 @@ function handlePointerUp(e) {
 
 function handleMouseDown(e) {
   if (e.target instanceof Element && e.target.closest('.ui-control')) return;
-  ensureBgm();
+  unlockBgmFromGesture().finally(() => {
+    ensureBgm();
+  });
 }
 
 window.addEventListener('pointerdown', handlePointerDown, { passive: false });
@@ -2594,18 +2626,24 @@ document.addEventListener('dragstart', (e) => e.preventDefault());
 if (trackCard) {
   trackCard.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
-    ensureBgm();
+    unlockBgmFromGesture().finally(() => {
+      ensureBgm();
+    });
   });
   trackCard.addEventListener('mousedown', (e) => {
     e.stopPropagation();
-    ensureBgm();
+    unlockBgmFromGesture().finally(() => {
+      ensureBgm();
+    });
   });
   trackCard.addEventListener('pointerup', (e) => {
     e.stopPropagation();
   });
   trackCard.addEventListener('click', (e) => {
     e.stopPropagation();
-    ensureBgm();
+    unlockBgmFromGesture().finally(() => {
+      ensureBgm();
+    });
   });
 }
 
@@ -2629,7 +2667,11 @@ trackToggle?.addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
   runTrackControlAction(() => {
-    if (bgm.paused) ensureBgm();
+    if (bgm.paused) {
+      unlockBgmFromGesture().finally(() => {
+        ensureBgm();
+      });
+    }
     else stopCurrentTrack();
   });
 });
@@ -2637,7 +2679,11 @@ trackToggle?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   runTrackControlAction(() => {
-    if (bgm.paused) ensureBgm();
+    if (bgm.paused) {
+      unlockBgmFromGesture().finally(() => {
+        ensureBgm();
+      });
+    }
     else stopCurrentTrack();
   });
 });
