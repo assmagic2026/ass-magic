@@ -356,9 +356,24 @@ const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_B, -0.8)
   .normalize();
 const BLACK_BOX_ALTITUDE = 1.8;
+const BLACK_BOX_GROUND_ALTITUDE = 0.96;
 const BLACK_BOX_OPEN_DELAY = 0.22;
 const BLACK_BOX_LOOKAHEAD_SECONDS = 2.0;
 const BLACK_BOX_LOOKAHEAD_SPEED = 40;
+const BLACK_BOX_SPEED = 100;
+const BLACK_BOX_ROLL = Math.PI * 0.2;
+const BLACK_BOX_IMAGE_SET = [
+  {
+    src: './blackbox.jpg',
+    download: 'blackbox.jpg',
+    caption: 'かわいいのがいた。'
+  },
+  {
+    src: './assets/black-box-cat.png',
+    download: 'black-box-cat.png',
+    caption: 'またかわいいのがいた。'
+  }
+];
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_MESSAGE_LIMIT = 12;
 const BOOK_MESSAGE_TIMEOUT_MS = 9000;
@@ -1847,7 +1862,19 @@ const bookUiState = {
 const blackBoxUiState = {
   open: false,
   pendingTimer: null,
-  currentView: 'intro'
+  currentView: 'intro',
+  mode: 'orbit',
+  routeReady: false,
+  routeAngle: 0,
+  routeAngleSpeed: 0,
+  revealCount: 0,
+  currentImageIndex: 0,
+  routeAxisB: new THREE.Vector3(),
+  routeNormal: new THREE.Vector3(),
+  groundedDirection: new THREE.Vector3(),
+  groundedForward: new THREE.Vector3(),
+  lastTriggerPoint: new THREE.Vector3(),
+  lastTriggerAngle: 0
 };
 
 const giantBook = createGiantBookLandmark();
@@ -1860,14 +1887,103 @@ function placeGiantBookLandmark() {
   placeDirectedOnSphere(giantBook, GIANT_BOOK_DIR, towardSun, GIANT_BOOK_ALTITUDE, 0.06);
 }
 
-function placeBlackBoxLandmark() {
+function ensureBlackBoxRoute() {
+  if (blackBoxUiState.routeReady) return;
   const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
   const lookAheadAngle = (BLACK_BOX_LOOKAHEAD_SPEED * BLACK_BOX_LOOKAHEAD_SECONDS) / startRadius;
-  const direction = startUp.clone().applyAxisAngle(startRight, lookAheadAngle).normalize();
-  const towardStart = startUp.clone()
-    .addScaledVector(direction, -startUp.dot(direction))
+  const interceptDirection = startUp.clone().applyAxisAngle(startRight, lookAheadAngle).normalize();
+  blackBoxUiState.routeAxisB.copy(
+    interceptDirection.clone().addScaledVector(SUN_DIRECTION, -interceptDirection.dot(SUN_DIRECTION))
+  );
+  if (blackBoxUiState.routeAxisB.lengthSq() < 0.0001) {
+    blackBoxUiState.routeAxisB.copy(NIGHT_AXIS_A);
+  } else {
+    blackBoxUiState.routeAxisB.normalize();
+  }
+  blackBoxUiState.routeNormal.crossVectors(SUN_DIRECTION, blackBoxUiState.routeAxisB).normalize();
+  const interceptRouteAngle = Math.atan2(
+    interceptDirection.dot(blackBoxUiState.routeAxisB),
+    interceptDirection.dot(SUN_DIRECTION)
+  );
+  blackBoxUiState.routeAngleSpeed = BLACK_BOX_SPEED / (getSurfaceRadius(interceptDirection) + BLACK_BOX_ALTITUDE);
+  blackBoxUiState.routeAngle = interceptRouteAngle - blackBoxUiState.routeAngleSpeed * BLACK_BOX_LOOKAHEAD_SECONDS;
+  blackBoxUiState.routeReady = true;
+}
+
+function getBlackBoxDirectionFromAngle(angle) {
+  return SUN_DIRECTION.clone()
+    .multiplyScalar(Math.cos(angle))
+    .addScaledVector(blackBoxUiState.routeAxisB, Math.sin(angle))
     .normalize();
-  placeDirectedOnSphere(blackBoxLandmark, direction, towardStart, BLACK_BOX_ALTITUDE, Math.PI * 0.2);
+}
+
+function getBlackBoxForwardFromAngle(angle) {
+  return SUN_DIRECTION.clone()
+    .multiplyScalar(-Math.sin(angle))
+    .addScaledVector(blackBoxUiState.routeAxisB, Math.cos(angle))
+    .normalize();
+}
+
+function getBlackBoxRouteAngleFromDirection(direction) {
+  const projected = direction.clone()
+    .addScaledVector(blackBoxUiState.routeNormal, -direction.dot(blackBoxUiState.routeNormal));
+  if (projected.lengthSq() < 0.0001) {
+    return blackBoxUiState.routeAngle;
+  }
+  projected.normalize();
+  return Math.atan2(projected.dot(blackBoxUiState.routeAxisB), projected.dot(SUN_DIRECTION));
+}
+
+function placeBlackBoxOrbit() {
+  ensureBlackBoxRoute();
+  const direction = getBlackBoxDirectionFromAngle(blackBoxUiState.routeAngle);
+  const tangentForward = getBlackBoxForwardFromAngle(blackBoxUiState.routeAngle);
+  placeDirectedOnSphere(blackBoxLandmark, direction, tangentForward, BLACK_BOX_ALTITUDE, BLACK_BOX_ROLL);
+}
+
+function placeGroundedBlackBox(direction, forward = null) {
+  const groundedDirection = direction.clone().normalize();
+  const sourceForward = (forward ? forward.clone() : getBlackBoxForwardFromAngle(blackBoxUiState.routeAngle));
+  const groundedForward = sourceForward.addScaledVector(groundedDirection, -sourceForward.dot(groundedDirection));
+  if (groundedForward.lengthSq() < 0.0001) {
+    groundedForward.copy(state.forward).addScaledVector(groundedDirection, -state.forward.dot(groundedDirection));
+  }
+  groundedForward.normalize();
+  blackBoxUiState.groundedDirection.copy(groundedDirection);
+  blackBoxUiState.groundedForward.copy(groundedForward);
+  blackBoxUiState.routeAngle = getBlackBoxRouteAngleFromDirection(groundedDirection);
+  placeDirectedOnSphere(blackBoxLandmark, groundedDirection, groundedForward, BLACK_BOX_GROUND_ALTITUDE, BLACK_BOX_ROLL);
+}
+
+function placeBlackBoxLandmark() {
+  placeBlackBoxOrbit();
+}
+
+function updateBlackBox(dt) {
+  if (blackBoxUiState.mode !== 'orbit') return;
+  blackBoxUiState.routeAngle += blackBoxUiState.routeAngleSpeed * dt;
+  placeBlackBoxOrbit();
+}
+
+function resumeBlackBoxOrbit() {
+  blackBoxUiState.mode = 'orbit';
+  placeBlackBoxOrbit();
+}
+
+function setBlackBoxRevealImage(index) {
+  const reveal = BLACK_BOX_IMAGE_SET[Math.min(index, BLACK_BOX_IMAGE_SET.length - 1)] ?? BLACK_BOX_IMAGE_SET[0];
+  blackBoxUiState.currentImageIndex = Math.min(index, BLACK_BOX_IMAGE_SET.length - 1);
+  if (blackBoxCatImage) {
+    blackBoxCatImage.src = reveal.src;
+    blackBoxCatImage.alt = reveal.caption;
+  }
+  if (blackBoxCaption) {
+    blackBoxCaption.textContent = reveal.caption;
+  }
+  if (blackBoxDownload) {
+    blackBoxDownload.href = reveal.src;
+    blackBoxDownload.setAttribute('download', reveal.download);
+  }
 }
 
 placeGiantBookLandmark();
@@ -1880,7 +1996,7 @@ placeBlackBoxLandmark();
 scene.add(blackBoxLandmark);
 registerThemeTriggerFromObject(blackBoxLandmark, 1.18, 2.6, {
   tag: 'black-box',
-  onTrigger: () => handleBlackBoxTrigger()
+  onTrigger: (contactPoint) => handleBlackBoxTrigger(contactPoint)
 });
 
 function placeCatPreviewAnchor() {
@@ -2066,6 +2182,10 @@ const blackBoxIgnore = document.getElementById('black-box-ignore');
 const blackBoxBack = document.getElementById('black-box-back');
 const blackBoxViewIntro = document.getElementById('black-box-view-intro');
 const blackBoxViewReveal = document.getElementById('black-box-view-reveal');
+const blackBoxCatImage = document.getElementById('black-box-cat-image');
+const blackBoxCaption = document.getElementById('black-box-caption');
+const blackBoxDownload = document.getElementById('black-box-download');
+setBlackBoxRevealImage(0);
 const visualizerBars = Array.from(document.querySelectorAll('.viz-bar'));
 const speedLockPanel = document.getElementById('speed-lock-panel');
 const speedLockSlider = document.getElementById('speed-lock-slider');
@@ -2803,8 +2923,12 @@ function handleBookTrigger() {
   }, GIANT_BOOK_OPEN_DELAY * 1000);
 }
 
-function handleBlackBoxTrigger() {
+function handleBlackBoxTrigger(contactPoint) {
   if (blackBoxUiState.open) return;
+  if (contactPoint) {
+    blackBoxUiState.lastTriggerPoint.copy(contactPoint);
+    blackBoxUiState.lastTriggerAngle = blackBoxUiState.routeAngle;
+  }
   if (blackBoxUiState.pendingTimer !== null) {
     window.clearTimeout(blackBoxUiState.pendingTimer);
   }
@@ -3051,7 +3175,8 @@ for (const control of [
   blackBoxClose,
   blackBoxOpen,
   blackBoxIgnore,
-  blackBoxBack
+  blackBoxBack,
+  blackBoxDownload
 ]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
@@ -3095,12 +3220,22 @@ blackBoxClose?.addEventListener('click', (e) => {
 blackBoxOpen?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  if (blackBoxUiState.mode !== 'grounded') {
+    blackBoxUiState.mode = 'grounded';
+    const groundedSource = blackBoxUiState.lastTriggerPoint.lengthSq() > 0.0001
+      ? blackBoxUiState.lastTriggerPoint
+      : blackBoxLandmark.position;
+    placeGroundedBlackBox(groundedSource, getBlackBoxForwardFromAngle(blackBoxUiState.lastTriggerAngle));
+  }
+  setBlackBoxRevealImage(blackBoxUiState.revealCount);
+  blackBoxUiState.revealCount = Math.min(blackBoxUiState.revealCount + 1, BLACK_BOX_IMAGE_SET.length - 1);
   setBlackBoxView('reveal');
 });
 
 blackBoxIgnore?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  resumeBlackBoxOrbit();
   closeBlackBoxOverlay();
 });
 
@@ -3818,6 +3953,7 @@ function tick() {
   const gameplayPaused = bookUiState.open || blackBoxUiState.open;
   if (!gameplayPaused) {
     updatePlayer(dt);
+    updateBlackBox(dt);
     checkThemeTriggerCollision(previousPos, state.pos);
     updateClouds(dt);
     updateCamera(dt);
