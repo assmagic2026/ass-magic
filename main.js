@@ -1676,17 +1676,14 @@ function applySkyPalette(mode) {
 function applyWorldInversion() {
   canvas.style.filter = themeState.inverted ? INVERT_WORLD_FILTER : 'none';
   applySkyPalette(themeState.inverted ? 'inverted' : 'normal');
-  lyricsPanel?.classList.toggle('is-inverted', themeState.inverted);
+  if (lyricsPanel) {
+    lyricsPanel.classList.toggle('is-inverted', themeState.inverted);
+    lyricsPanel.style.filter = themeState.inverted ? 'invert(1)' : 'none';
+  }
   if (lyricsCurrent) {
-    if (themeState.inverted) {
-      lyricsCurrent.style.setProperty('color', 'rgba(10, 12, 14, 0.96)', 'important');
-      lyricsCurrent.style.setProperty('-webkit-text-fill-color', 'rgba(10, 12, 14, 0.96)', 'important');
-      lyricsCurrent.style.setProperty('text-shadow', 'none', 'important');
-    } else {
-      lyricsCurrent.style.removeProperty('color');
-      lyricsCurrent.style.removeProperty('-webkit-text-fill-color');
-      lyricsCurrent.style.removeProperty('text-shadow');
-    }
+    lyricsCurrent.style.setProperty('color', 'rgba(249, 252, 255, 0.98)', 'important');
+    lyricsCurrent.style.setProperty('-webkit-text-fill-color', 'rgba(249, 252, 255, 0.98)', 'important');
+    lyricsCurrent.style.setProperty('text-shadow', '0 2px 6px rgba(0,0,0,0.34), 0 10px 24px rgba(0,0,0,0.18)', 'important');
   }
 }
 
@@ -2198,7 +2195,8 @@ window.addEventListener('gesturechange', (e) => e.preventDefault());
 window.addEventListener('gestureend', () => forceViewportReset());
 window.addEventListener('dblclick', (e) => e.preventDefault());
 window.addEventListener('touchmove', (e) => {
-  if (e.touches.length > 1) e.preventDefault();
+  const isEditable = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
+  if (!isEditable && e.cancelable) e.preventDefault();
 }, { passive: false });
 
 let lastTouchEnd = 0;
@@ -2215,10 +2213,18 @@ document.addEventListener('touchend', (e) => {
     setTimeout(forceViewportReset, 0);
   }
 }, { passive: false });
+document.addEventListener('touchcancel', () => {
+  if (window.visualViewport && window.visualViewport.scale > 1.01) {
+    setTimeout(forceViewportReset, 0);
+  }
+}, { passive: false });
 window.visualViewport?.addEventListener('resize', () => {
   if (window.visualViewport.scale > 1.01) {
     forceViewportReset();
   }
+});
+window.addEventListener('orientationchange', () => {
+  setTimeout(forceViewportReset, 50);
 });
 
 window.addEventListener('keydown', (e) => {
