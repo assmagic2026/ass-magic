@@ -82,6 +82,28 @@ let appleTouchEffectsReady = false;
 let appleTouchEffectsAttemptAt = 0;
 let bgmFilterFrequency = THEME_FILTER_BASE_FREQ;
 
+function fitFullLyricsText() {
+  if (!lyricsFullPanel || !lyricsFullText || !lyricsFullVisible || !lastLyricsFull) return;
+  const isCompact = window.innerWidth <= 860;
+  const baseFont = isCompact ? 11.2 : 13.5;
+  const minFont = isCompact ? 8.6 : 10.4;
+  const baseLineHeight = isCompact ? 1.42 : 1.5;
+  let fontSize = baseFont;
+  let lineHeight = baseLineHeight;
+
+  lyricsFullText.style.fontSize = `${fontSize}px`;
+  lyricsFullText.style.lineHeight = `${lineHeight}`;
+
+  let guard = 0;
+  while (lyricsFullText.scrollHeight > lyricsFullPanel.clientHeight + 1 && fontSize > minFont && guard < 14) {
+    fontSize -= isCompact ? 0.28 : 0.36;
+    lineHeight = Math.max(isCompact ? 1.24 : 1.3, lineHeight - 0.02);
+    lyricsFullText.style.fontSize = `${fontSize.toFixed(2)}px`;
+    lyricsFullText.style.lineHeight = `${lineHeight.toFixed(2)}`;
+    guard += 1;
+  }
+}
+
 function applyBgmOutputVolume(value) {
   bgmOutputVolume = THREE.MathUtils.clamp(value, 0, 1);
   if (bgmGainNode) {
@@ -3515,12 +3537,13 @@ function updateLyricsLayout() {
     const controlsRect = trackControls.getBoundingClientRect();
     const fullTop = Math.min(controlsRect.bottom + 10, window.innerHeight - 220);
     const footerClearance = window.innerWidth <= 860 ? 44 : 56;
-    const availableHeight = THREE.MathUtils.clamp(window.innerHeight - fullTop - footerClearance, 180, window.innerWidth <= 860 ? 420 : 560);
+    const availableHeight = THREE.MathUtils.clamp(window.innerHeight - fullTop - footerClearance, 220, window.innerWidth <= 860 ? 520 : 640);
     if (lastLyricsFullTop === null || Math.abs(fullTop - lastLyricsFullTop) > 1) {
       lyricsFullPanel.style.top = `${fullTop.toFixed(1)}px`;
       lastLyricsFullTop = fullTop;
     }
     lyricsFullPanel.style.maxHeight = `${availableHeight.toFixed(1)}px`;
+    if (lyricsFullVisible) fitFullLyricsText();
   }
 }
 
@@ -3570,6 +3593,7 @@ function updateLyricsUi() {
       lyricsFullPanel.setAttribute('aria-hidden', 'false');
       lyricsFullVisible = true;
     }
+    fitFullLyricsText();
   } else if (track && !hasTimedLyrics && !track.fullLyricsPromise) {
     ensureTrackFullLyrics(track);
   }
