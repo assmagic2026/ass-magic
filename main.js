@@ -355,6 +355,19 @@ const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, -1.4)
   .addScaledVector(NIGHT_AXIS_B, -0.8)
   .normalize();
+const BLACK_BOX_ALTITUDE = 9.5;
+const BLACK_BOX_OPEN_DELAY = 0.22;
+const BLACK_BOX_ROUTE_DIR = SUN_DIRECTION.clone()
+  .addScaledVector(NIGHT_AXIS_A, 0.16)
+  .addScaledVector(NIGHT_AXIS_B, 0.52)
+  .normalize();
+const BLACK_BOX_ROUTE_AXIS_A = new THREE.Vector3()
+  .crossVectors(Math.abs(BLACK_BOX_ROUTE_DIR.y) > 0.96 ? new THREE.Vector3(1, 0, 0) : WORLD_UP, BLACK_BOX_ROUTE_DIR)
+  .normalize();
+const BLACK_BOX_ROUTE_AXIS_B = new THREE.Vector3().crossVectors(BLACK_BOX_ROUTE_DIR, BLACK_BOX_ROUTE_AXIS_A).normalize();
+const BLACK_BOX_ROUTE_SPREAD = 0.18;
+const BLACK_BOX_ROUTE_ELLIPSE = 0.58;
+const BLACK_BOX_ORBIT_SPEED = 2.1;
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_MESSAGE_LIMIT = 12;
 const BOOK_MESSAGE_TIMEOUT_MS = 9000;
@@ -363,6 +376,7 @@ const CAT_PREVIEW_ALTITUDE = 0.18;
 const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
 const CAT_PREVIEW_LOOKAHEAD_SPEED = 40;
 const INVERT_WORLD_FILTER = 'invert(1) hue-rotate(180deg) saturate(0.94) brightness(1.05)';
+const FREEZE_CLOUD_DRIFT_FOR_TEST = true;
 const THEME_TRIGGER_COOLDOWN = 7.0;
 const THEME_FLASH_DURATION = 0.42;
 const PLAYER_THEME_HIT_RADIUS = 1.45;
@@ -712,6 +726,26 @@ function createGiantBookLandmark() {
   pageEdge.position.set(4.66, 0.02, 0.08);
   bookPivot.add(pageEdge);
 
+  return group;
+}
+
+function createBlackBoxLandmark() {
+  const group = new THREE.Group();
+  const cubeMat = new THREE.MeshLambertMaterial({
+    color: 0x050505,
+    emissive: 0x151515,
+    emissiveIntensity: 0.12,
+    flatShading: true
+  });
+  const innerMat = new THREE.MeshLambertMaterial({
+    color: 0x000000,
+    emissive: 0x090909,
+    emissiveIntensity: 0.08,
+    flatShading: true
+  });
+  const shell = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.9, 1.9), cubeMat);
+  const core = new THREE.Mesh(new THREE.BoxGeometry(1.46, 1.46, 1.46), innerMat);
+  group.add(shell, core);
   return group;
 }
 
@@ -1819,8 +1853,15 @@ const bookUiState = {
   readPages: [],
   backend: 'local'
 };
+const blackBoxUiState = {
+  open: false,
+  pendingTimer: null,
+  currentView: 'intro',
+  orbitTime: 0
+};
 
 const giantBook = createGiantBookLandmark();
+const blackBoxLandmark = createBlackBoxLandmark();
 
 function placeGiantBookLandmark() {
   const towardSun = SUN_DIRECTION.clone()
@@ -1829,11 +1870,31 @@ function placeGiantBookLandmark() {
   placeDirectedOnSphere(giantBook, GIANT_BOOK_DIR, towardSun, GIANT_BOOK_ALTITUDE, 0.06);
 }
 
+function placeBlackBoxLandmark(elapsed = 0) {
+  const orbitAngle = elapsed * BLACK_BOX_ORBIT_SPEED;
+  const orbitOffsetA = Math.cos(orbitAngle) * BLACK_BOX_ROUTE_SPREAD;
+  const orbitOffsetB = Math.sin(orbitAngle) * BLACK_BOX_ROUTE_SPREAD * BLACK_BOX_ROUTE_ELLIPSE;
+  const direction = BLACK_BOX_ROUTE_DIR.clone()
+    .addScaledVector(BLACK_BOX_ROUTE_AXIS_A, orbitOffsetA)
+    .addScaledVector(BLACK_BOX_ROUTE_AXIS_B, orbitOffsetB)
+    .normalize();
+  const tangentForward = BLACK_BOX_ROUTE_AXIS_A.clone()
+    .multiplyScalar(-Math.sin(orbitAngle))
+    .addScaledVector(BLACK_BOX_ROUTE_AXIS_B, Math.cos(orbitAngle) * BLACK_BOX_ROUTE_ELLIPSE);
+  placeDirectedOnSphere(blackBoxLandmark, direction, tangentForward, BLACK_BOX_ALTITUDE, orbitAngle * 0.3);
+}
+
 placeGiantBookLandmark();
 scene.add(giantBook);
 registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
   tag: 'book',
   onTrigger: (contactPoint) => handleBookTrigger(contactPoint)
+});
+placeBlackBoxLandmark(0);
+scene.add(blackBoxLandmark);
+registerThemeTriggerFromObject(blackBoxLandmark, 1.18, 2.6, {
+  tag: 'black-box',
+  onTrigger: () => handleBlackBoxTrigger()
 });
 
 function placeCatPreviewAnchor() {
@@ -2010,6 +2071,14 @@ const bookForm = document.getElementById('book-form');
 const bookNameInput = document.getElementById('book-name');
 const bookMessageInput = document.getElementById('book-message-input');
 const bookStatus = document.getElementById('book-status');
+const blackBoxOverlay = document.getElementById('black-box-overlay');
+const blackBoxBackdrop = document.getElementById('black-box-backdrop');
+const blackBoxPanel = document.getElementById('black-box-panel');
+const blackBoxClose = document.getElementById('black-box-close');
+const blackBoxOpen = document.getElementById('black-box-open');
+const blackBoxBack = document.getElementById('black-box-back');
+const blackBoxViewIntro = document.getElementById('black-box-view-intro');
+const blackBoxViewReveal = document.getElementById('black-box-view-reveal');
 const visualizerBars = Array.from(document.querySelectorAll('.viz-bar'));
 const speedLockPanel = document.getElementById('speed-lock-panel');
 const speedLockSlider = document.getElementById('speed-lock-slider');
@@ -2672,6 +2741,35 @@ function setBookOverlayOpen(isOpen) {
   }
 }
 
+function setBlackBoxView(nextView) {
+  blackBoxUiState.currentView = nextView;
+  blackBoxViewIntro?.classList.toggle('is-active', nextView === 'intro');
+  blackBoxViewReveal?.classList.toggle('is-active', nextView === 'reveal');
+}
+
+function setBlackBoxOverlayOpen(isOpen) {
+  blackBoxUiState.open = isOpen;
+  blackBoxOverlay?.classList.toggle('is-open', isOpen);
+  blackBoxOverlay?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (isOpen) {
+    accelPointers.clear();
+    refreshAccelHeld();
+    input.leftId = null;
+    input.rightId = null;
+    input.stickId = null;
+    input.stickOffset.x = 0;
+    input.stickOffset.y = 0;
+    input.turnX = 0;
+    input.turnY = 0;
+    if (stickHandle) {
+      stickHandle.style.transform = 'translate(-50%, -50%)';
+    }
+    setSiteMenuOpen(false);
+  } else if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+}
+
 async function openBookOverlay() {
   const messages = await loadMessages({ force: true });
   bookUiState.pageIndex = 0;
@@ -2692,6 +2790,20 @@ function closeBookOverlay() {
   setBookOverlayOpen(false);
 }
 
+function openBlackBoxOverlay() {
+  closeBookOverlay();
+  setBlackBoxView('intro');
+  setBlackBoxOverlayOpen(true);
+}
+
+function closeBlackBoxOverlay() {
+  if (blackBoxUiState.pendingTimer !== null) {
+    window.clearTimeout(blackBoxUiState.pendingTimer);
+    blackBoxUiState.pendingTimer = null;
+  }
+  setBlackBoxOverlayOpen(false);
+}
+
 function handleBookTrigger() {
   if (bookUiState.pendingTimer !== null) {
     window.clearTimeout(bookUiState.pendingTimer);
@@ -2702,6 +2814,17 @@ function handleBookTrigger() {
       console.error('Failed to open book overlay:', error);
     });
   }, GIANT_BOOK_OPEN_DELAY * 1000);
+}
+
+function handleBlackBoxTrigger() {
+  if (blackBoxUiState.open) return;
+  if (blackBoxUiState.pendingTimer !== null) {
+    window.clearTimeout(blackBoxUiState.pendingTimer);
+  }
+  blackBoxUiState.pendingTimer = window.setTimeout(() => {
+    blackBoxUiState.pendingTimer = null;
+    openBlackBoxOverlay();
+  }, BLACK_BOX_OPEN_DELAY * 1000);
 }
 
 function handlePointerDown(e) {
@@ -2926,7 +3049,22 @@ for (const button of menuNavButtons) {
   });
 }
 
-for (const control of [bookBackdrop, bookPanel, bookClose, ...bookViewButtons, bookNextPage, bookForm, bookMessagePage, bookNameInput, bookMessageInput]) {
+for (const control of [
+  bookBackdrop,
+  bookPanel,
+  bookClose,
+  ...bookViewButtons,
+  bookNextPage,
+  bookForm,
+  bookMessagePage,
+  bookNameInput,
+  bookMessageInput,
+  blackBoxBackdrop,
+  blackBoxPanel,
+  blackBoxClose,
+  blackBoxOpen,
+  blackBoxBack
+]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
@@ -2952,6 +3090,30 @@ bookClose?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   closeBookOverlay();
+});
+
+blackBoxBackdrop?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBlackBoxOverlay();
+});
+
+blackBoxClose?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBlackBoxOverlay();
+});
+
+blackBoxOpen?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setBlackBoxView('reveal');
+});
+
+blackBoxBack?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setBlackBoxView('intro');
 });
 
 for (const button of bookViewButtons) {
@@ -3443,6 +3605,8 @@ function updatePlayer(dt) {
 }
 
 function updateClouds(dt) {
+  if (FREEZE_CLOUD_DRIFT_FOR_TEST) return;
+
   for (const cloud of clouds.children) {
     const axis = new THREE.Vector3().crossVectors(WORLD_UP, cloud.userData.direction).normalize();
     if (axis.lengthSq() > 0.0001) {
@@ -3473,6 +3637,11 @@ function updateClouds(dt) {
   for (const halo of sanctuaryAnimatedHalos) {
     halo.rotation.z += dt * halo.userData.spin;
   }
+}
+
+function updateBlackBox(dt) {
+  blackBoxUiState.orbitTime += dt;
+  placeBlackBoxLandmark(blackBoxUiState.orbitTime);
 }
 
 function updateCamera(dt) {
@@ -3657,11 +3826,15 @@ function tick() {
   const previousPos = state.pos.clone();
   updateColorCycle();
   updateThemeSystem(dt);
-  if (!bookUiState.open) {
+  const gameplayPaused = bookUiState.open || blackBoxUiState.open;
+  if (!gameplayPaused) {
     updatePlayer(dt);
+    updateBlackBox(dt);
     checkThemeTriggerCollision(previousPos, state.pos);
     updateClouds(dt);
     updateCamera(dt);
+  } else {
+    blackBoxLandmark.updateMatrixWorld(true);
   }
   updateInvertedSkyWash();
   updateThemeFlash(dt);
