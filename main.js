@@ -48,10 +48,10 @@ bgm.preload = 'auto';
 bgm.playsInline = true;
 bgm.crossOrigin = 'anonymous';
 const BGM_BASE_VOLUME = 0.42;
-const THEME_DUCK_VOLUME = 0.08;
-const THEME_DUCK_HOLD = 0.07;
-const THEME_DUCK_DOWN_RATE = 28;
-const THEME_DUCK_UP_RATE = 5.5;
+const THEME_DUCK_VOLUME = 0.025;
+const THEME_DUCK_HOLD = 0.12;
+const THEME_DUCK_DOWN_RATE = 34;
+const THEME_DUCK_UP_RATE = 2.15;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
 let bgmLastAttemptAt = 0;
@@ -1821,6 +1821,7 @@ const stickArea = document.getElementById('stick-area');
 const stickHandle = document.getElementById('stick-handle');
 const skyThemeWash = document.getElementById('sky-theme-wash');
 const themeFlash = document.getElementById('theme-flash');
+const themeFlashRing = document.getElementById('theme-flash-ring');
 const viewportMeta = document.querySelector('meta[name="viewport"]');
 const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
@@ -1909,9 +1910,20 @@ function isInsideThemeTrigger(point) {
   return false;
 }
 
-function startThemeFlash() {
+function startThemeFlash(contactPoint) {
   themeState.flashActive = true;
   themeState.flashTime = 0;
+  if (contactPoint) {
+    themeState.flashWorldPoint.copy(contactPoint);
+    themeProjected.copy(contactPoint).project(camera);
+    themeFlashScreen.set(
+      (themeProjected.x * 0.5 + 0.5) * window.innerWidth,
+      (-themeProjected.y * 0.5 + 0.5) * window.innerHeight
+    );
+  } else {
+    themeFlashScreen.set(window.innerWidth * 0.5, window.innerHeight * 0.5);
+  }
+  themeState.flashScreenPoint.copy(themeFlashScreen);
 }
 
 function toggleWorldInversion(contactPoint) {
@@ -1978,6 +1990,10 @@ function updateThemeFlash(dt) {
       themeFlash.style.opacity = '0';
       themeFlash.style.background = 'rgba(0,0,0,0)';
     }
+    if (themeFlashRing) {
+      themeFlashRing.style.opacity = '0';
+      themeFlashRing.style.transform = 'translate(-50%, -50%) scale(0.15)';
+    }
     return;
   }
 
@@ -1987,13 +2003,25 @@ function updateThemeFlash(dt) {
     themeState.flashActive = false;
     themeFlash.style.opacity = '0';
     themeFlash.style.background = 'rgba(0,0,0,0)';
+    if (themeFlashRing) {
+      themeFlashRing.style.opacity = '0';
+      themeFlashRing.style.transform = 'translate(-50%, -50%) scale(0.15)';
+    }
     return;
   }
 
-  const veilOpacity = Math.max(0, 0.11 * (1 - progress * 0.92));
+  const veilOpacity = Math.max(0, 0.08 * (1 - progress * 0.88));
+  const ringOpacity = Math.max(0, 0.9 * (1 - progress * 0.94));
+  const ringScale = THREE.MathUtils.lerp(0.12, 20.0, progress);
 
   themeFlash.style.opacity = '1';
   themeFlash.style.background = `rgba(0, 0, 0, ${veilOpacity.toFixed(3)})`;
+  themeFlash.style.setProperty('--flash-x', `${themeState.flashScreenPoint.x.toFixed(1)}px`);
+  themeFlash.style.setProperty('--flash-y', `${themeState.flashScreenPoint.y.toFixed(1)}px`);
+  if (themeFlashRing) {
+    themeFlashRing.style.opacity = ringOpacity.toFixed(3);
+    themeFlashRing.style.transform = `translate(-50%, -50%) scale(${ringScale.toFixed(3)})`;
+  }
 }
 
 function updateInvertedSkyWash() {

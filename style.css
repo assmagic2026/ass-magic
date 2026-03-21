@@ -30,6 +30,21 @@ html, body {
   background: rgba(0,0,0,0);
   mix-blend-mode: normal;
   will-change: opacity, background;
+  --flash-x: 50vw;
+  --flash-y: 50vh;
+}
+#theme-flash-ring {
+  position: absolute;
+  left: var(--flash-x);
+  top: var(--flash-y);
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.92);
+  transform: translate(-50%, -50%) scale(0.15);
+  transform-origin: center;
+  opacity: 0;
+  will-change: transform, opacity;
 }
 #sky-theme-wash {
   position: fixed;
