@@ -2062,6 +2062,7 @@ const blackBoxBackdrop = document.getElementById('black-box-backdrop');
 const blackBoxPanel = document.getElementById('black-box-panel');
 const blackBoxClose = document.getElementById('black-box-close');
 const blackBoxOpen = document.getElementById('black-box-open');
+const blackBoxIgnore = document.getElementById('black-box-ignore');
 const blackBoxBack = document.getElementById('black-box-back');
 const blackBoxViewIntro = document.getElementById('black-box-view-intro');
 const blackBoxViewReveal = document.getElementById('black-box-view-reveal');
@@ -3049,6 +3050,7 @@ for (const control of [
   blackBoxPanel,
   blackBoxClose,
   blackBoxOpen,
+  blackBoxIgnore,
   blackBoxBack
 ]) {
   if (!control) continue;
@@ -3094,6 +3096,12 @@ blackBoxOpen?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   setBlackBoxView('reveal');
+});
+
+blackBoxIgnore?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBlackBoxOverlay();
 });
 
 blackBoxBack?.addEventListener('click', (e) => {
