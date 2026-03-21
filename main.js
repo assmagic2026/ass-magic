@@ -1993,7 +1993,7 @@ registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
 });
 placeBlackBoxLandmark();
 scene.add(blackBoxLandmark);
-registerThemeTriggerFromObject(blackBoxLandmark, 1.18, 2.6, {
+registerThemeTriggerFromObject(blackBoxLandmark, 1.6, 4.2, {
   tag: 'black-box',
   onTrigger: (contactPoint) => handleBlackBoxTrigger(contactPoint)
 });
