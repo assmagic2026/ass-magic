@@ -52,6 +52,7 @@ themeChangeSfx.preload = 'auto';
 themeChangeSfx.playsInline = true;
 themeChangeSfx.crossOrigin = 'anonymous';
 themeChangeSfx.volume = 0.78;
+let themeChangeSfxPrimed = false;
 const BGM_BASE_VOLUME = 0.42;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
@@ -147,9 +148,37 @@ function ensureBgm() {
 }
 
 function startBgmFromGesture() {
+  primeThemeChangeSfx();
   if (!bgm.paused || bgmPending) return;
   bgm.muted = false;
   playCurrentTrack();
+}
+
+function primeThemeChangeSfx() {
+  if (themeChangeSfxPrimed) return;
+  themeChangeSfxPrimed = true;
+  const targetVolume = themeChangeSfx.volume;
+  themeChangeSfx.volume = 0;
+  try {
+    const playResult = themeChangeSfx.play();
+    if (playResult && typeof playResult.then === 'function') {
+      playResult.then(() => {
+        themeChangeSfx.pause();
+        themeChangeSfx.currentTime = 0;
+        themeChangeSfx.volume = targetVolume;
+      }).catch(() => {
+        themeChangeSfx.volume = targetVolume;
+        themeChangeSfxPrimed = false;
+      });
+    } else {
+      themeChangeSfx.pause();
+      themeChangeSfx.currentTime = 0;
+      themeChangeSfx.volume = targetVolume;
+    }
+  } catch (error) {
+    themeChangeSfx.volume = targetVolume;
+    themeChangeSfxPrimed = false;
+  }
 }
 
 function playThemeChangeSfx() {
@@ -1821,6 +1850,7 @@ const stickArea = document.getElementById('stick-area');
 const stickHandle = document.getElementById('stick-handle');
 const skyThemeWash = document.getElementById('sky-theme-wash');
 const themeFlash = document.getElementById('theme-flash');
+const themeFlashRing = document.getElementById('theme-flash-ring');
 const viewportMeta = document.querySelector('meta[name="viewport"]');
 const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
@@ -1926,11 +1956,11 @@ function startThemeFlash(worldPoint) {
 
 function toggleWorldInversion(contactPoint) {
   if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
+  playThemeChangeSfx();
   themeState.inverted = !themeState.inverted;
   themeState.cooldown = THEME_TRIGGER_COOLDOWN;
   themeState.clearRequired = true;
   applyWorldInversion();
-  playThemeChangeSfx();
   startThemeFlash(contactPoint);
 }
 
@@ -1986,8 +2016,10 @@ function updateThemeFlash(dt) {
   if (!themeState.flashActive) {
     if (themeFlash.style.opacity !== '0') {
       themeFlash.style.opacity = '0';
-      themeFlash.style.background = 'none';
-      themeFlash.style.transform = 'scale(1)';
+      themeFlash.style.background = 'rgba(0,0,0,0)';
+    }
+    if (themeFlashRing) {
+      themeFlashRing.style.opacity = '0';
     }
     return;
   }
@@ -1997,29 +2029,39 @@ function updateThemeFlash(dt) {
   if (progress >= 1) {
     themeState.flashActive = false;
     themeFlash.style.opacity = '0';
-    themeFlash.style.background = 'none';
-    themeFlash.style.transform = 'scale(1)';
+    themeFlash.style.background = 'rgba(0,0,0,0)';
+    if (themeFlashRing) {
+      themeFlashRing.style.opacity = '0';
+    }
     return;
   }
 
   const x = themeState.flashScreenPoint.x;
   const y = themeState.flashScreenPoint.y;
-
-  const eased = 1 - Math.pow(1 - progress, 2);
-  const radius = 150 + eased * Math.max(window.innerWidth, window.innerHeight) * 1.18;
-  const ringInner = radius * 0.5;
-  const ringMid = radius * 0.72;
-  const ringOuter = radius * 0.94;
-  const tailOuter = radius * 1.12;
-  const ringAlpha = Math.max(0, 0.88 * (1 - progress * 0.76));
-  const tailAlpha = Math.max(0, 0.26 * (1 - progress * 0.9));
+  const eased = 1 - Math.pow(1 - progress, 2.15);
+  const maxCornerDistance = Math.max(
+    Math.hypot(x, y),
+    Math.hypot(window.innerWidth - x, y),
+    Math.hypot(x, window.innerHeight - y),
+    Math.hypot(window.innerWidth - x, window.innerHeight - y)
+  );
+  const radius = 120 + eased * (maxCornerDistance + 200);
+  const thickness = Math.max(30, radius * (0.22 - progress * 0.06));
+  const ringOpacity = Math.max(0, 0.86 * (1 - progress * 0.78));
+  const veilOpacity = Math.max(0, 0.12 * (1 - progress * 0.9));
 
   themeFlash.style.opacity = '1';
-  themeFlash.style.transform = `scale(${(1 + 0.016 * (1 - progress)).toFixed(4)})`;
-  themeFlash.style.background = [
-    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0) ${ringInner.toFixed(1)}px, rgba(0,0,0,${ringAlpha.toFixed(3)}) ${ringMid.toFixed(1)}px, rgba(0,0,0,${(ringAlpha * 0.86).toFixed(3)}) ${ringOuter.toFixed(1)}px, rgba(0,0,0,0) ${tailOuter.toFixed(1)}px)`,
-    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0) ${(ringOuter * 0.96).toFixed(1)}px, rgba(0,0,0,${tailAlpha.toFixed(3)}) ${tailOuter.toFixed(1)}px, rgba(0,0,0,0) ${(tailOuter * 1.22).toFixed(1)}px)`
-  ].join(', ');
+  themeFlash.style.background = `rgba(0, 0, 0, ${veilOpacity.toFixed(3)})`;
+  if (!themeFlashRing) return;
+  themeFlashRing.style.left = `${x.toFixed(1)}px`;
+  themeFlashRing.style.top = `${y.toFixed(1)}px`;
+  themeFlashRing.style.width = `${(radius * 2).toFixed(1)}px`;
+  themeFlashRing.style.height = `${(radius * 2).toFixed(1)}px`;
+  themeFlashRing.style.borderWidth = `${thickness.toFixed(1)}px`;
+  themeFlashRing.style.borderColor = `rgba(0, 0, 0, ${ringOpacity.toFixed(3)})`;
+  themeFlashRing.style.boxShadow = `0 0 ${Math.max(18, thickness * 0.75).toFixed(1)}px rgba(0, 0, 0, ${(ringOpacity * 0.22).toFixed(3)})`;
+  themeFlashRing.style.opacity = '1';
+  themeFlashRing.style.transform = 'translate(-50%, -50%)';
 }
 
 function updateInvertedSkyWash() {
