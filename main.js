@@ -47,13 +47,11 @@ const bgm = document.getElementById('bgm-audio') || new Audio();
 bgm.preload = 'auto';
 bgm.playsInline = true;
 bgm.crossOrigin = 'anonymous';
-const themeChangeSfx = new Audio(encodeURI('./change3.mp3'));
-themeChangeSfx.preload = 'auto';
-themeChangeSfx.playsInline = true;
-themeChangeSfx.crossOrigin = 'anonymous';
-themeChangeSfx.volume = 0.78;
-let themeChangeSfxPrimed = false;
 const BGM_BASE_VOLUME = 0.42;
+const THEME_DUCK_VOLUME = 0.08;
+const THEME_DUCK_HOLD = 0.07;
+const THEME_DUCK_DOWN_RATE = 28;
+const THEME_DUCK_UP_RATE = 5.5;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
 let bgmLastAttemptAt = 0;
@@ -62,6 +60,7 @@ let lastLyricsCurrent = '';
 let lyricsVisible = false;
 let lyricsEnabled = true;
 let lastLyricsPanelY = null;
+let themeDuckTimer = 0;
 
 function syncTrackUi() {
   const track = playlist[currentTrackIndex];
@@ -153,29 +152,19 @@ function startBgmFromGesture() {
   playCurrentTrack();
 }
 
-function primeThemeChangeSfx() {
-  try {
-    if (themeChangeSfxPrimed) return;
-    themeChangeSfxPrimed = true;
-    themeChangeSfx.load();
-  } catch (error) {
-    themeChangeSfxPrimed = false;
-  }
+function triggerThemeDuck() {
+  themeDuckTimer = THEME_DUCK_HOLD;
 }
 
-function playThemeChangeSfx() {
-  try {
-    themeChangeSfx.pause();
-    themeChangeSfx.currentTime = 0;
-    const playResult = themeChangeSfx.play();
-    if (playResult && typeof playResult.catch === 'function') {
-      playResult.catch((error) => {
-        console.warn('Theme change SFX playback failed:', error);
-      });
-    }
-  } catch (error) {
-    console.warn('Theme change SFX playback failed:', error);
+function updateThemeDuck(dt) {
+  if (themeDuckTimer > 0) {
+    themeDuckTimer = Math.max(0, themeDuckTimer - dt);
   }
+
+  const targetVolume = themeDuckTimer > 0 ? THEME_DUCK_VOLUME : BGM_BASE_VOLUME;
+  const response = targetVolume < bgm.volume ? THEME_DUCK_DOWN_RATE : THEME_DUCK_UP_RATE;
+  const blend = 1 - Math.exp(-response * dt);
+  bgm.volume = THREE.MathUtils.lerp(bgm.volume, targetVolume, blend);
 }
 
 function runTrackControlAction(action) {
@@ -1927,8 +1916,7 @@ function startThemeFlash() {
 
 function toggleWorldInversion(contactPoint) {
   if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
-  primeThemeChangeSfx();
-  playThemeChangeSfx();
+  triggerThemeDuck();
   themeState.inverted = !themeState.inverted;
   themeState.cooldown = THEME_TRIGGER_COOLDOWN;
   themeState.clearRequired = true;
@@ -3431,6 +3419,7 @@ function tick() {
   }
   updateInvertedSkyWash();
   updateThemeFlash(dt);
+  updateThemeDuck(dt);
   updateTrackVisualizer();
   updateLyricsLayout();
   updateLyricsUi();
