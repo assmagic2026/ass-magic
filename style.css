@@ -892,7 +892,7 @@ html, body {
   left: 18px;
   top: 304px;
   width: 220px;
-  max-height: min(56vh, 460px);
+  max-height: min(68vh, 560px);
   opacity: 0;
   padding: 0;
   overflow-y: auto;
@@ -901,9 +901,13 @@ html, body {
   transition: opacity 180ms ease;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 #lyrics-full-panel.is-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 #lyrics-full-panel::-webkit-scrollbar {
   display: none;
@@ -911,7 +915,7 @@ html, body {
 #lyrics-full-text {
   color: rgba(244, 248, 255, 0.72);
   font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', 'Times New Roman', serif;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
   letter-spacing: 0.02em;
   white-space: pre-line;
@@ -1104,11 +1108,11 @@ html, body {
   }
   #lyrics-full-panel {
     left: 10px;
-    width: 170px;
-    max-height: min(36vh, 280px);
+    width: 186px;
+    max-height: min(52vh, 420px);
   }
   #lyrics-full-text {
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1.5;
   }
   #info {

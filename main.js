@@ -3513,11 +3513,14 @@ function updateLyricsLayout() {
 
   if (lyricsFullPanel && trackControls) {
     const controlsRect = trackControls.getBoundingClientRect();
-    const fullTop = Math.min(controlsRect.bottom + 10, window.innerHeight - 140);
+    const fullTop = Math.min(controlsRect.bottom + 10, window.innerHeight - 220);
+    const footerClearance = window.innerWidth <= 860 ? 44 : 56;
+    const availableHeight = THREE.MathUtils.clamp(window.innerHeight - fullTop - footerClearance, 180, window.innerWidth <= 860 ? 420 : 560);
     if (lastLyricsFullTop === null || Math.abs(fullTop - lastLyricsFullTop) > 1) {
       lyricsFullPanel.style.top = `${fullTop.toFixed(1)}px`;
       lastLyricsFullTop = fullTop;
     }
+    lyricsFullPanel.style.maxHeight = `${availableHeight.toFixed(1)}px`;
   }
 }
 
