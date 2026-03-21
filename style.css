@@ -428,6 +428,30 @@ html, body {
   margin: 0 0 12px;
   color: rgba(226, 236, 247, 0.76);
 }
+.menu-link-card {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 14px 15px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: #eef6ff;
+  text-decoration: none;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.menu-link-label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(210, 227, 244, 0.58);
+}
+.menu-link-value {
+  font-family: 'Futura Medium', 'Futura', 'Avenir Next', 'Helvetica Neue', sans-serif;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  color: #fbfdff;
+}
 .menu-card-list {
   display: grid;
   gap: 10px;
