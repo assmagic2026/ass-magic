@@ -39,7 +39,10 @@ const playlist = playlistData.map((track) => ({
         text: line.text ?? ''
       }))
       .sort((a, b) => a.time - b.time)
-    : []
+    : [],
+  lyricsPath: track.lyricsPath ?? (typeof track.src === 'string' ? track.src.replace(/\/[^/]+\.mp3$/i, '/lyrics.txt') : null),
+  fullLyrics: typeof track.lyricsText === 'string' ? track.lyricsText.trim() : '',
+  fullLyricsPromise: null
 }));
 let currentTrackIndex = 0;
 let randomTrackQueue = [];
@@ -61,9 +64,12 @@ let bgmPending = false;
 let bgmLastAttemptAt = 0;
 let lastTrackControlActionAt = 0;
 let lastLyricsCurrent = '';
+let lastLyricsFull = '';
 let lyricsVisible = false;
+let lyricsFullVisible = false;
 let lyricsEnabled = true;
 let lastLyricsPanelY = null;
+let lastLyricsFullTop = null;
 let themeDuckTimer = 0;
 let themeFilterTimer = 0;
 let bgmOutputVolume = BGM_BASE_VOLUME;
@@ -179,6 +185,38 @@ function refreshLyricsToggle() {
   lyricsToggle.setAttribute('aria-pressed', lyricsEnabled ? 'true' : 'false');
 }
 
+function normalizeFullLyricsText(value) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/\r\n?/g, '\n').trim();
+}
+
+function ensureTrackFullLyrics(track) {
+  if (!track || Array.isArray(track.lyrics) && track.lyrics.length > 0) return Promise.resolve(track?.fullLyrics ?? '');
+  if (typeof track.fullLyrics === 'string' && track.fullLyrics.length > 0) return Promise.resolve(track.fullLyrics);
+  if (!track.lyricsPath) return Promise.resolve('');
+  if (track.fullLyricsPromise) return track.fullLyricsPromise;
+
+  track.fullLyricsPromise = fetch(encodeURI(track.lyricsPath))
+    .then((response) => {
+      if (!response.ok) return '';
+      return response.text();
+    })
+    .then((text) => {
+      track.fullLyrics = normalizeFullLyricsText(text);
+      return track.fullLyrics;
+    })
+    .catch(() => {
+      track.fullLyrics = '';
+      return '';
+    })
+    .finally(() => {
+      track.fullLyricsPromise = null;
+      if (playlist[currentTrackIndex] === track) updateLyricsUi();
+    });
+
+  return track.fullLyricsPromise;
+}
+
 function playCurrentTrack() {
   if (bgmPending) return;
   const now = performance.now();
@@ -220,6 +258,7 @@ function loadTrack(index, autoplay = false) {
   syncTrackUi();
   setRecordSpinning(false);
   refreshTrackControls();
+  ensureTrackFullLyrics(track);
   updateLyricsUi();
   if (autoplay) playCurrentTrack();
 }
@@ -1924,18 +1963,19 @@ const themeFlashRing = document.getElementById('theme-flash-ring');
 const viewportMeta = document.querySelector('meta[name="viewport"]');
 const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
+const trackControls = document.getElementById('track-controls');
 const trackToggle = document.getElementById('track-toggle');
 const trackNext = document.getElementById('track-next');
 const lyricsToggle = document.getElementById('lyrics-toggle');
 const lyricsPanel = document.getElementById('lyrics-panel');
 const lyricsCurrent = document.getElementById('lyrics-current');
+const lyricsFullPanel = document.getElementById('lyrics-full-panel');
+const lyricsFullText = document.getElementById('lyrics-full-text');
 const menuToggle = document.getElementById('menu-toggle');
 const siteMenu = document.getElementById('site-menu');
 const siteMenuBackdrop = document.getElementById('site-menu-backdrop');
 const menuNavButtons = Array.from(document.querySelectorAll('.menu-nav-btn'));
 const menuPages = Array.from(document.querySelectorAll('.menu-page'));
-const messageForm = document.getElementById('message-form');
-const messageNote = document.getElementById('message-note');
 const bookOverlay = document.getElementById('book-overlay');
 const bookBackdrop = document.getElementById('book-backdrop');
 const bookPanel = document.getElementById('book-panel');
@@ -2855,13 +2895,6 @@ for (const button of menuNavButtons) {
   });
 }
 
-messageForm?.addEventListener('submit', (e) => {
-  e.preventDefault();
-  if (messageNote) {
-    messageNote.textContent = '送信先の接続はこれから追加できます。今は画面だけ先に用意してあります。';
-  }
-});
-
 for (const control of [bookBackdrop, bookPanel, bookClose, ...bookViewButtons, bookNextPage, bookForm, bookMessagePage, bookNameInput, bookMessageInput]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
@@ -3468,16 +3501,29 @@ function updateLyricsLayout() {
     lyricsPanel.style.top = `${midpointY.toFixed(1)}px`;
     lastLyricsPanelY = midpointY;
   }
+
+  if (lyricsFullPanel && trackControls) {
+    const controlsRect = trackControls.getBoundingClientRect();
+    const fullTop = Math.min(controlsRect.bottom + 10, window.innerHeight - 140);
+    if (lastLyricsFullTop === null || Math.abs(fullTop - lastLyricsFullTop) > 1) {
+      lyricsFullPanel.style.top = `${fullTop.toFixed(1)}px`;
+      lastLyricsFullTop = fullTop;
+    }
+  }
 }
 
 function updateLyricsUi() {
-  if (!lyricsPanel || !lyricsCurrent) return;
+  if (!lyricsPanel || !lyricsCurrent || !lyricsFullPanel || !lyricsFullText) return;
 
   const track = playlist[currentTrackIndex];
   const lyrics = track?.lyrics ?? [];
-  const shouldShow = lyricsEnabled && lyrics.length > 0 && !bgm.paused;
+  const fullLyrics = normalizeFullLyricsText(track?.fullLyrics ?? '');
+  const hasTimedLyrics = lyrics.length > 0;
+  const hasFullLyrics = fullLyrics.length > 0;
+  const shouldShowTimed = lyricsEnabled && hasTimedLyrics && !bgm.paused;
+  const shouldShowFull = lyricsEnabled && !hasTimedLyrics && hasFullLyrics && !bgm.paused;
 
-  if (!shouldShow) {
+  if (!shouldShowTimed) {
     if (lyricsVisible) {
       lyricsPanel.classList.remove('is-visible', 'is-idle');
       lyricsPanel.setAttribute('aria-hidden', 'true');
@@ -3485,27 +3531,56 @@ function updateLyricsUi() {
       lastLyricsCurrent = '';
       lyricsVisible = false;
     }
+  }
+
+  if (!shouldShowFull) {
+    if (lyricsFullVisible) {
+      lyricsFullPanel.classList.remove('is-visible');
+      lyricsFullPanel.setAttribute('aria-hidden', 'true');
+      lyricsFullText.textContent = '';
+      lastLyricsFull = '';
+      lyricsFullVisible = false;
+    }
+  }
+
+  if (!shouldShowTimed && !shouldShowFull) {
     return;
   }
 
-  let currentIndex = -1;
-  for (let i = 0; i < lyrics.length; i++) {
-    if (lyrics[i].time <= bgm.currentTime + 0.02) currentIndex = i;
-    else break;
+  if (shouldShowFull) {
+    if (fullLyrics !== lastLyricsFull) {
+      lyricsFullText.textContent = fullLyrics;
+      lastLyricsFull = fullLyrics;
+    }
+    if (!lyricsFullVisible) {
+      lyricsFullPanel.classList.add('is-visible');
+      lyricsFullPanel.setAttribute('aria-hidden', 'false');
+      lyricsFullVisible = true;
+    }
+  } else if (track && !hasTimedLyrics && !track.fullLyricsPromise) {
+    ensureTrackFullLyrics(track);
   }
 
-  const currentText = currentIndex >= 0 ? lyrics[currentIndex].text : '';
+  if (shouldShowTimed) {
+    let currentIndex = -1;
+    for (let i = 0; i < lyrics.length; i++) {
+      if (lyrics[i].time <= bgm.currentTime + 0.02) currentIndex = i;
+      else break;
+    }
 
-  if (currentText !== lastLyricsCurrent) {
-    lyricsCurrent.textContent = currentText || '\u00a0';
-    lastLyricsCurrent = currentText;
-  }
+    const currentText = currentIndex >= 0 ? lyrics[currentIndex].text : '';
 
-  lyricsPanel.classList.toggle('is-idle', !currentText);
-  if (!lyricsVisible) {
-    lyricsPanel.classList.add('is-visible');
-    lyricsPanel.setAttribute('aria-hidden', 'false');
-    lyricsVisible = true;
+    if (currentText !== lastLyricsCurrent) {
+      lyricsCurrent.textContent = currentText || '\u00a0';
+      lastLyricsCurrent = currentText;
+    }
+
+    lyricsPanel.classList.toggle('is-idle', !currentText);
+    if (!lyricsVisible) {
+      lyricsPanel.classList.add('is-visible');
+      lyricsPanel.setAttribute('aria-hidden', 'false');
+      lyricsVisible = true;
+    }
   }
 }
 
@@ -3516,6 +3591,7 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
   lastLyricsPanelY = null;
+  lastLyricsFullTop = null;
   updateLyricsLayout();
   if (bookUiState.open && bookUiState.currentView === 'read') {
     renderBookReadPage(bookUiState.lastMessages);
