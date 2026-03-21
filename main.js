@@ -358,7 +358,7 @@ const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
 const BLACK_BOX_ALTITUDE = 1.8;
 const BLACK_BOX_GROUND_ALTITUDE = 0.96;
 const BLACK_BOX_OPEN_DELAY = 0.22;
-const BLACK_BOX_LOOKAHEAD_SECONDS = 2.0;
+const BLACK_BOX_LOOKAHEAD_SECONDS = 20.0;
 const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 100;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
@@ -1874,7 +1874,8 @@ const blackBoxUiState = {
   groundedDirection: new THREE.Vector3(),
   groundedForward: new THREE.Vector3(),
   lastTriggerPoint: new THREE.Vector3(),
-  lastTriggerAngle: 0
+  lastTriggerAngle: 0,
+  openedOnce: false
 };
 
 const giantBook = createGiantBookLandmark();
@@ -2176,6 +2177,7 @@ const bookStatus = document.getElementById('book-status');
 const blackBoxOverlay = document.getElementById('black-box-overlay');
 const blackBoxBackdrop = document.getElementById('black-box-backdrop');
 const blackBoxPanel = document.getElementById('black-box-panel');
+const blackBoxTitle = document.getElementById('black-box-title');
 const blackBoxClose = document.getElementById('black-box-close');
 const blackBoxOpen = document.getElementById('black-box-open');
 const blackBoxIgnore = document.getElementById('black-box-ignore');
@@ -2900,6 +2902,9 @@ function closeBookOverlay() {
 function openBlackBoxOverlay() {
   closeBookOverlay();
   setBlackBoxView('intro');
+  if (blackBoxTitle) {
+    blackBoxTitle.style.display = blackBoxUiState.openedOnce ? 'none' : '';
+  }
   setBlackBoxOverlayOpen(true);
 }
 
@@ -3227,7 +3232,13 @@ blackBoxOpen?.addEventListener('click', (e) => {
       : blackBoxLandmark.position;
     placeGroundedBlackBox(groundedSource, getBlackBoxForwardFromAngle(blackBoxUiState.lastTriggerAngle));
   }
-  setBlackBoxRevealImage(blackBoxUiState.revealCount);
+  const repeatEncounter = blackBoxUiState.openedOnce;
+  const nextImageIndex = repeatEncounter ? 1 : 0;
+  setBlackBoxRevealImage(nextImageIndex);
+  if (blackBoxCaption) {
+    blackBoxCaption.textContent = repeatEncounter ? 'うーん、やっぱりかわいい。' : 'かわいいのがいた。';
+  }
+  blackBoxUiState.openedOnce = true;
   blackBoxUiState.revealCount = Math.min(blackBoxUiState.revealCount + 1, BLACK_BOX_IMAGE_SET.length - 1);
   setBlackBoxView('reveal');
 });
