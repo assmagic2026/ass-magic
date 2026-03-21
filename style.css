@@ -522,13 +522,8 @@ html, body {
   z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-}
-#book-kicker {
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  color: rgba(75, 49, 24, 0.56);
 }
 #book-close {
   min-width: 92px;
