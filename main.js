@@ -1,5 +1,6 @@
 import * as THREE from './three.module.js';
 import { playlist as playlistData } from './playlist.js';
+import { supabaseConfig } from './supabase-config.js';
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({
@@ -153,6 +154,7 @@ const GIANT_BOOK_ALTITUDE = 0.04;
 const GIANT_BOOK_OPEN_DELAY = 0.24;
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_MESSAGE_LIMIT = 12;
+const BOOK_MESSAGE_TIMEOUT_MS = 9000;
 const CAT_PREVIEW_HEIGHT = 4.6;
 const CAT_PREVIEW_ALTITUDE = 0.18;
 const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
@@ -1609,7 +1611,8 @@ const bookUiState = {
   lastMessages: [],
   currentView: 'read',
   pageIndex: 0,
-  readPages: []
+  readPages: [],
+  backend: 'local'
 };
 
 const giantBook = createGiantBookLandmark();
@@ -2100,6 +2103,72 @@ function cloneMessages(messages) {
   return messages.map((entry) => ({ ...entry }));
 }
 
+function isSupabaseConfigured() {
+  return Boolean(
+    typeof supabaseConfig?.url === 'string' &&
+    supabaseConfig.url.trim() &&
+    typeof supabaseConfig?.anonKey === 'string' &&
+    supabaseConfig.anonKey.trim()
+  );
+}
+
+function getSupabaseTableName() {
+  return (supabaseConfig?.table || 'book_messages').trim() || 'book_messages';
+}
+
+function getSupabaseRestUrl(query = '') {
+  const baseUrl = supabaseConfig.url.replace(/\/+$/, '');
+  return `${baseUrl}/rest/v1/${encodeURIComponent(getSupabaseTableName())}${query}`;
+}
+
+function getSupabaseHeaders(prefer = '') {
+  const headers = {
+    apikey: supabaseConfig.anonKey,
+    Authorization: `Bearer ${supabaseConfig.anonKey}`,
+    'Content-Type': 'application/json'
+  };
+  if (prefer) headers.Prefer = prefer;
+  return headers;
+}
+
+async function fetchWithTimeout(resource, options = {}, timeoutMs = BOOK_MESSAGE_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(resource, {
+      ...options,
+      signal: controller.signal
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+function normalizeMessageEntry(entry) {
+  if (!entry || typeof entry.message !== 'string') return null;
+  return {
+    id: String(entry.id ?? `${Date.now()}-${Math.random()}`),
+    name: typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : 'anonymous',
+    message: entry.message,
+    createdAt: String(entry.createdAt ?? entry.created_at ?? new Date().toISOString())
+  };
+}
+
+function setBookStatusDefault() {
+  if (!bookStatus) return;
+  switch (bookUiState.backend) {
+    case 'supabase':
+      bookStatus.textContent = 'この本に書いたことばは、ほかの人にも共有されます。';
+      break;
+    case 'degraded':
+      bookStatus.textContent = '共有の記録に接続できなかったため、この端末の記録を表示しています。';
+      break;
+    default:
+      bookStatus.textContent = '今はこの端末の中だけに保存されます。Supabaseをつなぐと、みんなのメッセージを共有できます。';
+      break;
+  }
+}
+
 function formatBookMessageDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
@@ -2111,9 +2180,39 @@ function formatBookMessageDate(value) {
   });
 }
 
-async function loadMessages() {
-  if (bookUiState.lastMessages.length) {
+async function loadMessages(options = {}) {
+  const force = Boolean(options.force);
+  if (!force && bookUiState.lastMessages.length && !isSupabaseConfigured()) {
     return cloneMessages(bookUiState.lastMessages);
+  }
+
+  if (isSupabaseConfigured()) {
+    try {
+      const response = await fetchWithTimeout(
+        getSupabaseRestUrl(`?select=id,name,message,created_at&order=created_at.desc&limit=${BOOK_MESSAGE_LIMIT}`),
+        {
+          headers: getSupabaseHeaders(),
+          cache: 'no-store'
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`supabase-load-${response.status}`);
+      }
+      const payload = await response.json();
+      const messages = (Array.isArray(payload) ? payload : [])
+        .map(normalizeMessageEntry)
+        .filter(Boolean)
+        .slice(0, BOOK_MESSAGE_LIMIT);
+
+      bookUiState.backend = 'supabase';
+      bookUiState.lastMessages = messages.length ? messages : cloneMessages(BOOK_MESSAGE_SEED);
+      return cloneMessages(bookUiState.lastMessages);
+    } catch (error) {
+      console.warn('Failed to load Supabase book messages, falling back locally:', error);
+      bookUiState.backend = 'degraded';
+    }
+  } else {
+    bookUiState.backend = 'local';
   }
 
   let messages = cloneMessages(BOOK_MESSAGE_SEED);
@@ -2122,14 +2221,7 @@ async function loadMessages() {
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length) {
-        messages = parsed
-          .filter((entry) => entry && typeof entry.message === 'string')
-          .map((entry) => ({
-            id: String(entry.id ?? `${Date.now()}-${Math.random()}`),
-            name: typeof entry.name === 'string' ? entry.name : '',
-            message: entry.message,
-            createdAt: String(entry.createdAt ?? new Date().toISOString())
-          }));
+        messages = parsed.map(normalizeMessageEntry).filter(Boolean);
       }
     }
   } catch (error) {
@@ -2148,10 +2240,46 @@ async function saveMessage(payload) {
     throw new Error('empty-message');
   }
 
+  const trimmedName = (payload.name ?? '').trim() || 'anonymous';
+
+  if (isSupabaseConfigured()) {
+    try {
+      const response = await fetchWithTimeout(
+        getSupabaseRestUrl('?select=id,name,message,created_at'),
+        {
+          method: 'POST',
+          headers: getSupabaseHeaders('return=representation'),
+          body: JSON.stringify([
+            {
+              name: trimmedName,
+              message: trimmedMessage
+            }
+          ])
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`supabase-save-${response.status}`);
+      }
+      const payloadRows = await response.json();
+      const savedEntry = normalizeMessageEntry(Array.isArray(payloadRows) ? payloadRows[0] : null);
+      if (!savedEntry) {
+        throw new Error('supabase-save-empty');
+      }
+      bookUiState.backend = 'supabase';
+      bookUiState.lastMessages = await loadMessages({ force: true });
+      return savedEntry;
+    } catch (error) {
+      console.warn('Failed to save Supabase book message, falling back locally:', error);
+      bookUiState.backend = 'degraded';
+    }
+  } else {
+    bookUiState.backend = 'local';
+  }
+
   const messages = await loadMessages();
   const entry = {
     id: `book-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-    name: (payload.name ?? '').trim() || 'anonymous',
+    name: trimmedName,
     message: trimmedMessage,
     createdAt: new Date().toISOString()
   };
@@ -2314,11 +2442,9 @@ function setBookOverlayOpen(isOpen) {
 }
 
 async function openBookOverlay() {
-  const messages = await loadMessages();
+  const messages = await loadMessages({ force: true });
   bookUiState.pageIndex = 0;
-  if (bookStatus) {
-    bookStatus.textContent = '今はダミー保存ですが、あとで外部DBに差し替えやすい形にしてあります。';
-  }
+  setBookStatusDefault();
   setBookView('write');
   setBookOverlayOpen(true);
   window.setTimeout(() => {
@@ -2610,7 +2736,7 @@ bookForm?.addEventListener('submit', async (e) => {
       message
     });
     bookUiState.pageIndex = 0;
-    renderBookReadPage(await loadMessages());
+    renderBookReadPage(await loadMessages({ force: true }));
     setBookView('read');
     bookMessageInput.value = '';
     if (bookNameInput) bookNameInput.value = '';
