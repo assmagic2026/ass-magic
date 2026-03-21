@@ -355,19 +355,10 @@ const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, -1.4)
   .addScaledVector(NIGHT_AXIS_B, -0.8)
   .normalize();
-const BLACK_BOX_ALTITUDE = 9.5;
+const BLACK_BOX_ALTITUDE = 1.8;
 const BLACK_BOX_OPEN_DELAY = 0.22;
-const BLACK_BOX_ROUTE_DIR = SUN_DIRECTION.clone()
-  .addScaledVector(NIGHT_AXIS_A, 0.16)
-  .addScaledVector(NIGHT_AXIS_B, 0.52)
-  .normalize();
-const BLACK_BOX_ROUTE_AXIS_A = new THREE.Vector3()
-  .crossVectors(Math.abs(BLACK_BOX_ROUTE_DIR.y) > 0.96 ? new THREE.Vector3(1, 0, 0) : WORLD_UP, BLACK_BOX_ROUTE_DIR)
-  .normalize();
-const BLACK_BOX_ROUTE_AXIS_B = new THREE.Vector3().crossVectors(BLACK_BOX_ROUTE_DIR, BLACK_BOX_ROUTE_AXIS_A).normalize();
-const BLACK_BOX_ROUTE_SPREAD = 0.18;
-const BLACK_BOX_ROUTE_ELLIPSE = 0.58;
-const BLACK_BOX_ORBIT_SPEED = 2.1;
+const BLACK_BOX_LOOKAHEAD_SECONDS = 2.0;
+const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_MESSAGE_LIMIT = 12;
 const BOOK_MESSAGE_TIMEOUT_MS = 9000;
@@ -1856,8 +1847,7 @@ const bookUiState = {
 const blackBoxUiState = {
   open: false,
   pendingTimer: null,
-  currentView: 'intro',
-  orbitTime: 0
+  currentView: 'intro'
 };
 
 const giantBook = createGiantBookLandmark();
@@ -1870,18 +1860,14 @@ function placeGiantBookLandmark() {
   placeDirectedOnSphere(giantBook, GIANT_BOOK_DIR, towardSun, GIANT_BOOK_ALTITUDE, 0.06);
 }
 
-function placeBlackBoxLandmark(elapsed = 0) {
-  const orbitAngle = elapsed * BLACK_BOX_ORBIT_SPEED;
-  const orbitOffsetA = Math.cos(orbitAngle) * BLACK_BOX_ROUTE_SPREAD;
-  const orbitOffsetB = Math.sin(orbitAngle) * BLACK_BOX_ROUTE_SPREAD * BLACK_BOX_ROUTE_ELLIPSE;
-  const direction = BLACK_BOX_ROUTE_DIR.clone()
-    .addScaledVector(BLACK_BOX_ROUTE_AXIS_A, orbitOffsetA)
-    .addScaledVector(BLACK_BOX_ROUTE_AXIS_B, orbitOffsetB)
+function placeBlackBoxLandmark() {
+  const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
+  const lookAheadAngle = (BLACK_BOX_LOOKAHEAD_SPEED * BLACK_BOX_LOOKAHEAD_SECONDS) / startRadius;
+  const direction = startUp.clone().applyAxisAngle(startRight, lookAheadAngle).normalize();
+  const towardStart = startUp.clone()
+    .addScaledVector(direction, -startUp.dot(direction))
     .normalize();
-  const tangentForward = BLACK_BOX_ROUTE_AXIS_A.clone()
-    .multiplyScalar(-Math.sin(orbitAngle))
-    .addScaledVector(BLACK_BOX_ROUTE_AXIS_B, Math.cos(orbitAngle) * BLACK_BOX_ROUTE_ELLIPSE);
-  placeDirectedOnSphere(blackBoxLandmark, direction, tangentForward, BLACK_BOX_ALTITUDE, orbitAngle * 0.3);
+  placeDirectedOnSphere(blackBoxLandmark, direction, towardStart, BLACK_BOX_ALTITUDE, Math.PI * 0.2);
 }
 
 placeGiantBookLandmark();
@@ -1890,7 +1876,7 @@ registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
   tag: 'book',
   onTrigger: (contactPoint) => handleBookTrigger(contactPoint)
 });
-placeBlackBoxLandmark(0);
+placeBlackBoxLandmark();
 scene.add(blackBoxLandmark);
 registerThemeTriggerFromObject(blackBoxLandmark, 1.18, 2.6, {
   tag: 'black-box',
@@ -3639,11 +3625,6 @@ function updateClouds(dt) {
   }
 }
 
-function updateBlackBox(dt) {
-  blackBoxUiState.orbitTime += dt;
-  placeBlackBoxLandmark(blackBoxUiState.orbitTime);
-}
-
 function updateCamera(dt) {
   const up = state.pos.clone().normalize();
   const targetLift = THREE.MathUtils.clamp(state.visualForward.dot(up), -0.5, 0.5);
@@ -3829,7 +3810,6 @@ function tick() {
   const gameplayPaused = bookUiState.open || blackBoxUiState.open;
   if (!gameplayPaused) {
     updatePlayer(dt);
-    updateBlackBox(dt);
     checkThemeTriggerCollision(previousPos, state.pos);
     updateClouds(dt);
     updateCamera(dt);
