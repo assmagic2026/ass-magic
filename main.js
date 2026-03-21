@@ -2017,14 +2017,23 @@ function applySkyPalette(mode) {
 function applyWorldInversion() {
   canvas.style.filter = themeState.inverted ? INVERT_WORLD_FILTER : 'none';
   applySkyPalette(themeState.inverted ? 'inverted' : 'normal');
-  if (lyricsPanel) {
-    lyricsPanel.classList.toggle('is-inverted', themeState.inverted);
-    lyricsPanel.style.filter = themeState.inverted ? 'invert(1)' : 'none';
-  }
+  const lyricColor = themeState.inverted ? 'rgba(10, 10, 10, 0.94)' : 'rgba(249, 252, 255, 0.98)';
+  const lyricShadow = themeState.inverted
+    ? '0 1px 6px rgba(255,255,255,0.26), 0 6px 18px rgba(255,255,255,0.14)'
+    : '0 2px 6px rgba(0,0,0,0.34), 0 10px 24px rgba(0,0,0,0.18)';
   if (lyricsCurrent) {
-    lyricsCurrent.style.setProperty('color', 'rgba(249, 252, 255, 0.98)', 'important');
-    lyricsCurrent.style.setProperty('-webkit-text-fill-color', 'rgba(249, 252, 255, 0.98)', 'important');
-    lyricsCurrent.style.setProperty('text-shadow', '0 2px 6px rgba(0,0,0,0.34), 0 10px 24px rgba(0,0,0,0.18)', 'important');
+    lyricsCurrent.style.setProperty('color', lyricColor, 'important');
+    lyricsCurrent.style.setProperty('-webkit-text-fill-color', lyricColor, 'important');
+    lyricsCurrent.style.setProperty('text-shadow', lyricShadow, 'important');
+  }
+  if (lyricsFullText) {
+    const fullColor = themeState.inverted ? 'rgba(12, 12, 12, 0.84)' : 'rgba(244, 248, 255, 0.72)';
+    const fullShadow = themeState.inverted
+      ? '0 1px 5px rgba(255,255,255,0.22)'
+      : '0 2px 8px rgba(0,0,0,0.26)';
+    lyricsFullText.style.setProperty('color', fullColor, 'important');
+    lyricsFullText.style.setProperty('-webkit-text-fill-color', fullColor, 'important');
+    lyricsFullText.style.setProperty('text-shadow', fullShadow, 'important');
   }
 }
 
@@ -3550,6 +3559,7 @@ function updateLyricsUi() {
   if (shouldShowFull) {
     if (fullLyrics !== lastLyricsFull) {
       lyricsFullText.textContent = fullLyrics;
+      lyricsFullPanel.scrollTop = 0;
       lastLyricsFull = fullLyrics;
     }
     if (!lyricsFullVisible) {
