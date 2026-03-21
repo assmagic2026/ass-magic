@@ -3963,8 +3963,8 @@ function tick() {
   const gameplayPaused = bookUiState.open || blackBoxUiState.open;
   if (!gameplayPaused) {
     updatePlayer(dt);
-    updateBlackBox(dt);
     checkThemeTriggerCollision(previousPos, state.pos);
+    updateBlackBox(dt);
     updateClouds(dt);
     updateCamera(dt);
   } else {

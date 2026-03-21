@@ -1,212 +1,395 @@
-# Sphere Glide Prototype Spec
+# ASS MAGIC | Official Site 仕様書
 
-## 1. Overview
+## 1. サイト概要
 
-- Project name: `Glide Prototype`
-- Platform: smartphone web browser / desktop browser
-- Rendering: Three.js (`three.module.js`)
-- Purpose: a low-poly third-person gliding prototype with a spherical world, continuous forward motion, mobile touch controls, and a clear day / twilight / night mood shift
-- Asset policy: no external art assets; visuals are built from procedural geometry, flat colors, emissive materials, and a lightweight sky shader
+- サイト名: `ASS MAGIC | Official Site`
+- 公開先: GitHub Pages
+- URL: `https://assmagic2026.github.io/ass-magic/`
+- 主体験:
+  - スマホWebブラウザで動く3D飛行体験
+  - ASS MAGIC の楽曲再生と歌詞表示
+  - 楽曲リンク、X導線、簡易プロフィール導線
+  - 記録の本によるメッセージ閲覧 / 投稿
+  - 隠しイベントとしての黒い箱
 
-## 2. Runtime / Launch
+このサイトは、低ポリの球体世界を飛び続けながら、音楽・歌詞・ランドマーク探索・軽いインタラクションを一体化した作品である。
 
-- Main entry: `index.html`
-- Script: `main.js` (ES module)
-- Style: `style.css`
-- Recommended launch: local HTTP server
-  - Example: `python3 -m http.server 8000 --bind 0.0.0.0`
-- Reason: the project uses ES modules and is more reliable over `http://localhost:8000` than direct `file://` opening
+## 2. 技術構成
 
-## 3. Current Core Concept
+- 描画: `Three.js` (`three.module.js`)
+- 構成: 素の `HTML / CSS / JavaScript` 構成
+- 物理: 物理エンジンなしの独自挙動
+- 配信: GitHub Pages
+- アクセス解析: Cloudflare Web Analytics
+- メッセージ保存先:
+  - 本番: Supabase REST API
+  - フォールバック: `localStorage`
 
-- The player travels around a small low-poly planet instead of a flat map
-- The planet and the sun are fixed in world space and do not move
-- The player moves continuously along the tangent of the spherical surface
-- Vertical movement is radial:
-  - push the control downward to climb away from the planet
-  - push the control upward to descend toward the planet
-- Because the world is spherical, the player can keep moving forever without hitting a map edge
+## 3. 主要ファイル
 
-## 4. World Specification
-
-### 4.1 Planet
-
-- Shape: procedural low-poly sphere
-- Base radius: `340`
-- Terrain: procedural height variation added on top of the sphere radius
-- Surface style:
-  - checker-like color breakup
-  - hill / valley tint variation
-  - flat-shaded low-poly look
-
-### 4.2 Sky / Sun / Time-of-day Look
-
-- A fixed sun exists in the scene as a visible glowing sphere
-- Lighting uses:
-  - one strong directional light from the sun direction
-  - one very weak cool fill light from the opposite side
-  - low ambient light
-- The sky is shader-based and changes by direction relative to the fixed sun:
-  - day side: blue sky
-  - middle band: twilight / dusk zone
-  - night side: dark blue / deep navy sky
-
-### 4.3 Night Zone
-
-- The anti-sun hemisphere contains a fixed "otherworld" zone
-- Night-side scenery includes:
-  - neon towers
-  - glowing crystal shrines
-  - floating halo rings
-  - colored point-light accents
-- Visual goal: neon city + mystical alien sanctuary feel
-
-### 4.4 Atmosphere Markers
-
-- Clouds are placed around the planet at higher altitude
-- Beacon-like objects are placed around the world as distant visual anchors
-
-## 5. Camera Specification
-
-- View: third-person chase camera
-- Behavior:
-  - smoothly follows behind the player
-  - uses the local planet normal as camera up vector
-  - slightly adjusts based on speed and climb / descent direction
-- Goal: keep motion readable while wrapping around the spherical world
-
-## 6. Player Movement Specification
-
-### 6.1 Horizontal Motion
-
-- The player is always moving forward
-- Ground forward speed: `7`
-- Air forward speed: `12`
-- Minimum air cruise speed is maintained so the player does not stall easily
-- Boost and dive temporarily increase travel speed
-
-### 6.2 Vertical Motion
-
-- There is no passive "always sinking" rule anymore
-- Neutral input tends to settle vertical speed toward zero
-- Downward control input causes ascent
-- Upward control input causes descent
-- Continuous downward input allows indefinite altitude gain
-
-### 6.3 Ground / Air State
-
-- The player can contact the planet surface and travel along it
-- Pushing upward from the surface transitions into flight
-- Ground contact resets available boost charges
-
-### 6.4 Boost
-
-- The right-side button is `Boost`
-- Effect:
-  - adds forward energy
-  - does not directly lift the player upward
-- Max charges: `4`
-- Charges recover on ground contact
-
-### 6.5 Dive
-
-- A downward swipe on the right side triggers dive mode
-- Dive effect:
-  - pushes the player downward
-  - stores extra forward energy
-  - increases later glide speed
-
-## 7. Control Specification
-
-### 7.1 Mobile Controls
-
-- Right-bottom stick:
-  - horizontal: curve left / right
-  - vertical down: ascend
-  - vertical up: descend
-- The stick currently has:
-  - half-strength response compared with a previous stronger tuning
-  - smoothing / inertia so it does not snap instantly
-  - a deadzone near center
-- Left side drag:
-  - auxiliary turn / climb input
-- Right-side swipe down:
-  - dive
-- `Boost` button:
-  - forward boost
-
-### 7.2 Input Feel
-
-- Stick horizontal direction is currently reversed from the original version to match the user's requested direction
-- Stick response is intentionally smoothed for a gliding feel rather than an arcade snap
-- During turns, the player banks smoothly
-  - left turn: left wing lowers, right wing rises
-  - right turn: right wing lowers, left wing rises
-
-### 7.3 Zoom Prevention
-
-- Multi-touch zoom and accidental browser magnification are suppressed as much as possible via:
-  - viewport settings
-  - gesture prevention
-  - double-tap prevention
-  - multi-touch prevention
-
-## 8. Visual Style Specification
-
-- Low-poly geometry
-- Flat-shaded materials
-- Mostly color-based presentation instead of texture-heavy rendering
-- Emissive / neon accents used mainly in the night zone
-- Mobile-friendly rendering choices:
-  - no physics engine
-  - no heavy post-processing
-  - modest geometry counts
-  - low-cost lighting model
-
-## 9. Current Important Tuned Values
-
-- Planet radius: `340`
-- Ground speed: `7`
-- Air cruise speed: `12`
-- Minimum air speed: `9`
-- Stick scale: `0.5`
-- Boost charges: `4`
-- Camera distance base: `11`
-
-## 10. File Roles
-
-- `index.html`
-  - page shell
+- `/Users/assmagic/Desktop/飛行３/index.html`
+  - 画面全体のDOM構造
   - HUD
-  - canvas mount
-- `style.css`
-  - full-screen layout
-  - HUD placement
-  - virtual stick appearance
-  - mobile interaction restrictions
-- `main.js`
-  - world generation
-  - player movement
-  - camera
-  - touch controls
-  - day / dusk / night sky
-  - night-zone emissive scenery
-- `three.module.js`
-  - bundled Three.js runtime
+  - 音楽UI
+  - MENU
+  - 記録の本UI
+  - 黒い箱UI
+  - Cloudflare Web Analytics スニペット
+- `/Users/assmagic/Desktop/飛行３/style.css`
+  - 全体レイアウト
+  - モバイル向けUI
+  - 本UI / 黒い箱UI / 歌詞UI / フッター
+- `/Users/assmagic/Desktop/飛行３/main.js`
+  - 3Dシーン生成
+  - プレイヤー移動
+  - カメラ
+  - 接触判定
+  - 反転世界
+  - 音楽再生
+  - 歌詞表示
+  - 本のメッセージ処理
+  - 黒い箱イベント
+- `/Users/assmagic/Desktop/飛行３/playlist.js`
+  - 楽曲一覧、リンク、ジャケット、同期歌詞定義
+- `/Users/assmagic/Desktop/飛行３/supabase-config.js`
+  - Supabase 接続設定
+- `/Users/assmagic/Desktop/飛行３/supabase-book-messages.sql`
+  - Supabase テーブル / RLS 作成用 SQL
+- `/Users/assmagic/Desktop/飛行３/SUPABASE_SETUP.md`
+  - Supabase 初期設定メモ
+- `/Users/assmagic/Desktop/飛行３/SPEC.md`
+  - 本仕様書
 
-## 11. Current Limitations
+## 4. ワールド仕様
 
-- No explicit game objective, scoring, quests, or collectibles yet
-- No audio yet
-- No UI for pause, settings, or remapping
-- No save system
-- Night zone is decorative; it does not yet change gameplay systems
-- Terrain collision is only the planet surface; there are no obstacle collisions with towers / shrines / clouds
+### 4.1 球体世界
 
-## 12. Suggested Next Steps
+- 世界は1つの球体惑星で構成される
+- プレイヤーは球体表面に沿って進み続ける
+- マップ端は存在しない
+- 球体半径は大きめに設定され、長時間飛んでも周回感が出すぎないよう調整されている
 
-- Add a simple loop goal such as gates, relic collection, or route challenges
-- Give the night zone unique gameplay behavior, not only visuals
-- Add wind trails, contrails, or boost effects to improve speed readability
-- Add sound and haptics-style feedback for boost / dive / touchdown
-- Add a small in-game settings panel for sensitivity and camera tuning
+### 4.2 太陽と昼夜
+
+- 太陽は固定
+- 球体も固定
+- プレイヤーが移動することで昼側 / 夜側へ回り込む
+- 空は方向ベースのグラデーションで描画される
+  - 昼: 青空系
+  - 夕暮れ帯: 暖色寄り
+  - 夜: 暗色寄り
+
+### 4.3 地面
+
+- 低ポリ球体地形
+- 地面は多色グラデーションで着色
+- 面ごとに色の変化があり、飛行時の速度感や地表の読みやすさを支える
+- ノーマル世界では地面色をできるだけ維持する方針
+
+### 4.4 雲 / 霧 / 浮遊感
+
+- 雲、薄雲、夜霧のレイヤーが存在する
+- 現在の調整では、昼間エリアの見え方を安定させるため、雲系のドリフトは停止している
+- これにより「浮遊物がいつの間にか消えたように見える」問題を抑えている
+
+### 4.5 夜側演出
+
+- 夜側にはネオン風の構造物群がある
+- ただし現在の主軸は飛行と音楽体験であり、ゲーム的な目標物というより視覚的ランドマークの役割が強い
+
+## 5. 世界切り替え仕様
+
+### 5.1 基本ルール
+
+- 特定の3Dオブジェクトへの接触で世界が切り替わる
+- 現在有効なテーマは以下の2種
+  - `normal`
+  - `inverted`
+- 以前試作していた `monochrome` は現在無効
+
+### 5.2 切り替え対象
+
+- 建物
+- 浮遊物
+- 雲 / 薄雲 / 夜霧の一部トリガー
+- 巨大な本
+- 黒い箱
+
+### 5.3 切り替え演出
+
+- 接触位置を中心とした黒いフラッシュ系演出
+- 演出は軽量化済みで、過度に重いポストエフェクトは使用していない
+- 効果音は現在使用していない
+- 代わりに BGM の一瞬のダック処理を試したが、モバイル安定性優先で現在は控えめな扱い
+
+### 5.4 クールダウン
+
+- 世界切り替え後は一定時間、次の切り替えが発生しない
+- 連続接触で不自然に切り替わり続けることを防いでいる
+
+## 6. プレイヤー飛行仕様
+
+### 6.1 基本挙動
+
+- 常時前進
+- 球体表面に対する接線方向へ移動
+- 上下入力は球体半径方向の上下移動として扱う
+- 地面近くではソフト反発により、強くぶつからず低空飛行しやすい
+
+### 6.2 速度
+
+- デフォルト速度ロック: `40`
+- 速度ロック範囲: `12 - 120`
+- UIから縦レバーで調整
+- 加速入力時はロック速度を超えて伸びるが、解除後はロック速度へ落ち着く
+
+### 6.3 入力
+
+#### スマホ
+
+- 右下スティック
+  - 左右: カーブ
+  - 下: 上昇
+  - 上: 下降
+- スティック以外の長押し: 加速
+- `Lyric` ボタン: 歌詞表示切替
+- 音楽ボタン: 再生 / 停止、次曲
+
+#### PC補助
+
+- `Space` など一部キーボード補助入力あり
+- ただし主対象はスマホ操作
+
+### 6.4 操作チューニング
+
+- スティック左右の効きは調整済みで、以前より弱め
+- 切り返しは滑らか寄り
+- 飛行体験の気持ちよさ優先で、即応性よりも慣性と読みやすさを重視
+
+## 7. カメラ仕様
+
+- 三人称追従カメラ
+- 球体法線を基準に姿勢を保つ
+- 速度と上下移動に応じて追従角を緩やかに変える
+- スマホでも酔いにくいよう、派手すぎる揺れや過度なFOV変化は避ける
+
+## 8. プレイヤービジュアル
+
+- 現在のプレイヤーは白基調の鳥型シルエット
+- 低ポリ寄りだが、胴体や頭は少し滑らか寄り
+- 影は地面に表示し、高度感を補助
+- 反転世界でも視認性が落ちすぎないよう調整している
+
+## 9. 音楽機能
+
+### 9.1 再生仕様
+
+- 左上のジャケットから楽曲ページへ遷移可能
+- 再生 / 停止ボタン
+- 次の曲ボタン
+- 最初の曲は固定で `かかとがフランスパン`
+- 以降はランダム再生
+- レコード風の回転表示あり
+- PC Safari とスマホ Safari を考慮した再生フォールバックを入れている
+
+### 9.2 収録楽曲
+
+現在のプレイリスト:
+- かかとがフランスパン
+- Super Night
+- 人間いなくなれ
+- Onion life
+- 永遠のウツボ
+- Apoptosis
+- 心象風景と原子物理的世界構造
+- 海のFURIKAKEプラスチック
+- ゆず湯
+- GRAVITY
+- ζζζζζ
+- memento mori
+- TENGU
+- λλλλλ
+
+## 10. 歌詞表示仕様
+
+### 10.1 表示モード
+
+- `Lyric` ボタンで ON / OFF
+- 曲ごとに以下のどちらか
+  - 同期歌詞
+  - 全文歌詞
+
+### 10.2 同期歌詞
+
+- 現在、同期タイミング付きなのは `かかとがフランスパン` のみ
+- 画面中央寄りに、1行ずつ表示
+- 反転世界では歌詞色を黒系へ切り替える
+
+### 10.3 全文歌詞
+
+- タイミング未設定の曲は、左側の全文歌詞パネルに表示
+- `lyrics.txt` を各曲フォルダ内に配置
+- 長い歌詞は表示領域を広めに取り、なるべく全文が見えるよう調整
+
+## 11. MENU / サイト導線
+
+### 11.1 MENU項目
+
+- ABOUT
+- DISCOGRAPHY
+- INTERVIEW
+- GOODS
+- X
+
+### 11.2 各内容
+
+- ABOUT
+  - `ASS MAGICとは`
+  - `夫婦で活動する謎の音楽ユニット`
+- DISCOGRAPHY
+  - BIG UP! ページへ外部遷移
+- INTERVIEW
+  - `まだされてません`
+- GOODS
+  - `まだ作ってません`
+- X
+  - `https://x.com/ASSMAGIC2022`
+
+## 12. 記録の本
+
+### 12.1 ランドマーク
+
+- 昼側の物体が少ない位置に配置された巨大な本
+- スタート直後には見えにくい配置
+- 地面に刺さった特別ランドマーク
+
+### 12.2 接触時挙動
+
+- 接触時にも通常の世界切り替えルールは維持
+- その直後に本専用UIを開く
+- 本UIは即時オープン寄りに調整されている
+
+### 12.3 UI機能
+
+- `何か書き残す`
+- `読んでみる`
+- `Close`
+
+### 12.4 メッセージデータ
+
+データ構造:
+
+```json
+{
+  "id": "...",
+  "name": "...",
+  "message": "...",
+  "createdAt": "..."
+}
+```
+
+### 12.5 保存先
+
+- 優先: Supabase `book_messages` テーブル
+- フォールバック: `localStorage`
+- 実装関数:
+  - `loadMessages()`
+  - `saveMessage()`
+
+## 13. 黒い箱イベント
+
+### 13.1 基本概念
+
+- 特別イベント用の高速な黒い立方体
+- 1体のみ
+- 昼夜境界に垂直に交わる大円ルート上を移動
+- 一定高度を維持
+
+### 13.2 現在の接触チューニング
+
+- 無操作で飛行したとき、およそ20秒後付近で接触しやすいよう調整中
+- 当たり判定は大きめ
+- 接触した瞬間にイベントUIへ入りやすくするため、接触判定順序も調整済み
+
+### 13.3 イベント内容
+
+1. 黒い箱に接触
+2. 黒い箱UIが開く
+3. 選択肢
+   - `開けてみる`
+   - `ほっとく`
+4. `開けてみる`
+   - 最初は `blackbox.jpg`
+   - 2回目以降は別画像
+5. `ほっとく`
+   - 箱は再び軌道へ戻る
+
+### 13.4 表示文言
+
+- 初回系:
+  - `黒い箱を発見`
+  - `かわいいのがいた。`
+- 2回目以降:
+  - タイトル省略
+  - `うーん、やっぱりかわいい。`
+
+## 14. アクセス解析
+
+- Cloudflare Web Analytics 導入済み
+- 主にページビューや訪問数の確認が可能
+- 解析スニペットは `index.html` 末尾に直接埋め込み
+
+## 15. コピーライト / フッター
+
+- PC表示:
+  - `© 2026 ASS MAGIC. All rights reserved.`
+  - `All images, music, and text on this site are protected unless otherwise noted.`
+- スマホ表示:
+  - `© 2026 ASS MAGIC`
+- スマホでは控えめに中央最下部へ表示
+
+## 16. モバイル最適化
+
+- ピンチズーム抑止
+- ダブルタップ拡大抑止
+- accidental zoom 復帰補助
+- 描画負荷を抑えるため
+  - 低ポリ
+  - 重いポストエフェクト回避
+  - 物理エンジン未使用
+  - UIはDOMベース
+
+## 17. パフォーマンス方針
+
+- 低スペックスマホ優先
+- 3Dは色・形・配置で魅せる
+- 特別イベントは1体 / 1箇所ずつ
+- 大量の高精細モデルや重い画面効果は避ける
+- 反転世界は CSS フィルタベースで簡潔に処理
+- 雲ドリフト停止など、見た目と安定性のバランスを見て調整
+
+## 18. 既知の制約
+
+- 反転世界の色は PC / スマホで見え方差が出ることがある
+- 同期歌詞は現在1曲のみ
+- 本のメッセージ投稿は公開運用のため、将来的にはスパム対策余地あり
+- 黒い箱の接触タイミングは現在も微調整可能
+
+## 19. 更新手順
+
+ローカル更新後は以下で公開反映できる。
+
+```bash
+cd "/Users/assmagic/Desktop/飛行３"
+git add .
+git commit -m "Update site"
+git push
+```
+
+## 20. 今後拡張しやすいポイント
+
+- 楽曲ごとの同期歌詞追加
+- 本メッセージのモデレーション
+- 黒い箱以外の隠しイベント追加
+- 昼側 / 夜側のランドマーク増強
+- アクセス解析のイベント計測追加
