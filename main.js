@@ -149,7 +149,7 @@ const DAY_BLOCKS_DIR = SUN_DIRECTION.clone()
   .normalize();
 const GIANT_BOOK_LOOKAHEAD_SECONDS = 2;
 const GIANT_BOOK_LOOKAHEAD_SPEED = 40;
-const GIANT_BOOK_ALTITUDE = 0.52;
+const GIANT_BOOK_ALTITUDE = 0.04;
 const GIANT_BOOK_OPEN_DELAY = 0.24;
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_MESSAGE_LIMIT = 12;
@@ -424,86 +424,88 @@ function placeDirectedOnSphere(object, direction, forward, altitude, roll = 0) {
 
 function createGiantBookLandmark() {
   const group = new THREE.Group();
-  const buriedBaseMat = new THREE.MeshLambertMaterial({ color: 0x6f5b40, flatShading: true });
   const coverMat = new THREE.MeshLambertMaterial({
-    color: 0x4d2444,
-    emissive: 0x241118,
-    emissiveIntensity: 0.12,
+    color: 0x4f2b43,
+    emissive: 0x1f0f16,
+    emissiveIntensity: 0.1,
     flatShading: true
   });
   const pageMat = new THREE.MeshLambertMaterial({
-    color: 0xf3e7cf,
-    emissive: 0x3f301a,
-    emissiveIntensity: 0.08,
+    color: 0xf0e2c4,
+    emissive: 0x372a18,
+    emissiveIntensity: 0.07,
     flatShading: true
   });
-  const trimMat = new THREE.MeshBasicMaterial({ color: 0xffd889, transparent: true, opacity: 0.92 });
-  const glyphMat = new THREE.MeshBasicMaterial({ color: 0xf2fbff, transparent: true, opacity: 0.78 });
-
-  const buriedBase = new THREE.Mesh(new THREE.CylinderGeometry(0, 6.2, 7.4, 4), buriedBaseMat);
-  buriedBase.position.y = 2.4;
-  buriedBase.rotation.y = Math.PI * 0.25;
-  group.add(buriedBase);
-
+  const edgeMat = new THREE.MeshLambertMaterial({
+    color: 0xd6bf98,
+    emissive: 0x261b0f,
+    emissiveIntensity: 0.05,
+    flatShading: true
+  });
   const bookPivot = new THREE.Group();
-  bookPivot.position.y = 10.2;
-  bookPivot.rotation.z = -0.28;
-  bookPivot.rotation.x = -0.16;
+  bookPivot.position.y = 2.45;
+  bookPivot.rotation.z = -0.68;
+  bookPivot.rotation.x = -0.22;
+  bookPivot.rotation.y = 0.08;
   group.add(bookPivot);
 
-  const pageBlock = new THREE.Mesh(new THREE.BoxGeometry(10.2, 14.4, 3.7), pageMat);
-  pageBlock.position.set(0.1, 0, 0);
-  bookPivot.add(pageBlock);
+  const pageCore = new THREE.Mesh(new THREE.BoxGeometry(9.6, 13.8, 3.12), pageMat);
+  pageCore.position.set(0.06, 0.08, 0);
+  bookPivot.add(pageCore);
 
-  const spine = new THREE.Mesh(new THREE.BoxGeometry(1.2, 15.2, 4.5), coverMat);
-  spine.position.set(-5.2, 0, 0);
+  const pageArchTop = new THREE.Mesh(new THREE.BoxGeometry(9.0, 6.4, 1.08), pageMat);
+  pageArchTop.position.set(0.62, 2.78, 0.7);
+  pageArchTop.rotation.y = -0.16;
+  pageArchTop.rotation.z = 0.04;
+  bookPivot.add(pageArchTop);
+
+  const pageArchBottom = new THREE.Mesh(new THREE.BoxGeometry(8.8, 5.8, 1.02), pageMat);
+  pageArchBottom.position.set(0.58, -2.48, -0.62);
+  pageArchBottom.rotation.y = 0.14;
+  pageArchBottom.rotation.z = -0.03;
+  bookPivot.add(pageArchBottom);
+
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(0.92, 14.5, 2.72), coverMat);
+  spine.position.set(-4.7, -0.04, 0);
   bookPivot.add(spine);
 
-  const backCover = new THREE.Mesh(new THREE.BoxGeometry(10.8, 15.2, 0.58), coverMat);
-  backCover.position.set(0.32, 0, -2.25);
-  backCover.rotation.y = 0.17;
+  const backCover = new THREE.Mesh(new THREE.BoxGeometry(9.82, 14.72, 0.7), coverMat);
+  backCover.position.set(0.08, -0.02, -1.98);
+  backCover.rotation.y = 0.12;
+  backCover.rotation.z = 0.02;
   bookPivot.add(backCover);
 
-  const frontCover = new THREE.Mesh(new THREE.BoxGeometry(10.8, 15.2, 0.58), coverMat);
-  frontCover.position.set(0.42, 0, 2.28);
-  frontCover.rotation.y = -0.34;
+  const frontCover = new THREE.Mesh(new THREE.BoxGeometry(9.76, 14.64, 0.7), coverMat);
+  frontCover.position.set(0.18, -0.08, 2.04);
+  frontCover.rotation.y = -0.18;
+  frontCover.rotation.z = -0.02;
   bookPivot.add(frontCover);
 
-  const pageSplitLeft = new THREE.Mesh(new THREE.BoxGeometry(4.6, 13.7, 1.44), pageMat);
-  pageSplitLeft.position.set(-1.18, 0.08, -0.75);
-  pageSplitLeft.rotation.y = 0.14;
+  const pageSplitLeft = new THREE.Mesh(new THREE.BoxGeometry(4.24, 12.9, 1.2), pageMat);
+  pageSplitLeft.position.set(-1.12, 0.22, -0.7);
+  pageSplitLeft.rotation.y = 0.11;
   bookPivot.add(pageSplitLeft);
 
-  const pageSplitRight = new THREE.Mesh(new THREE.BoxGeometry(4.3, 13.6, 1.22), pageMat);
-  pageSplitRight.position.set(1.86, -0.04, 0.68);
-  pageSplitRight.rotation.y = -0.18;
+  const pageSplitRight = new THREE.Mesh(new THREE.BoxGeometry(4.12, 12.7, 1.12), pageMat);
+  pageSplitRight.position.set(1.68, -0.12, 0.56);
+  pageSplitRight.rotation.y = -0.14;
   bookPivot.add(pageSplitRight);
 
-  const bookmark = new THREE.Mesh(new THREE.BoxGeometry(0.5, 9.8, 0.18), trimMat);
-  bookmark.position.set(1.24, -3.2, 2.02);
-  bookmark.rotation.z = 0.06;
-  bookPivot.add(bookmark);
+  const foreEdge = new THREE.Mesh(new THREE.BoxGeometry(0.32, 12.2, 2.86), edgeMat);
+  foreEdge.position.set(4.44, -0.02, 0);
+  bookPivot.add(foreEdge);
 
-  const pageEdge = new THREE.Mesh(new THREE.BoxGeometry(0.22, 11.8, 3.02), trimMat);
-  pageEdge.position.set(5.08, 0, 0);
+  const topEdge = new THREE.Mesh(new THREE.BoxGeometry(8.6, 0.24, 2.92), edgeMat);
+  topEdge.position.set(0.38, 6.82, 0);
+  bookPivot.add(topEdge);
+
+  const bottomEdge = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.24, 2.9), edgeMat);
+  bottomEdge.position.set(0.34, -6.72, 0);
+  bookPivot.add(bottomEdge);
+
+  const pageEdge = new THREE.Mesh(new THREE.BoxGeometry(0.22, 11.4, 2.62), edgeMat);
+  pageEdge.position.set(4.66, 0.02, 0.08);
   bookPivot.add(pageEdge);
-
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(6.2, 0.24, 5, 18), glyphMat);
-  halo.position.y = 18.4;
-  halo.rotation.x = Math.PI * 0.5;
-  group.add(halo);
-
-  const glyph = new THREE.Mesh(new THREE.OctahedronGeometry(1.7, 0), glyphMat);
-  glyph.position.y = 18.6;
-  group.add(glyph);
-
-  const floatingShardGeo = new THREE.BoxGeometry(1.1, 2.2, 0.18);
-  for (let i = 0; i < 3; i++) {
-    const shard = new THREE.Mesh(floatingShardGeo, trimMat);
-    shard.position.set(-1.8 + i * 1.9, 14.8 + i * 1.15, -3.2 + i * 1.2);
-    shard.rotation.set(0.24 + i * 0.08, 0.2 + i * 0.1, -0.26 + i * 0.14);
-    group.add(shard);
-  }
 
   return group;
 }
@@ -1604,7 +1606,10 @@ const themeState = {
 const bookUiState = {
   open: false,
   pendingTimer: null,
-  lastMessages: []
+  lastMessages: [],
+  currentView: 'read',
+  pageIndex: 0,
+  readPages: []
 };
 
 const giantBook = createGiantBookLandmark();
@@ -1790,7 +1795,10 @@ const bookOverlay = document.getElementById('book-overlay');
 const bookBackdrop = document.getElementById('book-backdrop');
 const bookPanel = document.getElementById('book-panel');
 const bookClose = document.getElementById('book-close');
-const bookMessages = document.getElementById('book-messages');
+const bookViewButtons = Array.from(document.querySelectorAll('.book-mode-btn'));
+const bookViews = Array.from(document.querySelectorAll('.book-view'));
+const bookMessagePage = document.getElementById('book-message-page');
+const bookNextPage = document.getElementById('book-next-page');
 const bookForm = document.getElementById('book-form');
 const bookNameInput = document.getElementById('book-name');
 const bookMessageInput = document.getElementById('book-message-input');
@@ -2157,40 +2165,126 @@ async function saveMessage(payload) {
   return { ...entry };
 }
 
-function renderBookMessages(messages) {
-  if (!bookMessages) return;
-  bookMessages.textContent = '';
+function setBookView(view) {
+  const nextView = view === 'write' ? 'write' : 'read';
+  bookUiState.currentView = nextView;
+  for (const button of bookViewButtons) {
+    const active = button.dataset.bookView === nextView;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', active ? 'true' : 'false');
+  }
+  for (const panel of bookViews) {
+    panel.classList.toggle('is-active', panel.dataset.bookView === nextView);
+  }
+}
+
+function createBookMessageCard(entry) {
+  const card = document.createElement('article');
+  card.className = 'book-message-card';
+
+  const meta = document.createElement('div');
+  meta.className = 'book-message-meta';
+
+  const author = document.createElement('div');
+  author.className = 'book-message-author';
+
+  const name = document.createElement('div');
+  name.className = 'book-message-name';
+  name.textContent = entry.name || 'anonymous';
+  author.append(name);
+
+  meta.append(author);
+
+  const date = document.createElement('div');
+  date.className = 'book-message-date';
+  date.textContent = formatBookMessageDate(entry.createdAt);
+  meta.append(date);
+
+  const body = document.createElement('div');
+  body.className = 'book-message-body';
+  body.textContent = entry.message;
+
+  card.append(meta, body);
+  return card;
+}
+
+function buildBookReadPages(messages) {
+  if (!bookMessagePage) {
+    bookUiState.readPages = messages.length ? [messages] : [];
+    return bookUiState.readPages;
+  }
+
+  if (!messages.length) {
+    bookUiState.readPages = [];
+    return bookUiState.readPages;
+  }
+
+  const measuredPages = [];
+  const availableHeight = Math.max(
+    180,
+    Math.floor(bookMessagePage.clientHeight || bookMessagePage.getBoundingClientRect().height || 320)
+  );
+
+  let cursor = 0;
+  while (cursor < messages.length) {
+    const pageEntries = [];
+    bookMessagePage.textContent = '';
+
+    for (let i = cursor; i < messages.length; i++) {
+      const candidate = createBookMessageCard(messages[i]);
+      bookMessagePage.append(candidate);
+      const fits = bookMessagePage.scrollHeight <= availableHeight + 1;
+      if (!fits && pageEntries.length > 0) {
+        candidate.remove();
+        break;
+      }
+      pageEntries.push(messages[i]);
+    }
+
+    if (!pageEntries.length) {
+      pageEntries.push(messages[cursor]);
+    }
+
+    measuredPages.push(pageEntries);
+    cursor += pageEntries.length;
+  }
+
+  bookMessagePage.textContent = '';
+  bookUiState.readPages = measuredPages;
+  return measuredPages;
+}
+
+function renderBookReadPage(messages) {
+  if (!bookMessagePage) return;
+  bookMessagePage.textContent = '';
+
   if (!messages.length) {
     const empty = document.createElement('div');
     empty.className = 'book-message-card';
     empty.textContent = 'まだ何も書かれていません。最初のひとことを残せます。';
-    bookMessages.append(empty);
+    bookMessagePage.append(empty);
+    if (bookNextPage) bookNextPage.disabled = true;
     return;
   }
 
-  for (const entry of messages) {
-    const card = document.createElement('article');
-    card.className = 'book-message-card';
+  const pages = buildBookReadPages(messages);
+  if (!pages.length) return;
+  if (bookUiState.pageIndex >= pages.length) {
+    bookUiState.pageIndex = 0;
+  }
 
-    const meta = document.createElement('div');
-    meta.className = 'book-message-meta';
+  const entries = pages[bookUiState.pageIndex];
+  for (const entry of entries) {
+    bookMessagePage.append(createBookMessageCard(entry));
+  }
 
-    const name = document.createElement('div');
-    name.className = 'book-message-name';
-    name.textContent = entry.name || 'anonymous';
-    meta.append(name);
+  const pageInfo = document.createElement('div');
+  pageInfo.className = 'book-message-index';
+  pageInfo.textContent = `${bookUiState.pageIndex + 1} / ${pages.length}`;
+  bookMessagePage.append(pageInfo);
 
-    const date = document.createElement('div');
-    date.className = 'book-message-date';
-    date.textContent = formatBookMessageDate(entry.createdAt);
-    meta.append(date);
-
-    const body = document.createElement('div');
-    body.className = 'book-message-body';
-    body.textContent = entry.message;
-
-    card.append(meta, body);
-    bookMessages.append(card);
+  if (bookNextPage) {
+    bookNextPage.disabled = pages.length <= 1;
   }
 }
 
@@ -2221,14 +2315,16 @@ function setBookOverlayOpen(isOpen) {
 
 async function openBookOverlay() {
   const messages = await loadMessages();
-  renderBookMessages(messages);
+  bookUiState.pageIndex = 0;
   if (bookStatus) {
     bookStatus.textContent = '今はダミー保存ですが、あとで外部DBに差し替えやすい形にしてあります。';
   }
+  setBookView('write');
   setBookOverlayOpen(true);
   window.setTimeout(() => {
+    renderBookReadPage(messages);
     bookMessageInput?.focus({ preventScroll: true });
-  }, 20);
+  }, 30);
 }
 
 function closeBookOverlay() {
@@ -2447,7 +2543,7 @@ messageForm?.addEventListener('submit', (e) => {
   }
 });
 
-for (const control of [bookBackdrop, bookPanel, bookClose, bookForm, bookMessages, bookNameInput, bookMessageInput]) {
+for (const control of [bookBackdrop, bookPanel, bookClose, ...bookViewButtons, bookNextPage, bookForm, bookMessagePage, bookNameInput, bookMessageInput]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
@@ -2475,6 +2571,29 @@ bookClose?.addEventListener('click', (e) => {
   closeBookOverlay();
 });
 
+for (const button of bookViewButtons) {
+  button.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setBookView(button.dataset.bookView);
+    if (button.dataset.bookView === 'write') {
+      window.setTimeout(() => {
+        bookMessageInput?.focus({ preventScroll: true });
+      }, 20);
+    } else {
+      renderBookReadPage(bookUiState.lastMessages);
+    }
+  });
+}
+
+bookNextPage?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!bookUiState.lastMessages.length) return;
+  bookUiState.pageIndex = (bookUiState.pageIndex + 1) % bookUiState.lastMessages.length;
+  renderBookReadPage(bookUiState.lastMessages);
+});
+
 bookForm?.addEventListener('submit', async (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -2490,7 +2609,9 @@ bookForm?.addEventListener('submit', async (e) => {
       name: bookNameInput?.value ?? '',
       message
     });
-    renderBookMessages(await loadMessages());
+    bookUiState.pageIndex = 0;
+    renderBookReadPage(await loadMessages());
+    setBookView('read');
     bookMessageInput.value = '';
     if (bookNameInput) bookNameInput.value = '';
     bookStatus.textContent = '本に新しいことばが記されました。';
@@ -2567,7 +2688,7 @@ window.addEventListener('gestureend', () => forceViewportReset());
 window.addEventListener('dblclick', (e) => e.preventDefault());
 window.addEventListener('touchmove', (e) => {
   const isEditable = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
-  const allowScroll = isEditable || (e.target instanceof Element && e.target.closest('#book-messages, #site-menu-pages'));
+  const allowScroll = isEditable || (e.target instanceof Element && e.target.closest('#book-panel, #site-menu-pages'));
   if (!allowScroll && e.cancelable) e.preventDefault();
 }, { passive: false });
 
@@ -3077,6 +3198,9 @@ window.addEventListener('resize', () => {
   renderer.setSize(w, h);
   lastLyricsPanelY = null;
   updateLyricsLayout();
+  if (bookUiState.open && bookUiState.currentView === 'read') {
+    renderBookReadPage(bookUiState.lastMessages);
+  }
 });
 
 function snapCameraOnce() {

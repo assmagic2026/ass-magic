@@ -504,7 +504,7 @@ html, body {
     inset 0 1px 0 rgba(255,255,255,0.55),
     inset 0 -18px 40px rgba(122, 84, 36, 0.06);
   color: #322619;
-  overflow: hidden;
+  overflow: auto;
 }
 #book-panel::before {
   content: "";
@@ -541,33 +541,39 @@ html, body {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.42);
   touch-action: manipulation;
 }
-#book-title-wrap {
+#book-mode-switch {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
-#book-title {
-  margin: 0;
+.book-mode-btn {
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(105, 72, 36, 0.12);
+  background: rgba(255,255,255,0.36);
+  color: rgba(61, 40, 19, 0.74);
   font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif;
-  font-size: 30px;
-  font-weight: 600;
+  font-size: 14px;
   letter-spacing: 0.08em;
-  color: #2f2112;
+  touch-action: manipulation;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.4);
 }
-#book-subtitle {
-  margin: 0;
-  color: rgba(69, 48, 27, 0.72);
-  line-height: 1.55;
+.book-mode-btn.is-active {
+  background: linear-gradient(180deg, rgba(88, 56, 28, 0.92), rgba(61, 38, 19, 0.94));
+  color: #fff5e8;
+  border-color: rgba(86, 57, 29, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    0 8px 18px rgba(90, 60, 26, 0.14);
 }
 #book-spread {
   position: relative;
   z-index: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
+  display: block;
 }
 .book-page {
   min-height: 0;
@@ -580,54 +586,85 @@ html, body {
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.34),
     0 10px 24px rgba(91, 60, 24, 0.05);
-}
-.book-page-left,
-.book-page-right {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: 12px;
+}
+.book-view.is-active {
+  display: flex;
 }
 .book-page-label {
   font-size: 10px;
   letter-spacing: 0.22em;
   color: rgba(83, 54, 27, 0.54);
 }
-#book-messages {
+#book-message-page {
   min-height: 0;
-  display: grid;
-  gap: 10px;
-  overflow: auto;
-  padding-right: 4px;
-  touch-action: pan-y;
-  overscroll-behavior: contain;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
 }
 .book-message-card {
-  padding: 12px 12px 10px;
-  border-radius: 14px;
+  padding: 16px 16px 14px;
+  border-radius: 16px;
   border: 1px solid rgba(97, 64, 33, 0.08);
   background: rgba(255,255,255,0.28);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .book-message-meta {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
+}
+.book-message-author {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .book-message-name {
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: rgba(58, 37, 16, 0.78);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: rgba(58, 37, 16, 0.88);
+  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif;
 }
 .book-message-date {
   font-size: 10px;
   color: rgba(86, 62, 38, 0.54);
+  padding-top: 2px;
+  text-align: right;
 }
 .book-message-body {
   color: rgba(44, 30, 17, 0.9);
   line-height: 1.55;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.book-message-index {
+  margin-top: 12px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: rgba(87, 61, 34, 0.48);
+}
+#book-next-page {
+  align-self: flex-end;
+  min-width: 134px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(95, 62, 31, 0.12);
+  background: rgba(255,255,255,0.44);
+  color: #3a2a18;
+  letter-spacing: 0.12em;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.42);
+  touch-action: manipulation;
+}
+#book-next-page:disabled {
+  opacity: 0.46;
 }
 #book-form {
   display: grid;
@@ -945,22 +982,16 @@ html, body {
   #book-panel::before {
     display: none;
   }
-  #book-title {
-    font-size: 24px;
-  }
-  #book-subtitle {
-    font-size: 12px;
-  }
-  #book-spread {
-    grid-template-columns: 1fr;
-    gap: 10px;
+  #book-mode-switch {
+    gap: 6px;
   }
   .book-page {
     padding: 14px 14px 12px;
     border-radius: 16px;
   }
-  #book-messages {
-    max-height: 180px;
+  .book-mode-btn {
+    min-height: 36px;
+    font-size: 13px;
   }
   #book-message-input {
     min-height: 112px;
