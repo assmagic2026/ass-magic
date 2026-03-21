@@ -1612,9 +1612,9 @@ for (let i = 0; i < V.DUST_COUNT; i++) {
 const shadow = new THREE.Mesh(
   new THREE.CircleGeometry(1, 18),
   new THREE.MeshBasicMaterial({
-    color: 0x081018,
+    color: 0x02050a,
     transparent: true,
-    opacity: 0.18,
+    opacity: 0.26,
     depthWrite: false
   })
 );
@@ -2046,9 +2046,9 @@ function updateThemeFlash(dt) {
     Math.hypot(window.innerWidth - x, window.innerHeight - y)
   );
   const radius = 120 + eased * (maxCornerDistance + 200);
-  const thickness = Math.max(30, radius * (0.22 - progress * 0.06));
+  const thickness = Math.max(6, radius * (0.065 - progress * 0.018));
   const ringOpacity = Math.max(0, 0.86 * (1 - progress * 0.78));
-  const veilOpacity = Math.max(0, 0.12 * (1 - progress * 0.9));
+  const veilOpacity = Math.max(0, 0.1 * (1 - progress * 0.9));
 
   themeFlash.style.opacity = '1';
   themeFlash.style.background = `rgba(0, 0, 0, ${veilOpacity.toFixed(3)})`;
@@ -2059,7 +2059,7 @@ function updateThemeFlash(dt) {
   themeFlashRing.style.height = `${(radius * 2).toFixed(1)}px`;
   themeFlashRing.style.borderWidth = `${thickness.toFixed(1)}px`;
   themeFlashRing.style.borderColor = `rgba(0, 0, 0, ${ringOpacity.toFixed(3)})`;
-  themeFlashRing.style.boxShadow = `0 0 ${Math.max(18, thickness * 0.75).toFixed(1)}px rgba(0, 0, 0, ${(ringOpacity * 0.22).toFixed(3)})`;
+  themeFlashRing.style.boxShadow = `0 0 ${Math.max(10, thickness * 0.7).toFixed(1)}px rgba(0, 0, 0, ${(ringOpacity * 0.18).toFixed(3)})`;
   themeFlashRing.style.opacity = '1';
   themeFlashRing.style.transform = 'translate(-50%, -50%)';
 }
