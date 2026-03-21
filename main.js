@@ -261,15 +261,9 @@ function updateThemeDuck(dt) {
 }
 
 function maybeEnableAppleTouchEffects() {
-  if (!IS_APPLE_TOUCH_AUDIO || appleTouchEffectsReady || bgm.paused || bgm.currentTime < 0.04) return;
-  const now = performance.now();
-  if (now - appleTouchEffectsAttemptAt < 1200) return;
-  appleTouchEffectsAttemptAt = now;
-  try {
-    ensureBgmAudioChain(true);
-  } catch (error) {
-    console.warn('Apple touch audio effect setup failed:', error);
-  }
+  // iPhone/iPad Safari gets unreliable if we attach the Web Audio chain
+  // after playback has already started, so keep mobile on the plain audio path.
+  if (IS_APPLE_TOUCH_AUDIO) return;
 }
 
 function runTrackControlAction(action) {
