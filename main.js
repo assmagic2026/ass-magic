@@ -48,6 +48,8 @@ bgm.preload = 'auto';
 const BGM_BASE_VOLUME = 0.42;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
+let bgmLastAttemptAt = 0;
+let lastTrackControlActionAt = 0;
 let lastLyricsCurrent = '';
 let lyricsVisible = false;
 let lyricsEnabled = true;
@@ -94,6 +96,9 @@ function refreshLyricsToggle() {
 
 function playCurrentTrack() {
   if (bgmPending) return;
+  const now = performance.now();
+  if (now - bgmLastAttemptAt < 90) return;
+  bgmLastAttemptAt = now;
   bgm.volume = BGM_BASE_VOLUME;
   bgmPending = true;
   const playResult = bgm.play();
@@ -103,7 +108,8 @@ function playCurrentTrack() {
       refreshTrackControls();
       updateLyricsUi();
       bgmPending = false;
-    }).catch(() => {
+    }).catch((error) => {
+      console.warn('BGM playback was blocked or failed:', error);
       bgmPending = false;
     });
   } else {
@@ -131,6 +137,13 @@ function loadTrack(index, autoplay = false) {
 function ensureBgm() {
   if (!bgm.paused) return;
   playCurrentTrack();
+}
+
+function runTrackControlAction(action) {
+  const now = performance.now();
+  if (now - lastTrackControlActionAt < 120) return;
+  lastTrackControlActionAt = now;
+  action();
 }
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
@@ -1935,6 +1948,7 @@ function updateThemeFlash(dt) {
     if (themeFlash.style.opacity !== '0') {
       themeFlash.style.opacity = '0';
       themeFlash.style.background = 'none';
+      themeFlash.style.transform = 'scale(1)';
     }
     return;
   }
@@ -1945,6 +1959,7 @@ function updateThemeFlash(dt) {
     themeState.flashActive = false;
     themeFlash.style.opacity = '0';
     themeFlash.style.background = 'none';
+    themeFlash.style.transform = 'scale(1)';
     return;
   }
 
@@ -1957,13 +1972,21 @@ function updateThemeFlash(dt) {
   }
 
   const eased = 1 - Math.pow(1 - progress, 2);
-  const radius = 80 + eased * Math.max(window.innerWidth, window.innerHeight) * 0.78;
-  const inner = radius * 0.18;
-  const mid = radius * 0.46;
-  const opacity = 0.84 * (1 - progress);
+  const radius = 110 + eased * Math.max(window.innerWidth, window.innerHeight) * 0.98;
+  const core = radius * 0.12;
+  const glow = radius * 0.34;
+  const shock = radius * 0.62;
+  const ring = radius * 0.82;
+  const veil = 0.32 * (1 - progress);
+  const ringAlpha = Math.max(0, 0.78 * (1 - progress * 0.78));
 
-  themeFlash.style.opacity = `${opacity.toFixed(3)}`;
-  themeFlash.style.background = `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,0.96) 0px, rgba(255,255,255,0.92) ${inner.toFixed(1)}px, rgba(255,255,255,0.34) ${mid.toFixed(1)}px, rgba(255,255,255,0) ${radius.toFixed(1)}px)`;
+  themeFlash.style.opacity = '1';
+  themeFlash.style.transform = `scale(${(1 + 0.012 * (1 - progress)).toFixed(4)})`;
+  themeFlash.style.background = [
+    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,1) 0px, rgba(255,255,255,0.98) ${core.toFixed(1)}px, rgba(255,255,255,0.55) ${glow.toFixed(1)}px, rgba(255,255,255,0) ${shock.toFixed(1)}px)`,
+    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,0) ${(ring * 0.62).toFixed(1)}px, rgba(255,255,255,${ringAlpha.toFixed(3)}) ${ring.toFixed(1)}px, rgba(255,255,255,0) ${(ring * 1.16).toFixed(1)}px)`,
+    `linear-gradient(rgba(255,255,255,${veil.toFixed(3)}), rgba(255,255,255,${(veil * 0.2).toFixed(3)}))`
+  ].join(', ');
 }
 
 function updateInvertedSkyWash() {
@@ -2554,10 +2577,16 @@ function handlePointerUp(e) {
   }
 }
 
+function handleMouseDown(e) {
+  if (e.target instanceof Element && e.target.closest('.ui-control')) return;
+  ensureBgm();
+}
+
 window.addEventListener('pointerdown', handlePointerDown, { passive: false });
 window.addEventListener('pointermove', handlePointerMove, { passive: false });
 window.addEventListener('pointerup', handlePointerUp, { passive: false });
 window.addEventListener('pointercancel', handlePointerUp);
+window.addEventListener('mousedown', handleMouseDown, { passive: false });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 document.addEventListener('selectstart', (e) => e.preventDefault());
 document.addEventListener('dragstart', (e) => e.preventDefault());
@@ -2567,11 +2596,16 @@ if (trackCard) {
     e.stopPropagation();
     ensureBgm();
   });
+  trackCard.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    ensureBgm();
+  });
   trackCard.addEventListener('pointerup', (e) => {
     e.stopPropagation();
   });
   trackCard.addEventListener('click', (e) => {
     e.stopPropagation();
+    ensureBgm();
   });
 }
 
@@ -2594,14 +2628,33 @@ for (const control of [trackToggle, trackNext]) {
 trackToggle?.addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
-  if (bgm.paused) ensureBgm();
-  else stopCurrentTrack();
+  runTrackControlAction(() => {
+    if (bgm.paused) ensureBgm();
+    else stopCurrentTrack();
+  });
+});
+trackToggle?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  runTrackControlAction(() => {
+    if (bgm.paused) ensureBgm();
+    else stopCurrentTrack();
+  });
 });
 
 trackNext?.addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
-  nextTrack();
+  runTrackControlAction(() => {
+    nextTrack();
+  });
+});
+trackNext?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  runTrackControlAction(() => {
+    nextTrack();
+  });
 });
 
 function toggleLyricsDisplay(e) {
