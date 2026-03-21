@@ -31,21 +31,6 @@ html, body {
   mix-blend-mode: normal;
   will-change: opacity, background;
 }
-#theme-flash-ring {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  border: 8px solid rgba(0,0,0,0.82);
-  box-shadow:
-    0 0 0 1px rgba(0,0,0,0.06),
-    0 0 12px rgba(0,0,0,0.16);
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.4);
-  will-change: transform, opacity, width, height, border-width, left, top;
-}
 #sky-theme-wash {
   position: fixed;
   inset: 0;

@@ -148,35 +148,17 @@ function ensureBgm() {
 }
 
 function startBgmFromGesture() {
-  primeThemeChangeSfx();
   if (!bgm.paused || bgmPending) return;
   bgm.muted = false;
   playCurrentTrack();
 }
 
 function primeThemeChangeSfx() {
-  if (themeChangeSfxPrimed) return;
-  themeChangeSfxPrimed = true;
-  const targetVolume = themeChangeSfx.volume;
-  themeChangeSfx.volume = 0;
   try {
-    const playResult = themeChangeSfx.play();
-    if (playResult && typeof playResult.then === 'function') {
-      playResult.then(() => {
-        themeChangeSfx.pause();
-        themeChangeSfx.currentTime = 0;
-        themeChangeSfx.volume = targetVolume;
-      }).catch(() => {
-        themeChangeSfx.volume = targetVolume;
-        themeChangeSfxPrimed = false;
-      });
-    } else {
-      themeChangeSfx.pause();
-      themeChangeSfx.currentTime = 0;
-      themeChangeSfx.volume = targetVolume;
-    }
+    if (themeChangeSfxPrimed) return;
+    themeChangeSfxPrimed = true;
+    themeChangeSfx.load();
   } catch (error) {
-    themeChangeSfx.volume = targetVolume;
     themeChangeSfxPrimed = false;
   }
 }
@@ -1850,7 +1832,6 @@ const stickArea = document.getElementById('stick-area');
 const stickHandle = document.getElementById('stick-handle');
 const skyThemeWash = document.getElementById('sky-theme-wash');
 const themeFlash = document.getElementById('theme-flash');
-const themeFlashRing = document.getElementById('theme-flash-ring');
 const viewportMeta = document.querySelector('meta[name="viewport"]');
 const trackCard = document.getElementById('track-card');
 const trackArt = document.getElementById('track-art');
@@ -1939,23 +1920,14 @@ function isInsideThemeTrigger(point) {
   return false;
 }
 
-function startThemeFlash(worldPoint) {
+function startThemeFlash() {
   themeState.flashActive = true;
   themeState.flashTime = 0;
-  themeState.flashWorldPoint.copy(worldPoint);
-  themeProjected.copy(worldPoint).project(camera);
-  let x = (themeProjected.x * 0.5 + 0.5) * window.innerWidth;
-  let y = (-themeProjected.y * 0.5 + 0.5) * window.innerHeight;
-  if (!Number.isFinite(x) || !Number.isFinite(y) || themeProjected.z > 1.25) {
-    x = window.innerWidth * 0.5;
-    y = window.innerHeight * 0.5;
-  }
-  themeFlashScreen.set(x, y);
-  themeState.flashScreenPoint.copy(themeFlashScreen);
 }
 
 function toggleWorldInversion(contactPoint) {
   if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
+  primeThemeChangeSfx();
   playThemeChangeSfx();
   themeState.inverted = !themeState.inverted;
   themeState.cooldown = THEME_TRIGGER_COOLDOWN;
@@ -2018,9 +1990,6 @@ function updateThemeFlash(dt) {
       themeFlash.style.opacity = '0';
       themeFlash.style.background = 'rgba(0,0,0,0)';
     }
-    if (themeFlashRing) {
-      themeFlashRing.style.opacity = '0';
-    }
     return;
   }
 
@@ -2030,38 +1999,13 @@ function updateThemeFlash(dt) {
     themeState.flashActive = false;
     themeFlash.style.opacity = '0';
     themeFlash.style.background = 'rgba(0,0,0,0)';
-    if (themeFlashRing) {
-      themeFlashRing.style.opacity = '0';
-    }
     return;
   }
 
-  const x = themeState.flashScreenPoint.x;
-  const y = themeState.flashScreenPoint.y;
-  const eased = 1 - Math.pow(1 - progress, 2.15);
-  const maxCornerDistance = Math.max(
-    Math.hypot(x, y),
-    Math.hypot(window.innerWidth - x, y),
-    Math.hypot(x, window.innerHeight - y),
-    Math.hypot(window.innerWidth - x, window.innerHeight - y)
-  );
-  const radius = 120 + eased * (maxCornerDistance + 200);
-  const thickness = Math.max(6, radius * (0.065 - progress * 0.018));
-  const ringOpacity = Math.max(0, 0.86 * (1 - progress * 0.78));
-  const veilOpacity = Math.max(0, 0.1 * (1 - progress * 0.9));
+  const veilOpacity = Math.max(0, 0.11 * (1 - progress * 0.92));
 
   themeFlash.style.opacity = '1';
   themeFlash.style.background = `rgba(0, 0, 0, ${veilOpacity.toFixed(3)})`;
-  if (!themeFlashRing) return;
-  themeFlashRing.style.left = `${x.toFixed(1)}px`;
-  themeFlashRing.style.top = `${y.toFixed(1)}px`;
-  themeFlashRing.style.width = `${(radius * 2).toFixed(1)}px`;
-  themeFlashRing.style.height = `${(radius * 2).toFixed(1)}px`;
-  themeFlashRing.style.borderWidth = `${thickness.toFixed(1)}px`;
-  themeFlashRing.style.borderColor = `rgba(0, 0, 0, ${ringOpacity.toFixed(3)})`;
-  themeFlashRing.style.boxShadow = `0 0 ${Math.max(10, thickness * 0.7).toFixed(1)}px rgba(0, 0, 0, ${(ringOpacity * 0.18).toFixed(3)})`;
-  themeFlashRing.style.opacity = '1';
-  themeFlashRing.style.transform = 'translate(-50%, -50%)';
 }
 
 function updateInvertedSkyWash() {
