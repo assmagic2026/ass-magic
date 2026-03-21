@@ -64,6 +64,7 @@ let bgmOutputVolume = BGM_BASE_VOLUME;
 let bgmAudioContext = null;
 let bgmMediaSource = null;
 let bgmGainNode = null;
+const IS_APPLE_TOUCH_AUDIO = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 function applyBgmOutputVolume(value) {
   bgmOutputVolume = THREE.MathUtils.clamp(value, 0, 1);
@@ -76,6 +77,11 @@ function applyBgmOutputVolume(value) {
 }
 
 function ensureBgmAudioChain() {
+  if (IS_APPLE_TOUCH_AUDIO) {
+    applyBgmOutputVolume(bgmOutputVolume);
+    return;
+  }
+
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) {
     applyBgmOutputVolume(bgmOutputVolume);
