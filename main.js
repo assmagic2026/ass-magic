@@ -169,10 +169,12 @@ const DAY_BLOCKS_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, 0.42)
   .addScaledVector(NIGHT_AXIS_B, -0.16)
   .normalize();
-const GIANT_BOOK_LOOKAHEAD_SECONDS = 2;
-const GIANT_BOOK_LOOKAHEAD_SPEED = 40;
 const GIANT_BOOK_ALTITUDE = 0.04;
 const GIANT_BOOK_OPEN_DELAY = 0.24;
+const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
+  .addScaledVector(NIGHT_AXIS_A, -1.4)
+  .addScaledVector(NIGHT_AXIS_B, -0.8)
+  .normalize();
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_MESSAGE_LIMIT = 12;
 const BOOK_MESSAGE_TIMEOUT_MS = 9000;
@@ -1641,13 +1643,10 @@ const bookUiState = {
 const giantBook = createGiantBookLandmark();
 
 function placeGiantBookLandmark() {
-  const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
-  const lookAheadAngle = (GIANT_BOOK_LOOKAHEAD_SPEED * GIANT_BOOK_LOOKAHEAD_SECONDS) / startRadius;
-  const bookDirection = startUp.clone().applyAxisAngle(startRight, lookAheadAngle).normalize();
-  const towardStart = startUp.clone()
-    .addScaledVector(bookDirection, -startUp.dot(bookDirection))
+  const towardSun = SUN_DIRECTION.clone()
+    .addScaledVector(GIANT_BOOK_DIR, -SUN_DIRECTION.dot(GIANT_BOOK_DIR))
     .normalize();
-  placeDirectedOnSphere(giantBook, bookDirection, towardStart, GIANT_BOOK_ALTITUDE, 0.06);
+  placeDirectedOnSphere(giantBook, GIANT_BOOK_DIR, towardSun, GIANT_BOOK_ALTITUDE, 0.06);
 }
 
 placeGiantBookLandmark();
