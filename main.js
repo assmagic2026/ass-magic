@@ -52,6 +52,11 @@ const THEME_DUCK_VOLUME = 0.025;
 const THEME_DUCK_HOLD = 0.12;
 const THEME_DUCK_DOWN_RATE = 34;
 const THEME_DUCK_UP_RATE = 2.15;
+const THEME_FILTER_FREQ = 680;
+const THEME_FILTER_BASE_FREQ = 18000;
+const THEME_FILTER_HOLD = 0.08;
+const THEME_FILTER_DOWN_RATE = 42;
+const THEME_FILTER_UP_RATE = 1.35;
 let bgmPending = false;
 let bgmLastAttemptAt = 0;
 let lastTrackControlActionAt = 0;
@@ -60,11 +65,16 @@ let lyricsVisible = false;
 let lyricsEnabled = true;
 let lastLyricsPanelY = null;
 let themeDuckTimer = 0;
+let themeFilterTimer = 0;
 let bgmOutputVolume = BGM_BASE_VOLUME;
 let bgmAudioContext = null;
 let bgmMediaSource = null;
 let bgmGainNode = null;
+let bgmLowpassNode = null;
 const IS_APPLE_TOUCH_AUDIO = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let appleTouchEffectsReady = false;
+let appleTouchEffectsAttemptAt = 0;
+let bgmFilterFrequency = THEME_FILTER_BASE_FREQ;
 
 function applyBgmOutputVolume(value) {
   bgmOutputVolume = THREE.MathUtils.clamp(value, 0, 1);
@@ -76,8 +86,15 @@ function applyBgmOutputVolume(value) {
   }
 }
 
-function ensureBgmAudioChain() {
-  if (IS_APPLE_TOUCH_AUDIO) {
+function applyBgmFilterFrequency(value) {
+  bgmFilterFrequency = THREE.MathUtils.clamp(value, 120, THEME_FILTER_BASE_FREQ);
+  if (bgmLowpassNode) {
+    bgmLowpassNode.frequency.value = bgmFilterFrequency;
+  }
+}
+
+function ensureBgmAudioChain(forceOnApple = false) {
+  if (IS_APPLE_TOUCH_AUDIO && !forceOnApple) {
     applyBgmOutputVolume(bgmOutputVolume);
     return;
   }
@@ -94,8 +111,12 @@ function ensureBgmAudioChain() {
     }
     if (!bgmMediaSource) {
       bgmMediaSource = bgmAudioContext.createMediaElementSource(bgm);
+      bgmLowpassNode = bgmAudioContext.createBiquadFilter();
+      bgmLowpassNode.type = 'lowpass';
+      bgmLowpassNode.Q.value = 0.0001;
       bgmGainNode = bgmAudioContext.createGain();
-      bgmMediaSource.connect(bgmGainNode);
+      bgmMediaSource.connect(bgmLowpassNode);
+      bgmLowpassNode.connect(bgmGainNode);
       bgmGainNode.connect(bgmAudioContext.destination);
     }
     if (bgmAudioContext.state === 'suspended') {
@@ -111,6 +132,10 @@ function ensureBgmAudioChain() {
   }
 
   applyBgmOutputVolume(bgmOutputVolume);
+  applyBgmFilterFrequency(bgmFilterFrequency);
+  if (IS_APPLE_TOUCH_AUDIO && bgmGainNode && bgmLowpassNode) {
+    appleTouchEffectsReady = true;
+  }
 }
 
 applyBgmOutputVolume(BGM_BASE_VOLUME);
@@ -161,6 +186,7 @@ function playCurrentTrack() {
   bgmLastAttemptAt = now;
   ensureBgmAudioChain();
   applyBgmOutputVolume(BGM_BASE_VOLUME);
+  applyBgmFilterFrequency(THEME_FILTER_BASE_FREQ);
   bgmPending = true;
   const playResult = bgm.play();
   if (playResult && typeof playResult.then === 'function') {
@@ -185,7 +211,10 @@ function loadTrack(index, autoplay = false) {
   currentTrackIndex = (index + playlist.length) % playlist.length;
   const track = playlist[currentTrackIndex];
   bgm.pause();
+  themeDuckTimer = 0;
+  themeFilterTimer = 0;
   applyBgmOutputVolume(BGM_BASE_VOLUME);
+  applyBgmFilterFrequency(THEME_FILTER_BASE_FREQ);
   bgm.src = encodeURI(track.src);
   bgm.load();
   syncTrackUi();
@@ -209,17 +238,38 @@ function startBgmFromGesture() {
 
 function triggerThemeDuck() {
   themeDuckTimer = THEME_DUCK_HOLD;
+  themeFilterTimer = THEME_FILTER_HOLD;
 }
 
 function updateThemeDuck(dt) {
   if (themeDuckTimer > 0) {
     themeDuckTimer = Math.max(0, themeDuckTimer - dt);
   }
+  if (themeFilterTimer > 0) {
+    themeFilterTimer = Math.max(0, themeFilterTimer - dt);
+  }
 
   const targetVolume = themeDuckTimer > 0 ? THEME_DUCK_VOLUME : BGM_BASE_VOLUME;
   const response = targetVolume < bgmOutputVolume ? THEME_DUCK_DOWN_RATE : THEME_DUCK_UP_RATE;
   const blend = 1 - Math.exp(-response * dt);
   applyBgmOutputVolume(THREE.MathUtils.lerp(bgmOutputVolume, targetVolume, blend));
+
+  const targetFilter = themeFilterTimer > 0 ? THEME_FILTER_FREQ : THEME_FILTER_BASE_FREQ;
+  const filterResponse = targetFilter < bgmFilterFrequency ? THEME_FILTER_DOWN_RATE : THEME_FILTER_UP_RATE;
+  const filterBlend = 1 - Math.exp(-filterResponse * dt);
+  applyBgmFilterFrequency(THREE.MathUtils.lerp(bgmFilterFrequency, targetFilter, filterBlend));
+}
+
+function maybeEnableAppleTouchEffects() {
+  if (!IS_APPLE_TOUCH_AUDIO || appleTouchEffectsReady || bgm.paused || bgm.currentTime < 0.04) return;
+  const now = performance.now();
+  if (now - appleTouchEffectsAttemptAt < 1200) return;
+  appleTouchEffectsAttemptAt = now;
+  try {
+    ensureBgmAudioChain(true);
+  } catch (error) {
+    console.warn('Apple touch audio effect setup failed:', error);
+  }
 }
 
 function runTrackControlAction(action) {
@@ -2157,7 +2207,10 @@ function stopCurrentTrack() {
   if (bgm.paused || bgmPending) return;
   bgm.pause();
   bgm.currentTime = 0;
+  themeDuckTimer = 0;
+  themeFilterTimer = 0;
   applyBgmOutputVolume(BGM_BASE_VOLUME);
+  applyBgmFilterFrequency(THEME_FILTER_BASE_FREQ);
   setRecordSpinning(false);
   refreshTrackControls();
   updateLyricsUi();
@@ -2590,10 +2643,12 @@ function handlePointerDown(e) {
   e.preventDefault();
 
   if (e.target instanceof Element && e.target.closest('.ui-control')) {
+    maybeEnableAppleTouchEffects();
     return;
   }
 
   startBgmFromGesture();
+  maybeEnableAppleTouchEffects();
 
   if (stickArea && input.stickId === null) {
     const rect = stickArea.getBoundingClientRect();
@@ -2670,6 +2725,7 @@ function handlePointerUp(e) {
 function handleMouseDown(e) {
   if (e.target instanceof Element && e.target.closest('.ui-control')) return;
   startBgmFromGesture();
+  maybeEnableAppleTouchEffects();
 }
 
 window.addEventListener('pointerdown', handlePointerDown, { passive: false });
