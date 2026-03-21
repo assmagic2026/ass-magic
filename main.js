@@ -52,7 +52,6 @@ const THEME_DUCK_VOLUME = 0.025;
 const THEME_DUCK_HOLD = 0.12;
 const THEME_DUCK_DOWN_RATE = 34;
 const THEME_DUCK_UP_RATE = 2.15;
-bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
 let bgmLastAttemptAt = 0;
 let lastTrackControlActionAt = 0;
@@ -61,6 +60,54 @@ let lyricsVisible = false;
 let lyricsEnabled = true;
 let lastLyricsPanelY = null;
 let themeDuckTimer = 0;
+let bgmOutputVolume = BGM_BASE_VOLUME;
+let bgmAudioContext = null;
+let bgmMediaSource = null;
+let bgmGainNode = null;
+
+function applyBgmOutputVolume(value) {
+  bgmOutputVolume = THREE.MathUtils.clamp(value, 0, 1);
+  if (bgmGainNode) {
+    bgm.volume = 1;
+    bgmGainNode.gain.value = bgmOutputVolume;
+  } else {
+    bgm.volume = bgmOutputVolume;
+  }
+}
+
+function ensureBgmAudioChain() {
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    applyBgmOutputVolume(bgmOutputVolume);
+    return;
+  }
+
+  try {
+    if (!bgmAudioContext) {
+      bgmAudioContext = new AudioContextCtor();
+    }
+    if (!bgmMediaSource) {
+      bgmMediaSource = bgmAudioContext.createMediaElementSource(bgm);
+      bgmGainNode = bgmAudioContext.createGain();
+      bgmMediaSource.connect(bgmGainNode);
+      bgmGainNode.connect(bgmAudioContext.destination);
+    }
+    if (bgmAudioContext.state === 'suspended') {
+      const resumeResult = bgmAudioContext.resume();
+      if (resumeResult && typeof resumeResult.catch === 'function') {
+        resumeResult.catch((error) => {
+          console.warn('AudioContext resume failed:', error);
+        });
+      }
+    }
+  } catch (error) {
+    console.warn('BGM audio chain setup failed:', error);
+  }
+
+  applyBgmOutputVolume(bgmOutputVolume);
+}
+
+applyBgmOutputVolume(BGM_BASE_VOLUME);
 
 function syncTrackUi() {
   const track = playlist[currentTrackIndex];
@@ -106,7 +153,8 @@ function playCurrentTrack() {
   const now = performance.now();
   if (now - bgmLastAttemptAt < 90) return;
   bgmLastAttemptAt = now;
-  bgm.volume = BGM_BASE_VOLUME;
+  ensureBgmAudioChain();
+  applyBgmOutputVolume(BGM_BASE_VOLUME);
   bgmPending = true;
   const playResult = bgm.play();
   if (playResult && typeof playResult.then === 'function') {
@@ -131,7 +179,7 @@ function loadTrack(index, autoplay = false) {
   currentTrackIndex = (index + playlist.length) % playlist.length;
   const track = playlist[currentTrackIndex];
   bgm.pause();
-  bgm.volume = BGM_BASE_VOLUME;
+  applyBgmOutputVolume(BGM_BASE_VOLUME);
   bgm.src = encodeURI(track.src);
   bgm.load();
   syncTrackUi();
@@ -149,6 +197,7 @@ function ensureBgm() {
 function startBgmFromGesture() {
   if (!bgm.paused || bgmPending) return;
   bgm.muted = false;
+  ensureBgmAudioChain();
   playCurrentTrack();
 }
 
@@ -162,9 +211,9 @@ function updateThemeDuck(dt) {
   }
 
   const targetVolume = themeDuckTimer > 0 ? THEME_DUCK_VOLUME : BGM_BASE_VOLUME;
-  const response = targetVolume < bgm.volume ? THEME_DUCK_DOWN_RATE : THEME_DUCK_UP_RATE;
+  const response = targetVolume < bgmOutputVolume ? THEME_DUCK_DOWN_RATE : THEME_DUCK_UP_RATE;
   const blend = 1 - Math.exp(-response * dt);
-  bgm.volume = THREE.MathUtils.lerp(bgm.volume, targetVolume, blend);
+  applyBgmOutputVolume(THREE.MathUtils.lerp(bgmOutputVolume, targetVolume, blend));
 }
 
 function runTrackControlAction(action) {
@@ -2102,7 +2151,7 @@ function stopCurrentTrack() {
   if (bgm.paused || bgmPending) return;
   bgm.pause();
   bgm.currentTime = 0;
-  bgm.volume = BGM_BASE_VOLUME;
+  applyBgmOutputVolume(BGM_BASE_VOLUME);
   setRecordSpinning(false);
   refreshTrackControls();
   updateLyricsUi();
