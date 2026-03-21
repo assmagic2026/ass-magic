@@ -350,14 +350,12 @@ const DAY_BLOCKS_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_B, -0.16)
   .normalize();
 const GIANT_BOOK_ALTITUDE = 0.04;
-const GIANT_BOOK_OPEN_DELAY = 0.24;
 const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, -1.4)
   .addScaledVector(NIGHT_AXIS_B, -0.8)
   .normalize();
-const BLACK_BOX_ALTITUDE = 1.8;
+const BLACK_BOX_ALTITUDE = PLAYER_CLEARANCE;
 const BLACK_BOX_GROUND_ALTITUDE = 0.96;
-const BLACK_BOX_OPEN_DELAY = 0.22;
 const BLACK_BOX_LOOKAHEAD_SECONDS = 20.0;
 const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
@@ -2880,15 +2878,13 @@ function setBlackBoxOverlayOpen(isOpen) {
 }
 
 async function openBookOverlay() {
-  const messages = await loadMessages({ force: true });
   bookUiState.pageIndex = 0;
   setBookStatusDefault();
   setBookView('write');
   setBookOverlayOpen(true);
-  window.setTimeout(() => {
-    renderBookReadPage(messages);
-    bookMessageInput?.focus({ preventScroll: true });
-  }, 30);
+  bookMessageInput?.focus({ preventScroll: true });
+  const messages = await loadMessages({ force: true });
+  renderBookReadPage(messages);
 }
 
 function closeBookOverlay() {
@@ -2917,15 +2913,14 @@ function closeBlackBoxOverlay() {
 }
 
 function handleBookTrigger() {
+  if (bookUiState.open) return;
   if (bookUiState.pendingTimer !== null) {
     window.clearTimeout(bookUiState.pendingTimer);
-  }
-  bookUiState.pendingTimer = window.setTimeout(() => {
     bookUiState.pendingTimer = null;
-    openBookOverlay().catch((error) => {
-      console.error('Failed to open book overlay:', error);
-    });
-  }, GIANT_BOOK_OPEN_DELAY * 1000);
+  }
+  openBookOverlay().catch((error) => {
+    console.error('Failed to open book overlay:', error);
+  });
 }
 
 function handleBlackBoxTrigger(contactPoint) {
@@ -2933,14 +2928,18 @@ function handleBlackBoxTrigger(contactPoint) {
   if (contactPoint) {
     blackBoxUiState.lastTriggerPoint.copy(contactPoint);
     blackBoxUiState.lastTriggerAngle = blackBoxUiState.routeAngle;
+    const groundedDirection = contactPoint.clone().normalize();
+    const groundedForward = state.forward.clone()
+      .addScaledVector(groundedDirection, -state.forward.dot(groundedDirection))
+      .normalize();
+    blackBoxUiState.mode = 'grounded';
+    placeGroundedBlackBox(groundedDirection, groundedForward);
   }
   if (blackBoxUiState.pendingTimer !== null) {
     window.clearTimeout(blackBoxUiState.pendingTimer);
-  }
-  blackBoxUiState.pendingTimer = window.setTimeout(() => {
     blackBoxUiState.pendingTimer = null;
-    openBlackBoxOverlay();
-  }, BLACK_BOX_OPEN_DELAY * 1000);
+  }
+  openBlackBoxOverlay();
 }
 
 function handlePointerDown(e) {
