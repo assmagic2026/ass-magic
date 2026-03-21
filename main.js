@@ -1972,20 +1972,20 @@ function updateThemeFlash(dt) {
   }
 
   const eased = 1 - Math.pow(1 - progress, 2);
-  const radius = 110 + eased * Math.max(window.innerWidth, window.innerHeight) * 0.98;
-  const core = radius * 0.12;
-  const glow = radius * 0.34;
-  const shock = radius * 0.62;
-  const ring = radius * 0.82;
-  const veil = 0.32 * (1 - progress);
-  const ringAlpha = Math.max(0, 0.78 * (1 - progress * 0.78));
+  const radius = 160 + eased * Math.max(window.innerWidth, window.innerHeight) * 1.28;
+  const core = radius * 0.15;
+  const glow = radius * 0.38;
+  const shock = radius * 0.72;
+  const ring = radius * 0.96;
+  const veil = 0.62 * (1 - progress * 0.82);
+  const ringAlpha = Math.max(0, 0.82 * (1 - progress * 0.72));
 
   themeFlash.style.opacity = '1';
-  themeFlash.style.transform = `scale(${(1 + 0.012 * (1 - progress)).toFixed(4)})`;
+  themeFlash.style.transform = `scale(${(1 + 0.02 * (1 - progress)).toFixed(4)})`;
   themeFlash.style.background = [
-    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,1) 0px, rgba(255,255,255,0.98) ${core.toFixed(1)}px, rgba(255,255,255,0.55) ${glow.toFixed(1)}px, rgba(255,255,255,0) ${shock.toFixed(1)}px)`,
-    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,0) ${(ring * 0.62).toFixed(1)}px, rgba(255,255,255,${ringAlpha.toFixed(3)}) ${ring.toFixed(1)}px, rgba(255,255,255,0) ${(ring * 1.16).toFixed(1)}px)`,
-    `linear-gradient(rgba(255,255,255,${veil.toFixed(3)}), rgba(255,255,255,${(veil * 0.2).toFixed(3)}))`
+    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0.98) 0px, rgba(0,0,0,0.9) ${core.toFixed(1)}px, rgba(0,0,0,0.42) ${glow.toFixed(1)}px, rgba(0,0,0,0) ${shock.toFixed(1)}px)`,
+    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0) ${(ring * 0.56).toFixed(1)}px, rgba(0,0,0,${ringAlpha.toFixed(3)}) ${ring.toFixed(1)}px, rgba(0,0,0,0) ${(ring * 1.22).toFixed(1)}px)`,
+    `linear-gradient(rgba(0,0,0,${veil.toFixed(3)}), rgba(0,0,0,${(veil * 0.4).toFixed(3)}))`
   ].join(', ');
 }
 

@@ -28,7 +28,7 @@ html, body {
   opacity: 0;
   pointer-events: none;
   background: none;
-  mix-blend-mode: screen;
+  mix-blend-mode: normal;
   will-change: opacity, background, transform;
 }
 #sky-theme-wash {
