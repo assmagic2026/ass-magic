@@ -368,9 +368,9 @@ const BLACK_BOX_IMAGE_SET = [
     caption: 'かわいいのがいた。'
   },
   {
-    src: './assets/black-box-cat.png',
-    download: 'black-box-cat.png',
-    caption: 'またかわいいのがいた。'
+    src: './blackbox2.jpg',
+    download: 'blackbox2.jpg',
+    caption: 'うーん、やっぱりかわいい。'
   }
 ];
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
@@ -3238,13 +3238,15 @@ blackBoxOpen?.addEventListener('click', (e) => {
     placeGroundedBlackBox(groundedSource, getBlackBoxForwardFromAngle(blackBoxUiState.lastTriggerAngle));
   }
   const repeatEncounter = blackBoxUiState.openedOnce;
-  const nextImageIndex = repeatEncounter ? 1 : 0;
+  const nextImageIndex = repeatEncounter
+    ? (blackBoxUiState.revealCount % BLACK_BOX_IMAGE_SET.length)
+    : 0;
   setBlackBoxRevealImage(nextImageIndex);
   if (blackBoxCaption) {
     blackBoxCaption.textContent = repeatEncounter ? 'うーん、やっぱりかわいい。' : 'かわいいのがいた。';
   }
   blackBoxUiState.openedOnce = true;
-  blackBoxUiState.revealCount = Math.min(blackBoxUiState.revealCount + 1, BLACK_BOX_IMAGE_SET.length - 1);
+  blackBoxUiState.revealCount += 1;
   setBlackBoxView('reveal');
 });
 
