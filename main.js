@@ -147,6 +147,12 @@ const DAY_BLOCKS_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, 0.42)
   .addScaledVector(NIGHT_AXIS_B, -0.16)
   .normalize();
+const GIANT_BOOK_LOOKAHEAD_SECONDS = 2;
+const GIANT_BOOK_LOOKAHEAD_SPEED = 40;
+const GIANT_BOOK_ALTITUDE = 0.52;
+const GIANT_BOOK_OPEN_DELAY = 0.24;
+const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
+const BOOK_MESSAGE_LIMIT = 12;
 const CAT_PREVIEW_HEIGHT = 4.6;
 const CAT_PREVIEW_ALTITUDE = 0.18;
 const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
@@ -274,6 +280,27 @@ const V = {
   DUST_COUNT: 12
 };
 
+const BOOK_MESSAGE_SEED = [
+  {
+    id: 'seed-1',
+    name: 'anonymous',
+    message: 'ここまで飛んできた人だけが読める、静かな余白。',
+    createdAt: '2026-03-20T07:18:00.000Z'
+  },
+  {
+    id: 'seed-2',
+    name: 'night traveler',
+    message: '雲に触れた音が消えたあと、この本だけが残っていた。',
+    createdAt: '2026-03-20T07:35:00.000Z'
+  },
+  {
+    id: 'seed-3',
+    name: 'shore',
+    message: '見つけた人は、短いひとことを置いていってください。',
+    createdAt: '2026-03-20T07:52:00.000Z'
+  }
+];
+
 const colorCycleEntries = [];
 
 function randomRange(min, max) {
@@ -395,6 +422,92 @@ function placeDirectedOnSphere(object, direction, forward, altitude, roll = 0) {
   object.rotateZ(roll);
 }
 
+function createGiantBookLandmark() {
+  const group = new THREE.Group();
+  const buriedBaseMat = new THREE.MeshLambertMaterial({ color: 0x6f5b40, flatShading: true });
+  const coverMat = new THREE.MeshLambertMaterial({
+    color: 0x4d2444,
+    emissive: 0x241118,
+    emissiveIntensity: 0.12,
+    flatShading: true
+  });
+  const pageMat = new THREE.MeshLambertMaterial({
+    color: 0xf3e7cf,
+    emissive: 0x3f301a,
+    emissiveIntensity: 0.08,
+    flatShading: true
+  });
+  const trimMat = new THREE.MeshBasicMaterial({ color: 0xffd889, transparent: true, opacity: 0.92 });
+  const glyphMat = new THREE.MeshBasicMaterial({ color: 0xf2fbff, transparent: true, opacity: 0.78 });
+
+  const buriedBase = new THREE.Mesh(new THREE.CylinderGeometry(0, 6.2, 7.4, 4), buriedBaseMat);
+  buriedBase.position.y = 2.4;
+  buriedBase.rotation.y = Math.PI * 0.25;
+  group.add(buriedBase);
+
+  const bookPivot = new THREE.Group();
+  bookPivot.position.y = 10.2;
+  bookPivot.rotation.z = -0.28;
+  bookPivot.rotation.x = -0.16;
+  group.add(bookPivot);
+
+  const pageBlock = new THREE.Mesh(new THREE.BoxGeometry(10.2, 14.4, 3.7), pageMat);
+  pageBlock.position.set(0.1, 0, 0);
+  bookPivot.add(pageBlock);
+
+  const spine = new THREE.Mesh(new THREE.BoxGeometry(1.2, 15.2, 4.5), coverMat);
+  spine.position.set(-5.2, 0, 0);
+  bookPivot.add(spine);
+
+  const backCover = new THREE.Mesh(new THREE.BoxGeometry(10.8, 15.2, 0.58), coverMat);
+  backCover.position.set(0.32, 0, -2.25);
+  backCover.rotation.y = 0.17;
+  bookPivot.add(backCover);
+
+  const frontCover = new THREE.Mesh(new THREE.BoxGeometry(10.8, 15.2, 0.58), coverMat);
+  frontCover.position.set(0.42, 0, 2.28);
+  frontCover.rotation.y = -0.34;
+  bookPivot.add(frontCover);
+
+  const pageSplitLeft = new THREE.Mesh(new THREE.BoxGeometry(4.6, 13.7, 1.44), pageMat);
+  pageSplitLeft.position.set(-1.18, 0.08, -0.75);
+  pageSplitLeft.rotation.y = 0.14;
+  bookPivot.add(pageSplitLeft);
+
+  const pageSplitRight = new THREE.Mesh(new THREE.BoxGeometry(4.3, 13.6, 1.22), pageMat);
+  pageSplitRight.position.set(1.86, -0.04, 0.68);
+  pageSplitRight.rotation.y = -0.18;
+  bookPivot.add(pageSplitRight);
+
+  const bookmark = new THREE.Mesh(new THREE.BoxGeometry(0.5, 9.8, 0.18), trimMat);
+  bookmark.position.set(1.24, -3.2, 2.02);
+  bookmark.rotation.z = 0.06;
+  bookPivot.add(bookmark);
+
+  const pageEdge = new THREE.Mesh(new THREE.BoxGeometry(0.22, 11.8, 3.02), trimMat);
+  pageEdge.position.set(5.08, 0, 0);
+  bookPivot.add(pageEdge);
+
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(6.2, 0.24, 5, 18), glyphMat);
+  halo.position.y = 18.4;
+  halo.rotation.x = Math.PI * 0.5;
+  group.add(halo);
+
+  const glyph = new THREE.Mesh(new THREE.OctahedronGeometry(1.7, 0), glyphMat);
+  glyph.position.y = 18.6;
+  group.add(glyph);
+
+  const floatingShardGeo = new THREE.BoxGeometry(1.1, 2.2, 0.18);
+  for (let i = 0; i < 3; i++) {
+    const shard = new THREE.Mesh(floatingShardGeo, trimMat);
+    shard.position.set(-1.8 + i * 1.9, 14.8 + i * 1.15, -3.2 + i * 1.2);
+    shard.rotation.set(0.24 + i * 0.08, 0.2 + i * 0.1, -0.26 + i * 0.14);
+    group.add(shard);
+  }
+
+  return group;
+}
+
 const themeTriggerZones = [];
 const themeBoundsBox = new THREE.Box3();
 const themeBoundsSphere = new THREE.Sphere();
@@ -404,7 +517,7 @@ const themeClosestPoint = new THREE.Vector3();
 const themeZoneCenter = new THREE.Vector3();
 const themeProjected = new THREE.Vector3();
 
-function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 1.7) {
+function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 1.7, extra = {}) {
   object.updateMatrixWorld(true);
   themeBoundsBox.setFromObject(object);
   if (themeBoundsBox.isEmpty()) return;
@@ -414,15 +527,17 @@ function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 
   themeTriggerZones.push({
     object,
     localCenter,
-    radius: Math.max(minRadius, themeBoundsSphere.radius * radiusScale)
+    radius: Math.max(minRadius, themeBoundsSphere.radius * radiusScale),
+    onTrigger: typeof extra.onTrigger === 'function' ? extra.onTrigger : null,
+    tag: extra.tag ?? null
   });
 }
 
-function registerThemeTriggersFromChildren(group, radiusScale = 0.82, minRadius = 1.7) {
+function registerThemeTriggersFromChildren(group, radiusScale = 0.82, minRadius = 1.7, extra = {}) {
   group.updateMatrixWorld(true);
   for (const child of group.children) {
     if (!child.visible) continue;
-    registerThemeTriggerFromObject(child, radiusScale, minRadius);
+    registerThemeTriggerFromObject(child, radiusScale, minRadius, extra);
   }
 }
 
@@ -1486,6 +1601,30 @@ const themeState = {
   startupGrace: THEME_STARTUP_GRACE,
   clearRequired: false
 };
+const bookUiState = {
+  open: false,
+  pendingTimer: null,
+  lastMessages: []
+};
+
+const giantBook = createGiantBookLandmark();
+
+function placeGiantBookLandmark() {
+  const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
+  const lookAheadAngle = (GIANT_BOOK_LOOKAHEAD_SPEED * GIANT_BOOK_LOOKAHEAD_SECONDS) / startRadius;
+  const bookDirection = startUp.clone().applyAxisAngle(startRight, lookAheadAngle).normalize();
+  const towardStart = startUp.clone()
+    .addScaledVector(bookDirection, -startUp.dot(bookDirection))
+    .normalize();
+  placeDirectedOnSphere(giantBook, bookDirection, towardStart, GIANT_BOOK_ALTITUDE, 0.06);
+}
+
+placeGiantBookLandmark();
+scene.add(giantBook);
+registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
+  tag: 'book',
+  onTrigger: (contactPoint) => handleBookTrigger(contactPoint)
+});
 
 function placeCatPreviewAnchor() {
   const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
@@ -1647,6 +1786,15 @@ const menuNavButtons = Array.from(document.querySelectorAll('.menu-nav-btn'));
 const menuPages = Array.from(document.querySelectorAll('.menu-page'));
 const messageForm = document.getElementById('message-form');
 const messageNote = document.getElementById('message-note');
+const bookOverlay = document.getElementById('book-overlay');
+const bookBackdrop = document.getElementById('book-backdrop');
+const bookPanel = document.getElementById('book-panel');
+const bookClose = document.getElementById('book-close');
+const bookMessages = document.getElementById('book-messages');
+const bookForm = document.getElementById('book-form');
+const bookNameInput = document.getElementById('book-name');
+const bookMessageInput = document.getElementById('book-message-input');
+const bookStatus = document.getElementById('book-status');
 const visualizerBars = Array.from(document.querySelectorAll('.viz-bar'));
 const speedLockPanel = document.getElementById('speed-lock-panel');
 const speedLockSlider = document.getElementById('speed-lock-slider');
@@ -1728,6 +1876,7 @@ function checkThemeTriggerCollision(start, end) {
 
   let bestT = Infinity;
   let bestPoint = null;
+  let bestZone = null;
 
   for (const zone of themeTriggerZones) {
     zone.object.updateMatrixWorld(true);
@@ -1736,10 +1885,16 @@ function checkThemeTriggerCollision(start, end) {
     if (t !== null && t < bestT) {
       bestT = t;
       bestPoint = themeClosestPoint.clone();
+      bestZone = zone;
     }
   }
 
-  if (bestPoint) toggleWorldInversion(bestPoint);
+  if (bestPoint) {
+    toggleWorldInversion(bestPoint);
+    if (bestZone?.onTrigger) {
+      bestZone.onTrigger(bestPoint.clone());
+    }
+  }
 }
 
 function updateThemeSystem(dt) {
@@ -1931,6 +2086,169 @@ function setSiteMenuOpen(isOpen) {
   menuToggle?.classList.toggle('is-open', isOpen);
   menuToggle?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
   siteMenu?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+}
+
+function cloneMessages(messages) {
+  return messages.map((entry) => ({ ...entry }));
+}
+
+function formatBookMessageDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+async function loadMessages() {
+  if (bookUiState.lastMessages.length) {
+    return cloneMessages(bookUiState.lastMessages);
+  }
+
+  let messages = cloneMessages(BOOK_MESSAGE_SEED);
+  try {
+    const stored = window.localStorage.getItem(BOOK_MESSAGE_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.length) {
+        messages = parsed
+          .filter((entry) => entry && typeof entry.message === 'string')
+          .map((entry) => ({
+            id: String(entry.id ?? `${Date.now()}-${Math.random()}`),
+            name: typeof entry.name === 'string' ? entry.name : '',
+            message: entry.message,
+            createdAt: String(entry.createdAt ?? new Date().toISOString())
+          }));
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to load book messages:', error);
+  }
+
+  bookUiState.lastMessages = messages
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, BOOK_MESSAGE_LIMIT);
+  return cloneMessages(bookUiState.lastMessages);
+}
+
+async function saveMessage(payload) {
+  const trimmedMessage = (payload.message ?? '').trim();
+  if (!trimmedMessage) {
+    throw new Error('empty-message');
+  }
+
+  const messages = await loadMessages();
+  const entry = {
+    id: `book-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+    name: (payload.name ?? '').trim() || 'anonymous',
+    message: trimmedMessage,
+    createdAt: new Date().toISOString()
+  };
+  const nextMessages = [entry, ...messages].slice(0, BOOK_MESSAGE_LIMIT);
+  bookUiState.lastMessages = nextMessages;
+  try {
+    window.localStorage.setItem(BOOK_MESSAGE_STORAGE_KEY, JSON.stringify(nextMessages));
+  } catch (error) {
+    console.warn('Failed to save book message:', error);
+  }
+  return { ...entry };
+}
+
+function renderBookMessages(messages) {
+  if (!bookMessages) return;
+  bookMessages.textContent = '';
+  if (!messages.length) {
+    const empty = document.createElement('div');
+    empty.className = 'book-message-card';
+    empty.textContent = 'まだ何も書かれていません。最初のひとことを残せます。';
+    bookMessages.append(empty);
+    return;
+  }
+
+  for (const entry of messages) {
+    const card = document.createElement('article');
+    card.className = 'book-message-card';
+
+    const meta = document.createElement('div');
+    meta.className = 'book-message-meta';
+
+    const name = document.createElement('div');
+    name.className = 'book-message-name';
+    name.textContent = entry.name || 'anonymous';
+    meta.append(name);
+
+    const date = document.createElement('div');
+    date.className = 'book-message-date';
+    date.textContent = formatBookMessageDate(entry.createdAt);
+    meta.append(date);
+
+    const body = document.createElement('div');
+    body.className = 'book-message-body';
+    body.textContent = entry.message;
+
+    card.append(meta, body);
+    bookMessages.append(card);
+  }
+}
+
+function setBookOverlayOpen(isOpen) {
+  bookUiState.open = isOpen;
+  bookOverlay?.classList.toggle('is-open', isOpen);
+  bookOverlay?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (isOpen) {
+    accelPointers.clear();
+    refreshAccelHeld();
+    input.leftId = null;
+    input.rightId = null;
+    input.stickId = null;
+    input.stickOffset.x = 0;
+    input.stickOffset.y = 0;
+    input.turnX = 0;
+    input.turnY = 0;
+    if (stickHandle) {
+      stickHandle.style.transform = 'translate(-50%, -50%)';
+    }
+    setSiteMenuOpen(false);
+  } else {
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+  }
+}
+
+async function openBookOverlay() {
+  const messages = await loadMessages();
+  renderBookMessages(messages);
+  if (bookStatus) {
+    bookStatus.textContent = '今はダミー保存ですが、あとで外部DBに差し替えやすい形にしてあります。';
+  }
+  setBookOverlayOpen(true);
+  window.setTimeout(() => {
+    bookMessageInput?.focus({ preventScroll: true });
+  }, 20);
+}
+
+function closeBookOverlay() {
+  if (bookUiState.pendingTimer !== null) {
+    window.clearTimeout(bookUiState.pendingTimer);
+    bookUiState.pendingTimer = null;
+  }
+  setBookOverlayOpen(false);
+}
+
+function handleBookTrigger() {
+  if (bookUiState.pendingTimer !== null) {
+    window.clearTimeout(bookUiState.pendingTimer);
+  }
+  bookUiState.pendingTimer = window.setTimeout(() => {
+    bookUiState.pendingTimer = null;
+    openBookOverlay().catch((error) => {
+      console.error('Failed to open book overlay:', error);
+    });
+  }, GIANT_BOOK_OPEN_DELAY * 1000);
 }
 
 function handlePointerDown(e) {
@@ -2129,6 +2447,59 @@ messageForm?.addEventListener('submit', (e) => {
   }
 });
 
+for (const control of [bookBackdrop, bookPanel, bookClose, bookForm, bookMessages, bookNameInput, bookMessageInput]) {
+  if (!control) continue;
+  control.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+  });
+  control.addEventListener('pointermove', (e) => {
+    e.stopPropagation();
+  });
+  control.addEventListener('pointerup', (e) => {
+    e.stopPropagation();
+  });
+  control.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+bookBackdrop?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBookOverlay();
+});
+
+bookClose?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBookOverlay();
+});
+
+bookForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (!bookMessageInput || !bookStatus) return;
+  const message = bookMessageInput.value.trim();
+  if (!message) {
+    bookStatus.textContent = 'ひとこと書いてから記してください。';
+    return;
+  }
+
+  try {
+    await saveMessage({
+      name: bookNameInput?.value ?? '',
+      message
+    });
+    renderBookMessages(await loadMessages());
+    bookMessageInput.value = '';
+    if (bookNameInput) bookNameInput.value = '';
+    bookStatus.textContent = '本に新しいことばが記されました。';
+  } catch (error) {
+    console.error('Failed to save book message:', error);
+    bookStatus.textContent = '今は書き込みに失敗しました。少し時間をおいてもう一度どうぞ。';
+  }
+});
+
 for (const control of [speedLockPanel, speedLockSlider]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
@@ -2196,7 +2567,8 @@ window.addEventListener('gestureend', () => forceViewportReset());
 window.addEventListener('dblclick', (e) => e.preventDefault());
 window.addEventListener('touchmove', (e) => {
   const isEditable = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
-  if (!isEditable && e.cancelable) e.preventDefault();
+  const allowScroll = isEditable || (e.target instanceof Element && e.target.closest('#book-messages, #site-menu-pages'));
+  if (!allowScroll && e.cancelable) e.preventDefault();
 }, { passive: false });
 
 let lastTouchEnd = 0;
@@ -2229,6 +2601,7 @@ window.addEventListener('orientationchange', () => {
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') {
+    closeBookOverlay();
     setSiteMenuOpen(false);
   }
   if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD') {
@@ -2727,11 +3100,13 @@ function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
   const previousPos = state.pos.clone();
   updateColorCycle();
-  updatePlayer(dt);
   updateThemeSystem(dt);
-  checkThemeTriggerCollision(previousPos, state.pos);
-  updateClouds(dt);
-  updateCamera(dt);
+  if (!bookUiState.open) {
+    updatePlayer(dt);
+    checkThemeTriggerCollision(previousPos, state.pos);
+    updateClouds(dt);
+    updateCamera(dt);
+  }
   updateInvertedSkyWash();
   updateThemeFlash(dt);
   updateTrackVisualizer();

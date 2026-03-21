@@ -132,5 +132,33 @@
   <canvas id="c"></canvas>
   <div id="sky-theme-wash" aria-hidden="true"></div>
   <div id="theme-flash" aria-hidden="true"></div>
+  <div id="book-overlay" aria-hidden="true">
+    <div id="book-backdrop" class="ui-control"></div>
+    <div id="book-panel" class="ui-control" role="dialog" aria-modal="true" aria-labelledby="book-title">
+      <div id="book-panel-head">
+        <div id="book-kicker">STRANGE ARCHIVE</div>
+        <button id="book-close" class="ui-control" type="button" aria-label="Close book">Close</button>
+      </div>
+      <div id="book-title-wrap">
+        <h2 id="book-title">記録の本</h2>
+        <p id="book-subtitle">ここに残された声を読み、あなたの言葉も書き込めます。</p>
+      </div>
+      <div id="book-spread">
+        <section class="book-page book-page-left">
+          <div class="book-page-label">PAST NOTES</div>
+          <div id="book-messages" class="ui-control" aria-live="polite"></div>
+        </section>
+        <section class="book-page book-page-right">
+          <div class="book-page-label">LEAVE A NOTE</div>
+          <form id="book-form" class="ui-control">
+            <input id="book-name" class="ui-control" type="text" maxlength="24" placeholder="名前（任意）">
+            <textarea id="book-message-input" class="ui-control" rows="6" maxlength="280" placeholder="この世界に短い言葉を残してください"></textarea>
+            <button id="book-submit" class="ui-control" type="submit">記す</button>
+            <div id="book-status">今はダミー保存ですが、あとで外部DBに差し替えやすい形にしてあります。</div>
+          </form>
+        </section>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
