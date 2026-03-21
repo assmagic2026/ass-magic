@@ -47,6 +47,11 @@ const bgm = document.getElementById('bgm-audio') || new Audio();
 bgm.preload = 'auto';
 bgm.playsInline = true;
 bgm.crossOrigin = 'anonymous';
+const themeChangeSfx = new Audio(encodeURI('./change.mp3'));
+themeChangeSfx.preload = 'auto';
+themeChangeSfx.playsInline = true;
+themeChangeSfx.crossOrigin = 'anonymous';
+themeChangeSfx.volume = 0.78;
 const BGM_BASE_VOLUME = 0.42;
 bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
@@ -145,6 +150,21 @@ function startBgmFromGesture() {
   if (!bgm.paused || bgmPending) return;
   bgm.muted = false;
   playCurrentTrack();
+}
+
+function playThemeChangeSfx() {
+  try {
+    themeChangeSfx.pause();
+    themeChangeSfx.currentTime = 0;
+    const playResult = themeChangeSfx.play();
+    if (playResult && typeof playResult.catch === 'function') {
+      playResult.catch((error) => {
+        console.warn('Theme change SFX playback failed:', error);
+      });
+    }
+  } catch (error) {
+    console.warn('Theme change SFX playback failed:', error);
+  }
 }
 
 function runTrackControlAction(action) {
@@ -1910,6 +1930,7 @@ function toggleWorldInversion(contactPoint) {
   themeState.cooldown = THEME_TRIGGER_COOLDOWN;
   themeState.clearRequired = true;
   applyWorldInversion();
+  playThemeChangeSfx();
   startThemeFlash(contactPoint);
 }
 
