@@ -52,7 +52,6 @@ bgm.volume = BGM_BASE_VOLUME;
 let bgmPending = false;
 let bgmLastAttemptAt = 0;
 let lastTrackControlActionAt = 0;
-let bgmUnlocked = false;
 let lastLyricsCurrent = '';
 let lyricsVisible = false;
 let lyricsEnabled = true;
@@ -123,28 +122,6 @@ function playCurrentTrack() {
   }
 }
 
-async function unlockBgmFromGesture() {
-  if (bgmUnlocked) return true;
-  try {
-    const previousTime = Number.isFinite(bgm.currentTime) ? bgm.currentTime : 0;
-    const previousMuted = bgm.muted;
-    bgm.muted = true;
-    const unlockResult = bgm.play();
-    if (unlockResult && typeof unlockResult.then === 'function') {
-      await unlockResult;
-    }
-    bgm.pause();
-    bgm.currentTime = previousTime;
-    bgm.muted = previousMuted;
-    bgmUnlocked = true;
-    return true;
-  } catch (error) {
-    bgm.muted = false;
-    console.warn('BGM unlock attempt failed:', error);
-    return false;
-  }
-}
-
 function loadTrack(index, autoplay = false) {
   currentTrackIndex = (index + playlist.length) % playlist.length;
   const track = playlist[currentTrackIndex];
@@ -161,6 +138,12 @@ function loadTrack(index, autoplay = false) {
 
 function ensureBgm() {
   if (!bgm.paused) return;
+  playCurrentTrack();
+}
+
+function startBgmFromGesture() {
+  if (!bgm.paused || bgmPending) return;
+  bgm.muted = false;
   playCurrentTrack();
 }
 
@@ -1997,23 +1980,19 @@ function updateThemeFlash(dt) {
   }
 
   const eased = 1 - Math.pow(1 - progress, 2);
-  const radius = 160 + eased * Math.max(window.innerWidth, window.innerHeight) * 1.28;
-  const core = radius * 0.15;
-  const glow = radius * 0.38;
-  const shock = radius * 0.72;
-  const ring = radius * 0.96;
-  const whiteRing = radius * 1.12;
-  const veil = 0.62 * (1 - progress * 0.82);
-  const ringAlpha = Math.max(0, 0.82 * (1 - progress * 0.72));
-  const whiteAlpha = Math.max(0, 0.56 * (1 - progress * 0.88));
+  const radius = 150 + eased * Math.max(window.innerWidth, window.innerHeight) * 1.18;
+  const ringInner = radius * 0.5;
+  const ringMid = radius * 0.72;
+  const ringOuter = radius * 0.94;
+  const tailOuter = radius * 1.12;
+  const ringAlpha = Math.max(0, 0.88 * (1 - progress * 0.76));
+  const tailAlpha = Math.max(0, 0.26 * (1 - progress * 0.9));
 
   themeFlash.style.opacity = '1';
-  themeFlash.style.transform = `scale(${(1 + 0.02 * (1 - progress)).toFixed(4)})`;
+  themeFlash.style.transform = `scale(${(1 + 0.016 * (1 - progress)).toFixed(4)})`;
   themeFlash.style.background = [
-    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0.98) 0px, rgba(0,0,0,0.9) ${core.toFixed(1)}px, rgba(0,0,0,0.42) ${glow.toFixed(1)}px, rgba(0,0,0,0) ${shock.toFixed(1)}px)`,
-    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0) ${(ring * 0.56).toFixed(1)}px, rgba(0,0,0,${ringAlpha.toFixed(3)}) ${ring.toFixed(1)}px, rgba(0,0,0,0) ${(ring * 1.22).toFixed(1)}px)`,
-    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(255,255,255,0) ${(whiteRing * 0.7).toFixed(1)}px, rgba(255,255,255,${whiteAlpha.toFixed(3)}) ${whiteRing.toFixed(1)}px, rgba(255,255,255,0) ${(whiteRing * 1.16).toFixed(1)}px)`,
-    `linear-gradient(rgba(0,0,0,${veil.toFixed(3)}), rgba(0,0,0,${(veil * 0.4).toFixed(3)}))`
+    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0) ${ringInner.toFixed(1)}px, rgba(0,0,0,${ringAlpha.toFixed(3)}) ${ringMid.toFixed(1)}px, rgba(0,0,0,${(ringAlpha * 0.86).toFixed(3)}) ${ringOuter.toFixed(1)}px, rgba(0,0,0,0) ${tailOuter.toFixed(1)}px)`,
+    `radial-gradient(circle at ${x.toFixed(1)}px ${y.toFixed(1)}px, rgba(0,0,0,0) ${(ringOuter * 0.96).toFixed(1)}px, rgba(0,0,0,${tailAlpha.toFixed(3)}) ${tailOuter.toFixed(1)}px, rgba(0,0,0,0) ${(tailOuter * 1.22).toFixed(1)}px)`
   ].join(', ');
 }
 
@@ -2531,9 +2510,7 @@ function handlePointerDown(e) {
     return;
   }
 
-  unlockBgmFromGesture().finally(() => {
-    ensureBgm();
-  });
+  startBgmFromGesture();
 
   if (stickArea && input.stickId === null) {
     const rect = stickArea.getBoundingClientRect();
@@ -2609,9 +2586,7 @@ function handlePointerUp(e) {
 
 function handleMouseDown(e) {
   if (e.target instanceof Element && e.target.closest('.ui-control')) return;
-  unlockBgmFromGesture().finally(() => {
-    ensureBgm();
-  });
+  startBgmFromGesture();
 }
 
 window.addEventListener('pointerdown', handlePointerDown, { passive: false });
@@ -2626,24 +2601,18 @@ document.addEventListener('dragstart', (e) => e.preventDefault());
 if (trackCard) {
   trackCard.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
-    unlockBgmFromGesture().finally(() => {
-      ensureBgm();
-    });
+    startBgmFromGesture();
   });
   trackCard.addEventListener('mousedown', (e) => {
     e.stopPropagation();
-    unlockBgmFromGesture().finally(() => {
-      ensureBgm();
-    });
+    startBgmFromGesture();
   });
   trackCard.addEventListener('pointerup', (e) => {
     e.stopPropagation();
   });
   trackCard.addEventListener('click', (e) => {
     e.stopPropagation();
-    unlockBgmFromGesture().finally(() => {
-      ensureBgm();
-    });
+    startBgmFromGesture();
   });
 }
 
@@ -2667,11 +2636,7 @@ trackToggle?.addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
   runTrackControlAction(() => {
-    if (bgm.paused) {
-      unlockBgmFromGesture().finally(() => {
-        ensureBgm();
-      });
-    }
+    if (bgm.paused) startBgmFromGesture();
     else stopCurrentTrack();
   });
 });
@@ -2679,11 +2644,7 @@ trackToggle?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   runTrackControlAction(() => {
-    if (bgm.paused) {
-      unlockBgmFromGesture().finally(() => {
-        ensureBgm();
-      });
-    }
+    if (bgm.paused) startBgmFromGesture();
     else stopCurrentTrack();
   });
 });
