@@ -354,12 +354,12 @@ const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, -1.4)
   .addScaledVector(NIGHT_AXIS_B, -0.8)
   .normalize();
-const BLACK_BOX_ALTITUDE = 0.55;
+const BLACK_BOX_ALTITUDE = 0.4;
 const BLACK_BOX_GROUND_ALTITUDE = 0.96;
 const BLACK_BOX_LOOKAHEAD_SECONDS = 20.0;
 const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
-const BLACK_BOX_PHASE_LEAD_SECONDS = 0.18;
+const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
 const BLACK_BOX_IMAGE_SET = [
   {
@@ -1996,7 +1996,7 @@ registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
 });
 placeBlackBoxLandmark();
 scene.add(blackBoxLandmark);
-registerThemeTriggerFromObject(blackBoxLandmark, 1.9, 5.4, {
+registerThemeTriggerFromObject(blackBoxLandmark, 2.35, 7.2, {
   tag: 'black-box',
   onTrigger: (contactPoint) => handleBlackBoxTrigger(contactPoint)
 });
