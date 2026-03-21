@@ -2904,6 +2904,9 @@ function openBlackBoxOverlay() {
   if (blackBoxTitle) {
     blackBoxTitle.style.display = blackBoxUiState.openedOnce ? 'none' : '';
   }
+  if (blackBoxOpen) {
+    blackBoxOpen.textContent = blackBoxUiState.openedOnce ? 'また開けちゃう' : '開けてみる';
+  }
   setBlackBoxOverlayOpen(true);
 }
 
@@ -3255,6 +3258,9 @@ blackBoxIgnore?.addEventListener('click', (e) => {
 blackBoxBack?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  if (blackBoxOpen) {
+    blackBoxOpen.textContent = blackBoxUiState.openedOnce ? 'また開けちゃう' : '開けてみる';
+  }
   setBlackBoxView('intro');
 });
 
