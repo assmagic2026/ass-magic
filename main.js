@@ -362,10 +362,10 @@ const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
 const DUSK_TOWER_ALTITUDE = -3.8;
-const DUSK_TOWER_DIR = NIGHT_CENTER.clone()
-  .addScaledVector(NIGHT_AXIS_A, -0.66)
-  .addScaledVector(NIGHT_AXIS_B, 0.18)
-  .addScaledVector(SUN_DIRECTION, 0.34)
+const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
+  .multiplyScalar(-1.0)
+  .addScaledVector(NIGHT_AXIS_B, 0.14)
+  .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
 const BLACK_BOX_IMAGE_SET = [
   {
@@ -768,9 +768,9 @@ function createDuskTowerLandmark() {
     emissiveIntensity: 0.16,
     flatShading: true,
   });
-  const prism = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 189, 3), shellMat);
-  prism.position.y = 88;
-  prism.scale.set(1.42, 1, 0.86);
+  const prism = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 151.2, 3), shellMat);
+  prism.position.y = 69.1;
+  prism.scale.set(2.3, 1, 0.48);
   group.add(prism);
   group.userData.shellMat = shellMat;
 
@@ -1439,7 +1439,6 @@ const duskTowerForward = SUN_DIRECTION.clone()
   .normalize();
 placeDirectedOnSphere(duskTower, DUSK_TOWER_DIR, duskTowerForward, DUSK_TOWER_ALTITUDE, 0.0);
 scene.add(duskTower);
-registerThemeTriggerFromObject(duskTower, 0.46, 8.8);
 
 const beaconGroup = new THREE.Group();
 for (let i = 0; i < V.BEACON_COUNT; i++) {
@@ -2266,10 +2265,6 @@ function applyWorldInversion() {
     lyricsFullText.style.setProperty('color', fullColor, 'important');
     lyricsFullText.style.setProperty('-webkit-text-fill-color', fullColor, 'important');
     lyricsFullText.style.setProperty('text-shadow', fullShadow, 'important');
-  }
-  if (duskTower?.userData.shellMat) {
-    duskTower.userData.shellMat.color.set(themeState.inverted ? 0x1f67ff : 0xe33d34);
-    duskTower.userData.shellMat.emissive.set(themeState.inverted ? 0x0b2a78 : 0x5e110c);
   }
 }
 
