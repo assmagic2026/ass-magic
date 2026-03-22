@@ -367,7 +367,7 @@ const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .addScaledVector(NIGHT_AXIS_B, 0.14)
   .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
-const DAY_PYRAMID_ALTITUDE = 0.0;
+const DAY_PYRAMID_ALTITUDE = -8.5;
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -3269,7 +3269,6 @@ for (const control of [
   blackBoxClose,
   blackBoxOpen,
   blackBoxIgnore,
-  blackBoxBack,
   blackBoxDownload
 ]) {
   if (!control) continue;
@@ -3339,15 +3338,6 @@ blackBoxIgnore?.addEventListener('click', (e) => {
   e.stopPropagation();
   resumeBlackBoxOrbit();
   closeBlackBoxOverlay();
-});
-
-blackBoxBack?.addEventListener('click', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  if (blackBoxOpen) {
-    blackBoxOpen.textContent = blackBoxUiState.openedOnce ? 'また開けちゃう' : '開けてみる';
-  }
-  setBlackBoxView('intro');
 });
 
 for (const button of bookViewButtons) {

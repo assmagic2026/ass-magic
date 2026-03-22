@@ -800,7 +800,6 @@ html, body {
 }
 #black-box-close,
 #black-box-open,
-#black-box-back,
 #black-box-ignore,
 #black-box-download {
   min-width: 112px;
@@ -1167,7 +1166,6 @@ html, body {
   }
   #black-box-close,
   #black-box-open,
-  #black-box-back,
   #black-box-ignore,
   #black-box-download {
     min-width: 96px;
