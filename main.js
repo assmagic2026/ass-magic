@@ -361,9 +361,12 @@ const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
-const MYSTERY_STACK_ROUTE_ANGLE = 2.72;
-const MYSTERY_STACK_LATERAL = 0.06;
-const MYSTERY_STACK_ALTITUDE = 10.8;
+const DUSK_TOWER_ALTITUDE = 0.42;
+const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
+  .multiplyScalar(-1.0)
+  .addScaledVector(NIGHT_AXIS_B, 0.22)
+  .addScaledVector(SUN_DIRECTION, 0.2)
+  .normalize();
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -757,60 +760,41 @@ function createBlackBoxLandmark() {
   return group;
 }
 
-function createMysteryStackLandmark() {
+function createDuskTowerLandmark() {
   const group = new THREE.Group();
-  const plateMat = new THREE.MeshLambertMaterial({
-    color: 0xd9e0e7,
-    emissive: 0x1a2330,
-    emissiveIntensity: 0.08,
-    transparent: true,
-    opacity: 0.62,
+  const shellMat = new THREE.MeshLambertMaterial({
+    color: 0xbac6d6,
+    emissive: 0x1c2738,
+    emissiveIntensity: 0.12,
     flatShading: true,
-    depthWrite: false
   });
-  const plateEdgeMat = new THREE.MeshLambertMaterial({
-    color: 0x8b95a0,
-    emissive: 0x121820,
-    emissiveIntensity: 0.05,
+  const accentMat = new THREE.MeshLambertMaterial({
+    color: 0xdfe7ef,
+    emissive: 0x28384a,
+    emissiveIntensity: 0.16,
     flatShading: true
   });
-  const spineMat = new THREE.MeshLambertMaterial({
-    color: 0x616a75,
-    emissive: 0x0d1116,
-    emissiveIntensity: 0.06,
-    flatShading: true
-  });
-  const plateGeo = new THREE.BoxGeometry(22, 0.42, 12);
-  const edgeGeo = new THREE.BoxGeometry(22.6, 0.08, 12.6);
-  const spineGeo = new THREE.BoxGeometry(3.2, 54, 4.8);
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(4.8, 7.2, 58, 3), shellMat);
+  core.position.y = 29;
+  core.rotation.y = Math.PI / 3;
+  group.add(core);
 
-  const spine = new THREE.Mesh(spineGeo, spineMat);
-  spine.position.y = 27;
-  spine.rotation.z = -0.08;
-  group.add(spine);
+  const upper = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 4.6, 22, 3), accentMat);
+  upper.position.y = 68;
+  upper.rotation.y = Math.PI / 6;
+  group.add(upper);
 
-  for (let i = 0; i < 13; i++) {
-    const plate = new THREE.Mesh(plateGeo, plateMat);
-    const edge = new THREE.Mesh(edgeGeo, plateEdgeMat);
-    const y = 4 + i * 4.1;
-    const widthScale = 1.18 - i * 0.03;
-    const depthScale = 0.9 + ((i + 1) % 3) * 0.08;
-    const xOffset = Math.sin(i * 0.55) * 1.8;
-    const zOffset = Math.cos(i * 0.41) * 1.4;
-    const tiltX = (i - 6) * 0.012;
-    const tiltZ = Math.sin(i * 0.32) * 0.08;
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 3.2, 12, 3), accentMat);
+  cap.position.y = 85;
+  cap.rotation.y = Math.PI / 2;
+  group.add(cap);
 
-    plate.position.set(xOffset, y, zOffset);
-    plate.scale.set(widthScale, 1, depthScale);
-    plate.rotation.x = tiltX;
-    plate.rotation.z = tiltZ;
-    group.add(plate);
-
-    edge.position.copy(plate.position);
-    edge.position.y += 0.19;
-    edge.scale.set(widthScale, 1, depthScale);
-    edge.rotation.copy(plate.rotation);
-    group.add(edge);
+  for (let i = 0; i < 3; i++) {
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(1.2, 24 + i * 6, 9.2 - i * 1.2), accentMat);
+    fin.position.y = 18 + i * 16;
+    fin.rotation.y = (i / 3) * Math.PI * 2;
+    fin.rotation.z = 0.06;
+    group.add(fin);
   }
 
   return group;
@@ -1472,12 +1456,11 @@ registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
 
 // Visual Upgrade Phase 1 landmark hierarchy removed.
 
-const mysteryStack = createMysteryStackLandmark();
-const mysteryStackDirection = getRouteDirection(MYSTERY_STACK_ROUTE_ANGLE, MYSTERY_STACK_LATERAL);
-const mysteryStackForward = getRouteForward(MYSTERY_STACK_ROUTE_ANGLE);
-placeDirectedOnSphere(mysteryStack, mysteryStackDirection, mysteryStackForward, MYSTERY_STACK_ALTITUDE, 0.06);
-scene.add(mysteryStack);
-registerThemeTriggerFromObject(mysteryStack, 0.92, 9.4);
+const duskTower = createDuskTowerLandmark();
+const duskTowerAxes = getSurfaceAxes(DUSK_TOWER_DIR);
+placeDirectedOnSphere(duskTower, DUSK_TOWER_DIR, duskTowerAxes.axisB, DUSK_TOWER_ALTITUDE, 0.03);
+scene.add(duskTower);
+registerThemeTriggerFromObject(duskTower, 0.88, 9.2);
 
 const beaconGroup = new THREE.Group();
 for (let i = 0; i < V.BEACON_COUNT; i++) {
