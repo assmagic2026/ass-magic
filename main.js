@@ -361,11 +361,11 @@ const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
-const DUSK_TOWER_ALTITUDE = 0.42;
-const DUSK_TOWER_DIR = NIGHT_CENTER.clone()
-  .addScaledVector(NIGHT_AXIS_A, -0.38)
-  .addScaledVector(NIGHT_AXIS_B, 0.16)
-  .addScaledVector(SUN_DIRECTION, 0.08)
+const DUSK_TOWER_ALTITUDE = 0.0;
+const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
+  .multiplyScalar(-0.92)
+  .addScaledVector(NIGHT_AXIS_B, 0.33)
+  .addScaledVector(SUN_DIRECTION, -0.12)
   .normalize();
 const BLACK_BOX_IMAGE_SET = [
   {
@@ -763,13 +763,13 @@ function createBlackBoxLandmark() {
 function createDuskTowerLandmark() {
   const group = new THREE.Group();
   const shellMat = new THREE.MeshLambertMaterial({
-    color: 0xffffff,
-    emissive: 0x151515,
-    emissiveIntensity: 0.06,
+    color: 0xe33d34,
+    emissive: 0x4a120f,
+    emissiveIntensity: 0.12,
     flatShading: true,
   });
-  const prism = new THREE.Mesh(new THREE.CylinderGeometry(5.2, 6.8, 84, 3), shellMat);
-  prism.position.y = 42;
+  const prism = new THREE.Mesh(new THREE.CylinderGeometry(16.5, 21.5, 126, 3), shellMat);
+  prism.position.y = 63;
   prism.rotation.y = Math.PI / 6;
   group.add(prism);
 
@@ -1436,7 +1436,7 @@ const duskTower = createDuskTowerLandmark();
 const duskTowerAxes = getSurfaceAxes(DUSK_TOWER_DIR);
 placeDirectedOnSphere(duskTower, DUSK_TOWER_DIR, duskTowerAxes.axisB, DUSK_TOWER_ALTITUDE, 0.03);
 scene.add(duskTower);
-registerThemeTriggerFromObject(duskTower, 0.56, 5.6);
+registerThemeTriggerFromObject(duskTower, 0.46, 8.8);
 
 const beaconGroup = new THREE.Group();
 for (let i = 0; i < V.BEACON_COUNT; i++) {
