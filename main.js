@@ -361,6 +361,9 @@ const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
+const MYSTERY_STACK_ROUTE_ANGLE = 2.72;
+const MYSTERY_STACK_LATERAL = 0.06;
+const MYSTERY_STACK_ALTITUDE = 10.8;
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -751,6 +754,65 @@ function createBlackBoxLandmark() {
   const shell = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.9, 1.9), cubeMat);
   const core = new THREE.Mesh(new THREE.BoxGeometry(1.46, 1.46, 1.46), innerMat);
   group.add(shell, core);
+  return group;
+}
+
+function createMysteryStackLandmark() {
+  const group = new THREE.Group();
+  const plateMat = new THREE.MeshLambertMaterial({
+    color: 0xd9e0e7,
+    emissive: 0x1a2330,
+    emissiveIntensity: 0.08,
+    transparent: true,
+    opacity: 0.62,
+    flatShading: true,
+    depthWrite: false
+  });
+  const plateEdgeMat = new THREE.MeshLambertMaterial({
+    color: 0x8b95a0,
+    emissive: 0x121820,
+    emissiveIntensity: 0.05,
+    flatShading: true
+  });
+  const spineMat = new THREE.MeshLambertMaterial({
+    color: 0x616a75,
+    emissive: 0x0d1116,
+    emissiveIntensity: 0.06,
+    flatShading: true
+  });
+  const plateGeo = new THREE.BoxGeometry(22, 0.42, 12);
+  const edgeGeo = new THREE.BoxGeometry(22.6, 0.08, 12.6);
+  const spineGeo = new THREE.BoxGeometry(3.2, 54, 4.8);
+
+  const spine = new THREE.Mesh(spineGeo, spineMat);
+  spine.position.y = 27;
+  spine.rotation.z = -0.08;
+  group.add(spine);
+
+  for (let i = 0; i < 13; i++) {
+    const plate = new THREE.Mesh(plateGeo, plateMat);
+    const edge = new THREE.Mesh(edgeGeo, plateEdgeMat);
+    const y = 4 + i * 4.1;
+    const widthScale = 1.18 - i * 0.03;
+    const depthScale = 0.9 + ((i + 1) % 3) * 0.08;
+    const xOffset = Math.sin(i * 0.55) * 1.8;
+    const zOffset = Math.cos(i * 0.41) * 1.4;
+    const tiltX = (i - 6) * 0.012;
+    const tiltZ = Math.sin(i * 0.32) * 0.08;
+
+    plate.position.set(xOffset, y, zOffset);
+    plate.scale.set(widthScale, 1, depthScale);
+    plate.rotation.x = tiltX;
+    plate.rotation.z = tiltZ;
+    group.add(plate);
+
+    edge.position.copy(plate.position);
+    edge.position.y += 0.19;
+    edge.scale.set(widthScale, 1, depthScale);
+    edge.rotation.copy(plate.rotation);
+    group.add(edge);
+  }
+
   return group;
 }
 
@@ -1409,6 +1471,13 @@ scene.add(dayBlocks);
 registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
 
 // Visual Upgrade Phase 1 landmark hierarchy removed.
+
+const mysteryStack = createMysteryStackLandmark();
+const mysteryStackDirection = getRouteDirection(MYSTERY_STACK_ROUTE_ANGLE, MYSTERY_STACK_LATERAL);
+const mysteryStackForward = getRouteForward(MYSTERY_STACK_ROUTE_ANGLE);
+placeDirectedOnSphere(mysteryStack, mysteryStackDirection, mysteryStackForward, MYSTERY_STACK_ALTITUDE, 0.06);
+scene.add(mysteryStack);
+registerThemeTriggerFromObject(mysteryStack, 0.92, 9.4);
 
 const beaconGroup = new THREE.Group();
 for (let i = 0; i < V.BEACON_COUNT; i++) {
