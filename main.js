@@ -798,7 +798,8 @@ function createDuskTowerLandmark() {
   const shellMat = new THREE.MeshBasicMaterial({
     color: 0xff3328,
     toneMapped: false,
-    fog: false
+    fog: false,
+    side: THREE.DoubleSide
   });
   const prism = new THREE.Mesh(createIsoscelesPrismGeometry(25, 118, 258), shellMat);
   group.add(prism);
