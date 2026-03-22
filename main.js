@@ -367,7 +367,7 @@ const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .addScaledVector(NIGHT_AXIS_B, 0.14)
   .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
-const DAY_PYRAMID_ALTITUDE = -3.2;
+const DAY_PYRAMID_ALTITUDE = -6.0;
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
