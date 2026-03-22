@@ -367,7 +367,7 @@ const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .addScaledVector(NIGHT_AXIS_B, 0.14)
   .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
-const DAY_PYRAMID_ALTITUDE = -8.5;
+const DAY_PYRAMID_ALTITUDE = -3.2;
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -810,10 +810,11 @@ function createDuskTowerLandmark() {
 
 function createDayPyramidLandmark() {
   const group = new THREE.Group();
-  const shellMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    toneMapped: false,
-    fog: false
+  const shellMat = new THREE.MeshLambertMaterial({
+    color: 0xf2f7ff,
+    emissive: 0x0d1116,
+    emissiveIntensity: 0.02,
+    flatShading: true
   });
   const pyramidGeo = new THREE.CylinderGeometry(0.01, 34, 31, 4);
   pyramidGeo.translate(0, 15.5, 0);
@@ -1683,9 +1684,9 @@ registerThemeTriggersFromChildren(cloudVeils, 0.84, 2.4);
 registerThemeTriggersFromChildren(nightFog, 0.84, 2.2);
 
 const player = new THREE.Group();
-const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, fog: false });
-const backMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, fog: false });
-const wingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, fog: false });
+const bodyMat = new THREE.MeshLambertMaterial({ color: 0xf5f9ff, emissive: 0x0b1018, emissiveIntensity: 0.02 });
+const backMat = new THREE.MeshLambertMaterial({ color: 0xf1f6ff, emissive: 0x0b1018, emissiveIntensity: 0.02 });
+const wingMat = new THREE.MeshLambertMaterial({ color: 0xf7fbff, emissive: 0x0b1018, emissiveIntensity: 0.02, flatShading: true });
 const beakMat = new THREE.MeshLambertMaterial({ color: 0xf0b24a, flatShading: true });
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0x171b24 });
 const accentMat = new THREE.MeshBasicMaterial({ color: 0x7ef4ff, transparent: true, opacity: 0.0 });
