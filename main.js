@@ -367,7 +367,7 @@ const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .addScaledVector(NIGHT_AXIS_B, 0.14)
   .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
-const DAY_PYRAMID_ALTITUDE = -5.8;
+const DAY_PYRAMID_ALTITUDE = 0.0;
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -811,28 +811,16 @@ function createDuskTowerLandmark() {
 function createDayPyramidLandmark() {
   const group = new THREE.Group();
   const shellMat = new THREE.MeshLambertMaterial({
-    color: 0xf2deb4,
-    emissive: 0x4d3815,
-    emissiveIntensity: 0.1,
+    color: 0xffffff,
+    emissive: 0x3a3a3a,
+    emissiveIntensity: 0.06,
     flatShading: true
   });
-  const baseMat = new THREE.MeshLambertMaterial({
-    color: 0xc9a86a,
-    emissive: 0x3f2c0e,
-    emissiveIntensity: 0.07,
-    flatShading: true
-  });
-  const pyramidGeo = new THREE.CylinderGeometry(31, 0.01, 74, 4);
-  pyramidGeo.translate(0, 37, 0);
+  const pyramidGeo = new THREE.CylinderGeometry(0.01, 34, 31, 4);
+  pyramidGeo.translate(0, 15.5, 0);
   const pyramid = new THREE.Mesh(pyramidGeo, shellMat);
+  pyramid.rotation.y = Math.PI * 0.25;
   group.add(pyramid);
-
-  const baseGeo = new THREE.CylinderGeometry(33, 33, 8, 4);
-  baseGeo.translate(0, 0, 0);
-  const base = new THREE.Mesh(baseGeo, baseMat);
-  base.position.y = -1.8;
-  base.rotation.y = Math.PI * 0.25;
-  group.add(base);
 
   return group;
 }
