@@ -361,11 +361,11 @@ const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
-const DUSK_TOWER_ALTITUDE = 0.0;
-const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
-  .multiplyScalar(-0.92)
-  .addScaledVector(NIGHT_AXIS_B, 0.33)
-  .addScaledVector(SUN_DIRECTION, -0.12)
+const DUSK_TOWER_ALTITUDE = -3.8;
+const DUSK_TOWER_DIR = NIGHT_CENTER.clone()
+  .addScaledVector(NIGHT_AXIS_A, -0.66)
+  .addScaledVector(NIGHT_AXIS_B, 0.18)
+  .addScaledVector(SUN_DIRECTION, 0.34)
   .normalize();
 const BLACK_BOX_IMAGE_SET = [
   {
@@ -764,14 +764,15 @@ function createDuskTowerLandmark() {
   const group = new THREE.Group();
   const shellMat = new THREE.MeshLambertMaterial({
     color: 0xe33d34,
-    emissive: 0x4a120f,
-    emissiveIntensity: 0.12,
+    emissive: 0x5e110c,
+    emissiveIntensity: 0.16,
     flatShading: true,
   });
-  const prism = new THREE.Mesh(new THREE.CylinderGeometry(16.5, 21.5, 126, 3), shellMat);
-  prism.position.y = 63;
-  prism.rotation.y = Math.PI / 6;
+  const prism = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 189, 3), shellMat);
+  prism.position.y = 88;
+  prism.scale.set(1.42, 1, 0.86);
   group.add(prism);
+  group.userData.shellMat = shellMat;
 
   return group;
 }
@@ -1433,8 +1434,10 @@ registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
 // Visual Upgrade Phase 1 landmark hierarchy removed.
 
 const duskTower = createDuskTowerLandmark();
-const duskTowerAxes = getSurfaceAxes(DUSK_TOWER_DIR);
-placeDirectedOnSphere(duskTower, DUSK_TOWER_DIR, duskTowerAxes.axisB, DUSK_TOWER_ALTITUDE, 0.03);
+const duskTowerForward = SUN_DIRECTION.clone()
+  .addScaledVector(DUSK_TOWER_DIR, -SUN_DIRECTION.dot(DUSK_TOWER_DIR))
+  .normalize();
+placeDirectedOnSphere(duskTower, DUSK_TOWER_DIR, duskTowerForward, DUSK_TOWER_ALTITUDE, 0.0);
 scene.add(duskTower);
 registerThemeTriggerFromObject(duskTower, 0.46, 8.8);
 
@@ -2263,6 +2266,10 @@ function applyWorldInversion() {
     lyricsFullText.style.setProperty('color', fullColor, 'important');
     lyricsFullText.style.setProperty('-webkit-text-fill-color', fullColor, 'important');
     lyricsFullText.style.setProperty('text-shadow', fullShadow, 'important');
+  }
+  if (duskTower?.userData.shellMat) {
+    duskTower.userData.shellMat.color.set(themeState.inverted ? 0x1f67ff : 0xe33d34);
+    duskTower.userData.shellMat.emissive.set(themeState.inverted ? 0x0b2a78 : 0x5e110c);
   }
 }
 
