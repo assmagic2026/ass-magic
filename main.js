@@ -361,12 +361,13 @@ const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
-const DUSK_TOWER_ALTITUDE = -3.8;
+const DUSK_TOWER_ALTITUDE = -9.5;
 const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .multiplyScalar(-1.0)
   .addScaledVector(NIGHT_AXIS_B, 0.14)
   .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
+const DAY_PYRAMID_ALTITUDE = -5.8;
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -760,6 +761,38 @@ function createBlackBoxLandmark() {
   return group;
 }
 
+function createIsoscelesPrismGeometry(apexAngleDeg, depth, height) {
+  const halfBase = Math.tan(THREE.MathUtils.degToRad(apexAngleDeg * 0.5)) * depth;
+  const apex = [0, 0, depth * 0.5];
+  const baseLeft = [-halfBase, 0, -depth * 0.5];
+  const baseRight = [halfBase, 0, -depth * 0.5];
+  const apexTop = [0, height, depth * 0.5];
+  const baseLeftTop = [-halfBase, height, -depth * 0.5];
+  const baseRightTop = [halfBase, height, -depth * 0.5];
+  const positions = [];
+
+  const pushTriangle = (a, b, c) => {
+    positions.push(...a, ...b, ...c);
+  };
+
+  pushTriangle(apex, baseRight, baseLeft);
+  pushTriangle(apexTop, baseLeftTop, baseRightTop);
+
+  pushTriangle(apex, baseLeft, baseLeftTop);
+  pushTriangle(apex, baseLeftTop, apexTop);
+
+  pushTriangle(baseLeft, baseRight, baseRightTop);
+  pushTriangle(baseLeft, baseRightTop, baseLeftTop);
+
+  pushTriangle(baseRight, apex, apexTop);
+  pushTriangle(baseRight, apexTop, baseRightTop);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 function createDuskTowerLandmark() {
   const group = new THREE.Group();
   const shellMat = new THREE.MeshLambertMaterial({
@@ -768,11 +801,38 @@ function createDuskTowerLandmark() {
     emissiveIntensity: 0.16,
     flatShading: true,
   });
-  const prism = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 151.2, 3), shellMat);
-  prism.position.y = 69.1;
-  prism.scale.set(2.3, 1, 0.48);
+  const prism = new THREE.Mesh(createIsoscelesPrismGeometry(25, 118, 258), shellMat);
   group.add(prism);
   group.userData.shellMat = shellMat;
+
+  return group;
+}
+
+function createDayPyramidLandmark() {
+  const group = new THREE.Group();
+  const shellMat = new THREE.MeshLambertMaterial({
+    color: 0xf2deb4,
+    emissive: 0x4d3815,
+    emissiveIntensity: 0.1,
+    flatShading: true
+  });
+  const baseMat = new THREE.MeshLambertMaterial({
+    color: 0xc9a86a,
+    emissive: 0x3f2c0e,
+    emissiveIntensity: 0.07,
+    flatShading: true
+  });
+  const pyramidGeo = new THREE.CylinderGeometry(31, 0.01, 74, 4);
+  pyramidGeo.translate(0, 37, 0);
+  const pyramid = new THREE.Mesh(pyramidGeo, shellMat);
+  group.add(pyramid);
+
+  const baseGeo = new THREE.CylinderGeometry(33, 33, 8, 4);
+  baseGeo.translate(0, 0, 0);
+  const base = new THREE.Mesh(baseGeo, baseMat);
+  base.position.y = -1.8;
+  base.rotation.y = Math.PI * 0.25;
+  group.add(base);
 
   return group;
 }
@@ -1432,6 +1492,13 @@ scene.add(dayBlocks);
 registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
 
 // Visual Upgrade Phase 1 landmark hierarchy removed.
+
+const dayPyramid = createDayPyramidLandmark();
+const dayPyramidForward = DUSK_TOWER_DIR.clone()
+  .addScaledVector(SUN_DIRECTION, -DUSK_TOWER_DIR.dot(SUN_DIRECTION))
+  .normalize();
+placeDirectedOnSphere(dayPyramid, SUN_DIRECTION, dayPyramidForward, DAY_PYRAMID_ALTITUDE, 0.0);
+scene.add(dayPyramid);
 
 const duskTower = createDuskTowerLandmark();
 const duskTowerForward = SUN_DIRECTION.clone()
