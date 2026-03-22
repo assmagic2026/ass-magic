@@ -818,7 +818,6 @@ function createDayMonochromeSphereLandmark() {
     fog: false
   });
   const sphereGeo = new THREE.SphereGeometry(DAY_MONO_SPHERE_RADIUS, 18, 12);
-  sphereGeo.translate(0, DAY_MONO_SPHERE_RADIUS, 0);
   const sphere = new THREE.Mesh(sphereGeo, shellMat);
   group.add(sphere);
 
@@ -1486,9 +1485,9 @@ const dayMonochromeSphere = createDayMonochromeSphereLandmark();
 const dayMonochromeSphereForward = DUSK_TOWER_DIR.clone()
   .addScaledVector(SUN_DIRECTION, -DUSK_TOWER_DIR.dot(SUN_DIRECTION))
   .normalize();
-placeDirectedOnSphere(dayMonochromeSphere, SUN_DIRECTION, dayMonochromeSphereForward, DAY_MONO_SPHERE_CENTER_ALTITUDE - DAY_MONO_SPHERE_RADIUS, 0.0);
+placeDirectedOnSphere(dayMonochromeSphere, SUN_DIRECTION, dayMonochromeSphereForward, DAY_MONO_SPHERE_CENTER_ALTITUDE, 0.0);
 scene.add(dayMonochromeSphere);
-registerThemeTriggerFromObject(dayMonochromeSphere, 1.02, 18.2, {
+registerThemeTriggerFromObject(dayMonochromeSphere, 0.98, 17.8, {
   tag: 'monochrome-sphere',
   themeMode: 'monochrome'
 });
