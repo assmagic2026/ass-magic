@@ -795,11 +795,10 @@ function createIsoscelesPrismGeometry(apexAngleDeg, depth, height) {
 
 function createDuskTowerLandmark() {
   const group = new THREE.Group();
-  const shellMat = new THREE.MeshLambertMaterial({
-    color: 0xe33d34,
-    emissive: 0x5e110c,
-    emissiveIntensity: 0.16,
-    flatShading: true,
+  const shellMat = new THREE.MeshBasicMaterial({
+    color: 0xff3328,
+    toneMapped: false,
+    fog: false
   });
   const prism = new THREE.Mesh(createIsoscelesPrismGeometry(25, 118, 258), shellMat);
   group.add(prism);
@@ -810,11 +809,10 @@ function createDuskTowerLandmark() {
 
 function createDayPyramidLandmark() {
   const group = new THREE.Group();
-  const shellMat = new THREE.MeshLambertMaterial({
+  const shellMat = new THREE.MeshBasicMaterial({
     color: 0xffffff,
-    emissive: 0x3a3a3a,
-    emissiveIntensity: 0.06,
-    flatShading: true
+    toneMapped: false,
+    fog: false
   });
   const pyramidGeo = new THREE.CylinderGeometry(0.01, 34, 31, 4);
   pyramidGeo.translate(0, 15.5, 0);
@@ -1684,9 +1682,9 @@ registerThemeTriggersFromChildren(cloudVeils, 0.84, 2.4);
 registerThemeTriggersFromChildren(nightFog, 0.84, 2.2);
 
 const player = new THREE.Group();
-const bodyMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-const backMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-const wingMat = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, fog: false });
+const backMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, fog: false });
+const wingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, fog: false });
 const beakMat = new THREE.MeshLambertMaterial({ color: 0xf0b24a, flatShading: true });
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0x171b24 });
 const accentMat = new THREE.MeshBasicMaterial({ color: 0x7ef4ff, transparent: true, opacity: 0.0 });
