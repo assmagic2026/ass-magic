@@ -388,6 +388,7 @@ const CAT_PREVIEW_ALTITUDE = 0.18;
 const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
 const CAT_PREVIEW_LOOKAHEAD_SPEED = 40;
 const INVERT_WORLD_FILTER = 'invert(1) hue-rotate(180deg) saturate(0.94) brightness(1.05)';
+const MONOCHROME_WORLD_FILTER = 'grayscale(1) contrast(1.14) brightness(1.04)';
 const FREEZE_CLOUD_DRIFT_FOR_TEST = true;
 const THEME_TRIGGER_COOLDOWN = 7.0;
 const THEME_FLASH_DURATION = 0.42;
@@ -808,19 +809,17 @@ function createDuskTowerLandmark() {
   return group;
 }
 
-function createDayPyramidLandmark() {
+function createDayMonochromeSphereLandmark() {
   const group = new THREE.Group();
-  const shellMat = new THREE.MeshLambertMaterial({
-    color: 0xf2f7ff,
-    emissive: 0x0d1116,
-    emissiveIntensity: 0.02,
-    flatShading: true
+  const shellMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    toneMapped: false,
+    fog: false
   });
-  const pyramidGeo = new THREE.CylinderGeometry(0.01, 34, 31, 4);
-  pyramidGeo.translate(0, 15.5, 0);
-  const pyramid = new THREE.Mesh(pyramidGeo, shellMat);
-  pyramid.rotation.y = Math.PI * 0.25;
-  group.add(pyramid);
+  const sphereGeo = new THREE.SphereGeometry(18, 18, 12);
+  sphereGeo.translate(0, 18, 0);
+  const sphere = new THREE.Mesh(sphereGeo, shellMat);
+  group.add(sphere);
 
   return group;
 }
@@ -847,7 +846,8 @@ function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 
     localCenter,
     radius: Math.max(minRadius, themeBoundsSphere.radius * radiusScale),
     onTrigger: typeof extra.onTrigger === 'function' ? extra.onTrigger : null,
-    tag: extra.tag ?? null
+    tag: extra.tag ?? null,
+    themeMode: extra.themeMode ?? null
   });
 }
 
@@ -1481,12 +1481,16 @@ registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
 
 // Visual Upgrade Phase 1 landmark hierarchy removed.
 
-const dayPyramid = createDayPyramidLandmark();
-const dayPyramidForward = DUSK_TOWER_DIR.clone()
+const dayMonochromeSphere = createDayMonochromeSphereLandmark();
+const dayMonochromeSphereForward = DUSK_TOWER_DIR.clone()
   .addScaledVector(SUN_DIRECTION, -DUSK_TOWER_DIR.dot(SUN_DIRECTION))
   .normalize();
-placeDirectedOnSphere(dayPyramid, SUN_DIRECTION, dayPyramidForward, DAY_PYRAMID_ALTITUDE, 0.0);
-scene.add(dayPyramid);
+placeDirectedOnSphere(dayMonochromeSphere, SUN_DIRECTION, dayMonochromeSphereForward, DAY_PYRAMID_ALTITUDE, 0.0);
+scene.add(dayMonochromeSphere);
+registerThemeTriggerFromObject(dayMonochromeSphere, 0.92, 10.5, {
+  tag: 'monochrome-sphere',
+  themeMode: 'monochrome'
+});
 
 const duskTower = createDuskTowerLandmark();
 const duskTowerForward = SUN_DIRECTION.clone()
@@ -1924,7 +1928,7 @@ const state = {
 };
 const startPosition = state.pos.clone();
 const themeState = {
-  inverted: false,
+  mode: 'normal',
   cooldown: 0,
   flashActive: false,
   flashTime: 0,
@@ -2300,11 +2304,17 @@ function applySkyPalette(mode) {
   skyMat.uniforms.nightHorizon.value.copy(palette.nightHorizon);
 }
 
-function applyWorldInversion() {
-  canvas.style.filter = themeState.inverted ? INVERT_WORLD_FILTER : 'none';
-  applySkyPalette(themeState.inverted ? 'inverted' : 'normal');
-  const lyricColor = themeState.inverted ? 'rgba(10, 10, 10, 0.94)' : 'rgba(249, 252, 255, 0.98)';
-  const lyricShadow = themeState.inverted
+function applyWorldTheme() {
+  const isInverted = themeState.mode === 'inverted';
+  const isMonochrome = themeState.mode === 'monochrome';
+  canvas.style.filter = isMonochrome
+    ? MONOCHROME_WORLD_FILTER
+    : isInverted
+      ? INVERT_WORLD_FILTER
+      : 'none';
+  applySkyPalette(isInverted ? 'inverted' : 'normal');
+  const lyricColor = isInverted ? 'rgba(10, 10, 10, 0.94)' : 'rgba(249, 252, 255, 0.98)';
+  const lyricShadow = isInverted
     ? '0 1px 6px rgba(255,255,255,0.26), 0 6px 18px rgba(255,255,255,0.14)'
     : '0 2px 6px rgba(0,0,0,0.34), 0 10px 24px rgba(0,0,0,0.18)';
   if (lyricsCurrent) {
@@ -2313,8 +2323,8 @@ function applyWorldInversion() {
     lyricsCurrent.style.setProperty('text-shadow', lyricShadow, 'important');
   }
   if (lyricsFullText) {
-    const fullColor = themeState.inverted ? 'rgba(12, 12, 12, 0.84)' : 'rgba(244, 248, 255, 0.72)';
-    const fullShadow = themeState.inverted
+    const fullColor = isInverted ? 'rgba(12, 12, 12, 0.84)' : 'rgba(244, 248, 255, 0.72)';
+    const fullShadow = isInverted
       ? '0 1px 5px rgba(255,255,255,0.22)'
       : '0 2px 8px rgba(0,0,0,0.26)';
     lyricsFullText.style.setProperty('color', fullColor, 'important');
@@ -2360,14 +2370,23 @@ function startThemeFlash(contactPoint) {
   themeState.flashScreenPoint.copy(themeFlashScreen);
 }
 
-function toggleWorldInversion(contactPoint) {
+function setWorldTheme(nextMode, contactPoint) {
   if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
   triggerThemeDuck();
-  themeState.inverted = !themeState.inverted;
+  themeState.mode = nextMode;
   themeState.cooldown = THEME_TRIGGER_COOLDOWN;
   themeState.clearRequired = true;
-  applyWorldInversion();
+  applyWorldTheme();
   startThemeFlash(contactPoint);
+}
+
+function toggleWorldInversion(contactPoint) {
+  const nextMode = themeState.mode === 'inverted' ? 'normal' : 'inverted';
+  setWorldTheme(nextMode, contactPoint);
+}
+
+function activateMonochromeWorld(contactPoint) {
+  setWorldTheme('monochrome', contactPoint);
 }
 
 function checkThemeTriggerCollision(start, end) {
@@ -2389,7 +2408,11 @@ function checkThemeTriggerCollision(start, end) {
   }
 
   if (bestPoint) {
-    toggleWorldInversion(bestPoint);
+    if (bestZone?.themeMode === 'monochrome') {
+      activateMonochromeWorld(bestPoint);
+    } else {
+      toggleWorldInversion(bestPoint);
+    }
     if (bestZone?.onTrigger) {
       bestZone.onTrigger(bestPoint.clone());
     }
@@ -2460,7 +2483,7 @@ function updateThemeFlash(dt) {
 
 function updateInvertedSkyWash() {
   if (!skyThemeWash) return;
-  if (!themeState.inverted) {
+  if (themeState.mode !== 'inverted') {
     if (skyThemeWash.style.opacity !== '0') {
       skyThemeWash.style.opacity = '0';
       skyThemeWash.style.background = 'none';
@@ -4038,7 +4061,7 @@ function snapCameraOnce() {
 
 snapCameraOnce();
 updateLyricsLayout();
-applyWorldInversion();
+applyWorldTheme();
 
 const clock = new THREE.Clock();
 function tick() {
