@@ -367,7 +367,8 @@ const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .addScaledVector(NIGHT_AXIS_B, 0.14)
   .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
-const DAY_PYRAMID_ALTITUDE = -6.0;
+const DAY_MONO_SPHERE_CENTER_ALTITUDE = 50.0;
+const DAY_MONO_SPHERE_RADIUS = 18.0;
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -388,7 +389,7 @@ const CAT_PREVIEW_ALTITUDE = 0.18;
 const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
 const CAT_PREVIEW_LOOKAHEAD_SPEED = 40;
 const INVERT_WORLD_FILTER = 'invert(1) hue-rotate(180deg) saturate(0.94) brightness(1.05)';
-const MONOCHROME_WORLD_FILTER = 'grayscale(1) contrast(1.14) brightness(1.04)';
+const MONOCHROME_WORLD_FILTER = 'grayscale(1) contrast(1.42) brightness(1.22)';
 const FREEZE_CLOUD_DRIFT_FOR_TEST = true;
 const THEME_TRIGGER_COOLDOWN = 7.0;
 const THEME_FLASH_DURATION = 0.42;
@@ -816,8 +817,8 @@ function createDayMonochromeSphereLandmark() {
     toneMapped: false,
     fog: false
   });
-  const sphereGeo = new THREE.SphereGeometry(18, 18, 12);
-  sphereGeo.translate(0, 18, 0);
+  const sphereGeo = new THREE.SphereGeometry(DAY_MONO_SPHERE_RADIUS, 18, 12);
+  sphereGeo.translate(0, DAY_MONO_SPHERE_RADIUS, 0);
   const sphere = new THREE.Mesh(sphereGeo, shellMat);
   group.add(sphere);
 
@@ -1485,7 +1486,7 @@ const dayMonochromeSphere = createDayMonochromeSphereLandmark();
 const dayMonochromeSphereForward = DUSK_TOWER_DIR.clone()
   .addScaledVector(SUN_DIRECTION, -DUSK_TOWER_DIR.dot(SUN_DIRECTION))
   .normalize();
-placeDirectedOnSphere(dayMonochromeSphere, SUN_DIRECTION, dayMonochromeSphereForward, DAY_PYRAMID_ALTITUDE, 0.0);
+placeDirectedOnSphere(dayMonochromeSphere, SUN_DIRECTION, dayMonochromeSphereForward, DAY_MONO_SPHERE_CENTER_ALTITUDE - DAY_MONO_SPHERE_RADIUS, 0.0);
 scene.add(dayMonochromeSphere);
 registerThemeTriggerFromObject(dayMonochromeSphere, 0.92, 10.5, {
   tag: 'monochrome-sphere',
