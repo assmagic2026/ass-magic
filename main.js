@@ -2723,14 +2723,17 @@ async function loadMessages(options = {}) {
         .slice(0, BOOK_MESSAGE_LIMIT);
 
       bookUiState.backend = 'supabase';
+      setBookStatusDefault();
       bookUiState.lastMessages = messages.length ? messages : cloneMessages(BOOK_MESSAGE_SEED);
       return cloneMessages(bookUiState.lastMessages);
     } catch (error) {
       console.warn('Failed to load Supabase book messages, falling back locally:', error);
       bookUiState.backend = 'degraded';
+      setBookStatusDefault();
     }
   } else {
     bookUiState.backend = 'local';
+    setBookStatusDefault();
   }
 
   let messages = cloneMessages(BOOK_MESSAGE_SEED);
@@ -2784,14 +2787,17 @@ async function saveMessage(payload) {
         throw new Error('supabase-save-empty');
       }
       bookUiState.backend = 'supabase';
+      setBookStatusDefault();
       bookUiState.lastMessages = await loadMessages({ force: true });
       return savedEntry;
     } catch (error) {
       console.warn('Failed to save Supabase book message, falling back locally:', error);
       bookUiState.backend = 'degraded';
+      setBookStatusDefault();
     }
   } else {
     bookUiState.backend = 'local';
+    setBookStatusDefault();
   }
 
   const messages = await loadMessages();
