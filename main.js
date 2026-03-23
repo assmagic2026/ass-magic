@@ -30,6 +30,28 @@ function parseLyricTimestamp(value) {
   return Number.isFinite(seconds) ? seconds : 0;
 }
 
+function easeInOutCubic(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return t < 0.5
+    ? 4 * t * t * t
+    : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function easeOutCubic(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function easeInOutQuint(t) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  return t < 0.5
+    ? 16 * Math.pow(t, 5)
+    : 1 - Math.pow(-2 * t + 2, 5) / 2;
+}
+
 const playlist = playlistData.map((track) => ({
   ...track,
   lyrics: Array.isArray(track.lyrics)
@@ -486,7 +508,17 @@ const P = {
   SEAGULL_GROUND_PITCH: 0.16,
   SEAGULL_GLIDE_PITCH: -0.07,
   SEAGULL_GROUND_Y: 0.02,
-  SEAGULL_GLIDE_Y: -0.02
+  SEAGULL_GLIDE_Y: -0.02,
+  DOUBLE_TAP_WINDOW: 0.32,
+  DOUBLE_TAP_DISTANCE: 74,
+  TAP_MAX_DURATION: 0.3,
+  TAP_MOVE_TOLERANCE: 24,
+  SCREW_DURATION: 2.24,
+  SCREW_TURNS: 3,
+  SCREW_FORWARD_OFFSET: 3.6,
+  SCREW_PEAK_AT: 0.28,
+  POOP_GRAVITY: 12,
+  POOP_LIFETIME: 14
 };
 
 const V = {
@@ -1868,6 +1900,37 @@ for (let i = 0; i < V.DUST_COUNT; i++) {
   scene.add(puff);
 }
 
+function createPoopMesh() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: 0x4b2410 });
+  const base = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 7), mat);
+  base.scale.set(1.18, 0.78, 1.05);
+  base.position.y = 0.18;
+  group.add(base);
+
+  const mid = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 7), mat);
+  mid.scale.set(1.0, 0.82, 0.96);
+  mid.position.y = 0.48;
+  group.add(mid);
+
+  const top = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.3, 8), mat);
+  top.position.y = 0.77;
+  group.add(top);
+  return group;
+}
+
+const poopDrops = [];
+for (let i = 0; i < 6; i++) {
+  const poop = createPoopMesh();
+  poop.visible = false;
+  poop.userData.life = 0;
+  poop.userData.velocity = new THREE.Vector3();
+  poop.userData.grounded = false;
+  poop.userData.groundDir = new THREE.Vector3();
+  scene.add(poop);
+  poopDrops.push(poop);
+}
+
 const shadow = new THREE.Mesh(
   new THREE.CircleGeometry(1, 18),
   new THREE.MeshBasicMaterial({
@@ -1917,6 +1980,11 @@ const state = {
   radialSpeed: 0,
   bodyPitch: 0,
   roll: 0,
+  screwSpinActive: false,
+  screwSpinTime: 0,
+  screwSpinAngle: 0,
+  screwSpinDirection: 1,
+  screwForwardOffset: 0,
   glideVisual: 0.2,
   boostFlash: 0,
   onGround: true,
@@ -2289,7 +2357,16 @@ const STICK_LIMIT = 50;
 const tempStick = new THREE.Vector2();
 const tempProjected = new THREE.Vector3();
 const tempCameraDir = new THREE.Vector3();
+const tempPoopUp = new THREE.Vector3();
+const tempPoopQuat = new THREE.Quaternion();
 const accelPointers = new Set();
+const backgroundTapCandidates = new Map();
+const tapSequence = {
+  count: 0,
+  at: -Infinity,
+  x: 0,
+  y: 0
+};
 let speedLockSelection = 40;
 let speedLockPointerId = null;
 let activeMenuPage = 'about';
@@ -2516,6 +2593,107 @@ function queueFlap() {
 
 function refreshAccelHeld() {
   input.accelHeld = input.accelKeyHeld || accelPointers.size > 0;
+}
+
+function triggerScrewSpin() {
+  state.screwSpinActive = true;
+  state.screwSpinTime = 0;
+  state.screwSpinAngle = 0;
+  state.screwForwardOffset = 0;
+  state.screwSpinDirection *= -1;
+}
+
+function resetTapSequence() {
+  tapSequence.count = 0;
+  tapSequence.at = -Infinity;
+}
+
+function cancelScrewSpin() {
+  state.screwSpinActive = false;
+  state.screwSpinTime = 0;
+  state.screwSpinAngle = 0;
+  state.screwForwardOffset = 0;
+}
+
+function getScrewForwardOffset(progress) {
+  const delayed = THREE.MathUtils.clamp((progress - 0.22) / 0.78, 0, 1);
+  return Math.pow(Math.sin(Math.PI * delayed), 1.7);
+}
+
+function spawnPoopDrop() {
+  const poop = poopDrops.find((entry) => entry.userData.life <= 0) ?? poopDrops[0];
+  const up = state.pos.clone().normalize();
+  const forward = state.visualForward.clone().normalize();
+  const right = new THREE.Vector3().crossVectors(up, forward).normalize();
+  const baseDir = state.pos.clone()
+    .addScaledVector(forward, -1.3)
+    .addScaledVector(up, -0.74)
+    .normalize();
+  poop.visible = true;
+  poop.userData.life = P.POOP_LIFETIME;
+  poop.userData.grounded = false;
+  poop.userData.groundDir.copy(baseDir);
+  poop.position.copy(state.pos)
+    .addScaledVector(forward, -0.55)
+    .addScaledVector(up, -0.58)
+    .addScaledVector(right, (Math.random() - 0.5) * 0.18);
+  poop.rotation.set(Math.random() * 0.16, Math.random() * Math.PI * 2, Math.random() * 0.12);
+  poop.scale.setScalar(0.2);
+  poop.userData.velocity.copy(forward).multiplyScalar(8.4)
+    .addScaledVector(up, -2.4)
+    .addScaledVector(right, (Math.random() - 0.5) * 0.6);
+}
+
+function registerBackgroundTapCandidate(pointerId, x, y) {
+  backgroundTapCandidates.set(pointerId, {
+    x,
+    y,
+    at: performance.now() / 1000,
+    eligible: true
+  });
+}
+
+function invalidateBackgroundTapCandidate(pointerId, x, y) {
+  const candidate = backgroundTapCandidates.get(pointerId);
+  if (!candidate || !candidate.eligible) return;
+  if (Math.hypot(x - candidate.x, y - candidate.y) > P.TAP_MOVE_TOLERANCE) {
+    candidate.eligible = false;
+  }
+}
+
+function resolveBackgroundTap(pointerId, x, y) {
+  const candidate = backgroundTapCandidates.get(pointerId);
+  backgroundTapCandidates.delete(pointerId);
+  if (!candidate || !candidate.eligible) return false;
+  const now = performance.now() / 1000;
+  if (now - candidate.at > P.TAP_MAX_DURATION) return false;
+  const continuesSequence =
+    tapSequence.count > 0 &&
+    now - tapSequence.at <= P.DOUBLE_TAP_WINDOW &&
+    Math.hypot(x - tapSequence.x, y - tapSequence.y) <= P.DOUBLE_TAP_DISTANCE;
+
+  if (!continuesSequence) {
+    tapSequence.count = 1;
+  } else {
+    tapSequence.count += 1;
+  }
+  tapSequence.at = now;
+  tapSequence.x = x;
+  tapSequence.y = y;
+
+  if (tapSequence.count === 2) {
+    triggerScrewSpin();
+    return true;
+  }
+
+  if (tapSequence.count >= 3) {
+    cancelScrewSpin();
+    spawnPoopDrop();
+    resetTapSequence();
+    return true;
+  }
+
+  return false;
 }
 
 function getSpeedLockSelection() {
@@ -3085,6 +3263,7 @@ function handlePointerDown(e) {
 
   accelPointers.add(e.pointerId);
   refreshAccelHeld();
+  registerBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
   if (e.clientX < window.innerWidth * 0.5 && input.leftId === null) {
     input.leftId = e.pointerId;
@@ -3097,6 +3276,7 @@ function handlePointerDown(e) {
 
 function handlePointerMove(e) {
   e.preventDefault();
+  invalidateBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
   if (e.pointerId === input.leftId) {
     const dx = e.clientX - input.leftLast.x;
@@ -3125,15 +3305,16 @@ function handlePointerMove(e) {
 
 function handlePointerUp(e) {
   e.preventDefault();
-
-  if (accelPointers.delete(e.pointerId)) {
-    refreshAccelHeld();
-  }
+  const screwTriggered = resolveBackgroundTap(e.pointerId, e.clientX, e.clientY);
+  accelPointers.delete(e.pointerId);
+  refreshAccelHeld();
 
   if (e.pointerId === input.leftId) {
     input.leftId = null;
   } else if (e.pointerId === input.rightId) {
-    queueFlap();
+    if (!screwTriggered) {
+      queueFlap();
+    }
     input.rightId = null;
   }
 
@@ -3663,6 +3844,38 @@ function updateSpeedEffects(dt, up, flightForward, speed) {
       puff.visible = false;
     }
   }
+
+  for (const poop of poopDrops) {
+    if (poop.userData.life <= 0) {
+      poop.visible = false;
+      continue;
+    }
+
+    poop.userData.life = Math.max(0, poop.userData.life - dt);
+    if (!poop.userData.grounded) {
+      tempPoopUp.copy(poop.position).normalize();
+      poop.userData.velocity.addScaledVector(tempPoopUp, -P.POOP_GRAVITY * dt);
+      poop.position.addScaledVector(poop.userData.velocity, dt);
+
+      tempPoopUp.copy(poop.position).normalize();
+      const surfaceRadius = getSurfaceRadius(tempPoopUp) + 0.12;
+      if (poop.position.length() <= surfaceRadius) {
+        poop.userData.grounded = true;
+        poop.userData.groundDir.copy(tempPoopUp);
+        poop.position.copy(tempPoopUp).multiplyScalar(surfaceRadius);
+        poop.userData.velocity.set(0, 0, 0);
+        tempPoopQuat.setFromUnitVectors(WORLD_UP, tempPoopUp);
+        poop.quaternion.copy(tempPoopQuat);
+      }
+    } else {
+      tempPoopUp.copy(poop.userData.groundDir);
+      poop.position.copy(tempPoopUp).multiplyScalar(getSurfaceRadius(tempPoopUp) + 0.12);
+      tempPoopQuat.setFromUnitVectors(WORLD_UP, tempPoopUp);
+      poop.quaternion.copy(tempPoopQuat);
+    }
+
+    poop.visible = poop.userData.life > 0;
+  }
 }
 
 function updatePlayer(dt) {
@@ -3819,6 +4032,25 @@ function updatePlayer(dt) {
     P.MAX_BANK
   );
   state.roll = THREE.MathUtils.damp(state.roll, bankTarget, P.ROLL_RESPONSE, dt);
+  if (state.screwSpinActive) {
+    state.screwSpinTime += dt;
+    const screwProgress = THREE.MathUtils.clamp(state.screwSpinTime / P.SCREW_DURATION, 0, 1);
+    state.screwSpinAngle = state.screwSpinDirection
+      * Math.PI
+      * 2
+      * P.SCREW_TURNS
+      * easeInOutQuint(screwProgress);
+    state.screwForwardOffset = getScrewForwardOffset(screwProgress) * P.SCREW_FORWARD_OFFSET;
+    if (screwProgress >= 1) {
+      state.screwSpinActive = false;
+      state.screwSpinTime = 0;
+      state.screwSpinAngle = 0;
+      state.screwForwardOffset = 0;
+    }
+  } else {
+    state.screwSpinAngle = 0;
+    state.screwForwardOffset = 0;
+  }
 
   const posePitchTarget = getSeagullPosePitchTarget(state.glideVisual, state.radialSpeed, cruiseSpeed, climbInput);
   const poseNoseUp = Math.max(0, -posePitchTarget);
@@ -3832,18 +4064,20 @@ function updatePlayer(dt) {
   state.bodyPitch = THREE.MathUtils.damp(state.bodyPitch, bodyPitchTarget, bodyPitchResponse, dt);
   const flightForward = state.forward.clone().applyAxisAngle(right, -state.bodyPitch).normalize();
   const lookQuat = createBasisQuaternion(flightForward, nextUp);
-  const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), state.roll);
+  const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), state.roll + state.screwSpinAngle);
   player.quaternion.copy(lookQuat).multiply(rollQuat);
 
   bobPhase += dt * 0.7;
   const bob = Math.sin(bobPhase) * 0.22 + Math.sin(bobPhase * 0.37 + 1.1) * 0.08;
-  player.position.copy(state.pos).addScaledVector(nextUp, bob);
+  const screwVisualPos = state.pos.clone().addScaledVector(flightForward, state.screwForwardOffset);
+  player.position.copy(screwVisualPos).addScaledVector(nextUp, bob);
 
-  const shadowRadius = getSurfaceRadius(nextUp) + 0.06;
+  const shadowDirection = screwVisualPos.clone().normalize();
+  const shadowRadius = getSurfaceRadius(shadowDirection) + 0.06;
   const altitude = Math.max(0, nextRadius - surfaceRadius);
   const shadowScale = THREE.MathUtils.clamp(1.1 - altitude * 0.16, 0.34, 1.08);
-  shadow.position.copy(nextUp).multiplyScalar(shadowRadius);
-  shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), nextUp);
+  shadow.position.copy(shadowDirection).multiplyScalar(shadowRadius);
+  shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shadowDirection);
   shadow.scale.set(shadowScale * 1.15, shadowScale * 0.8, 1);
   shadow.material.opacity = THREE.MathUtils.clamp(0.24 - altitude * 0.055, 0.05, 0.22);
 
