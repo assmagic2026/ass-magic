@@ -12,7 +12,7 @@
   <div id="hud">
     <a
       id="track-card"
-      class="ui-control"
+      class="ui-control capture-hide"
       href="https://big-up.style/458G0ndX8N"
       target="_blank"
       rel="noreferrer noopener"
@@ -30,7 +30,7 @@
         <span class="viz-bar"></span>
       </div>
     </a>
-    <div id="track-controls" class="ui-control">
+    <div id="track-controls" class="ui-control capture-hide">
       <button id="track-toggle" class="track-btn ui-control" type="button" aria-label="Play">
         <span class="track-icon toggle-icon" aria-hidden="true"></span>
       </button>
@@ -41,15 +41,21 @@
         <span class="track-btn-label" aria-hidden="true">Lyric</span>
       </button>
     </div>
-    <div id="site-title">ASS MAGIC</div>
-    <button id="menu-toggle" class="ui-control" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="site-menu">
+    <div id="site-title" class="capture-hide">ASS MAGIC</div>
+    <button id="menu-toggle" class="ui-control capture-hide" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="site-menu">
       <span class="menu-icon" aria-hidden="true">
         <span></span>
         <span></span>
         <span></span>
       </span>
     </button>
-    <div id="site-menu" class="ui-control" aria-hidden="true">
+    <button id="camera-capture" class="ui-control capture-hide" type="button" aria-label="Capture flight view">
+      <span class="camera-icon" aria-hidden="true">
+        <span class="camera-body"></span>
+        <span class="camera-lens"></span>
+      </span>
+    </button>
+    <div id="site-menu" class="ui-control capture-hide" aria-hidden="true">
       <div id="site-menu-backdrop" class="ui-control"></div>
       <div id="site-menu-panel" class="ui-control">
         <div id="site-menu-head">
@@ -85,7 +91,7 @@
         </div>
       </div>
     </div>
-    <div id="right-pad">
+    <div id="right-pad" class="capture-hide">
       <div id="speed-lock-panel" class="ui-control">
         <div id="speed-lock-head">
           <span id="speed-lock-label">SPEED</span>
@@ -111,19 +117,19 @@
         </div>
       </div>
     </div>
-    <div id="stick-wrapper">
+    <div id="stick-wrapper" class="capture-hide">
       <div id="stick-area">
         <div id="stick-handle"></div>
       </div>
     </div>
-    <div id="lyrics-panel" aria-hidden="true">
+    <div id="lyrics-panel" class="capture-hide" aria-hidden="true">
       <div id="lyrics-current"></div>
     </div>
-    <div id="lyrics-full-panel" aria-hidden="true">
+    <div id="lyrics-full-panel" class="capture-hide" aria-hidden="true">
       <div id="lyrics-full-text"></div>
     </div>
-    <div id="info">speed --  alt --</div>
-    <footer id="site-footer" aria-hidden="true">
+    <div id="info" class="capture-hide">speed --  alt --</div>
+    <footer id="site-footer" class="capture-hide" aria-hidden="true">
       <div class="footer-full">© 2026 ASS MAGIC. All rights reserved.</div>
       <div class="footer-note">All images, music, and text on this site are protected unless otherwise noted.</div>
       <div class="footer-short">© 2026 ASS MAGIC</div>
@@ -133,6 +139,24 @@
   <div id="sky-theme-wash" aria-hidden="true"></div>
   <div id="theme-flash" aria-hidden="true">
     <div id="theme-flash-ring"></div>
+  </div>
+  <div id="camera-shutter" aria-hidden="true"></div>
+  <div id="capture-overlay" aria-hidden="true">
+    <div id="capture-backdrop" class="ui-control"></div>
+    <div id="capture-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="飛行記録">
+      <div id="capture-head">
+        <div id="capture-kicker">ASS MAGIC</div>
+        <div id="capture-title">飛行記録</div>
+        <button id="capture-close" class="ui-control" type="button" aria-label="Close capture preview">閉じる</button>
+      </div>
+      <div id="capture-image-wrap">
+        <img id="capture-image" alt="Captured flight view">
+      </div>
+      <div id="capture-actions">
+        <a id="capture-save" class="ui-control" href="#" download="ass-magic-flight-record.png">保存</a>
+        <button id="capture-share" class="ui-control" type="button">共有</button>
+      </div>
+    </div>
   </div>
   <div id="book-overlay" aria-hidden="true">
     <div id="book-backdrop" class="ui-control"></div>

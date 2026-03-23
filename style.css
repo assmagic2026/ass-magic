@@ -46,6 +46,24 @@ html, body {
   opacity: 0;
   will-change: transform, opacity;
 }
+.is-capture-clean .capture-hide {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+#camera-shutter {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(248, 251, 255, 0);
+  transition: opacity 140ms ease, background 140ms ease;
+}
+#camera-shutter.is-active {
+  opacity: 1;
+  background: rgba(248, 251, 255, 0.22);
+}
 #sky-theme-wash {
   position: fixed;
   inset: 0;
@@ -316,6 +334,60 @@ html, body {
 #menu-toggle.is-open .menu-icon span:nth-child(3) {
   top: 20px;
   transform: rotate(-45deg);
+}
+#camera-capture {
+  position: fixed;
+  left: 50%;
+  bottom: 42px;
+  transform: translateX(-50%);
+  z-index: 20;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 50%;
+  background: rgba(10, 16, 25, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 10px 24px rgba(0,0,0,0.18);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+#camera-capture:disabled {
+  opacity: 0.5;
+}
+.camera-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.camera-body {
+  position: absolute;
+  width: 24px;
+  height: 16px;
+  border: 1.8px solid rgba(247, 251, 255, 0.96);
+  border-radius: 4px;
+}
+.camera-body::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: -5px;
+  width: 9px;
+  height: 5px;
+  border: 1.8px solid rgba(247, 251, 255, 0.96);
+  border-bottom: none;
+  border-radius: 2px 2px 0 0;
+}
+.camera-lens {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1.8px solid rgba(247, 251, 255, 0.96);
+  border-radius: 50%;
 }
 #site-menu {
   position: fixed;
@@ -874,6 +946,101 @@ html, body {
   justify-content: center;
   text-decoration: none;
 }
+#capture-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 26;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+#capture-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+#capture-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 8, 14, 0.52);
+  backdrop-filter: blur(6px);
+}
+#capture-panel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(520px, calc(100vw - 28px));
+  padding: 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: linear-gradient(180deg, rgba(12, 18, 28, 0.96), rgba(8, 12, 18, 0.94));
+  box-shadow:
+    0 24px 64px rgba(0,0,0,0.34),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#capture-head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 88px;
+}
+#capture-kicker {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  color: rgba(233, 243, 255, 0.52);
+}
+#capture-title {
+  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif;
+  font-size: 26px;
+  letter-spacing: 0.08em;
+  color: #f4f9ff;
+}
+#capture-close,
+#capture-save,
+#capture-share {
+  min-width: 110px;
+  padding: 11px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: #f5f7fb;
+  letter-spacing: 0.12em;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  touch-action: manipulation;
+  text-decoration: none;
+}
+#capture-close {
+  position: absolute;
+  right: 0;
+  top: 0;
+  min-width: auto;
+}
+#capture-image-wrap {
+  width: 100%;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.04);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+#capture-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(68vh, 74vw);
+  object-fit: contain;
+}
+#capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+#capture-share.is-hidden {
+  display: none;
+}
 #right-pad {
   position: fixed;
   top: 78px;
@@ -1135,6 +1302,13 @@ html, body {
     width: 38px;
     height: 38px;
   }
+  #camera-capture {
+    left: 50%;
+    bottom: 30px;
+    transform: translateX(-50%);
+    width: 62px;
+    height: 62px;
+  }
   .menu-icon span {
     left: 11px;
     right: 11px;
@@ -1204,6 +1378,19 @@ html, body {
   }
   #black-box-cat-image {
     max-height: min(48vh, 420px);
+  }
+  #capture-panel {
+    width: calc(100vw - 18px);
+    padding: 16px;
+    border-radius: 22px;
+  }
+  #capture-title {
+    font-size: 22px;
+  }
+  #capture-save,
+  #capture-share {
+    flex: 1 1 0;
+    justify-content: center;
   }
   #book-mode-switch {
     gap: 6px;
