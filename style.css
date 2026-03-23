@@ -788,15 +788,36 @@ html, body {
   gap: 14px;
 }
 #black-box-head {
+  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
+  justify-content: flex-start;
   gap: 12px;
+  padding-right: 84px;
 }
 #black-box-title {
   font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif;
-  font-size: 22px;
-  letter-spacing: 0.08em;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.14;
+  max-width: 100%;
+}
+.black-box-kicker {
+  font-size: 13px;
+  letter-spacing: 0.24em;
+  opacity: 0.7;
+}
+.black-box-main-title {
+  font-size: 24px;
+  letter-spacing: 0.06em;
+}
+#black-box-close {
+  position: absolute;
+  right: 0;
+  top: 0;
+  min-width: auto;
+  padding: 10px 14px;
 }
 #black-box-close,
 #black-box-open,
@@ -1161,8 +1182,18 @@ html, body {
     padding: 16px;
     border-radius: 22px;
   }
+  #black-box-head {
+    padding-right: 74px;
+  }
   #black-box-title {
-    font-size: 19px;
+    gap: 1px;
+  }
+  .black-box-kicker {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+  }
+  .black-box-main-title {
+    font-size: 20px;
   }
   #black-box-close,
   #black-box-open,
