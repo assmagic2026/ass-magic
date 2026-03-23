@@ -7,9 +7,12 @@ const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: false,
   alpha: false,
-  powerPreference: 'low-power'
+  powerPreference: 'low-power',
+  preserveDrawingBuffer: true
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+const RUNTIME_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5);
+const CAPTURE_PIXEL_RATIO = Math.min(Math.max(window.devicePixelRatio || 1, 2), 2.5);
+renderer.setPixelRatio(RUNTIME_PIXEL_RATIO);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x0a0d12, 1);
 
@@ -495,6 +498,13 @@ const P = {
   CAMERA_SMOOTH: 0.12,
   CAMERA_PITCH_SMOOTH: 3.4,
   CAMERA_DESCEND_PITCH_SMOOTH: 0.85,
+  CAMERA_LOOK_DRAG_START: 16,
+  CAMERA_LOOK_YAW_SENS: 0.0048,
+  CAMERA_LOOK_PITCH_SENS: 0.0032,
+  CAMERA_LOOK_MAX_YAW: 2.96,
+  CAMERA_LOOK_MAX_PITCH: 0.68,
+  CAMERA_LOOK_RESPONSE: 10.5,
+  CAMERA_LOOK_RETURN: 4.4,
   BASE_FOV: 70,
   SPEED_FOV: 7,
   BOOST_FOV: 3.5,
@@ -1974,6 +1984,10 @@ const state = {
   visualUp: startUp.clone(),
   visualForward: new THREE.Vector3(0, 0, 1),
   cameraLift: 0,
+  cameraYawOffset: 0,
+  cameraPitchOffset: 0,
+  cameraYawTarget: 0,
+  cameraPitchTarget: 0,
   currentSpeed: 40,
   speedLock: 40,
   holdAccel: 0,
@@ -2033,6 +2047,15 @@ const blackBoxUiState = {
   lastTriggerAngle: 0,
   openedOnce: false
 };
+const captureUiState = {
+  open: false,
+  busy: false,
+  objectUrl: '',
+  blob: null,
+  fileName: '',
+  shutterTimer: null
+};
+let lastCameraTriggerAt = 0;
 
 const giantBook = createGiantBookLandmark();
 const blackBoxLandmark = createBlackBoxLandmark();
@@ -2288,15 +2311,24 @@ let bobPhase = Math.random() * Math.PI * 2;
 const input = {
   leftId: null,
   rightId: null,
+  lookId: null,
   leftLast: { x: 0, y: 0 },
+  lookLast: { x: 0, y: 0 },
+  lookStart: { x: 0, y: 0 },
+  lookDragging: false,
   turnX: 0,
   turnY: 0,
   flapQueued: false,
   accelHeld: false,
   accelKeyHeld: false,
+  keyLeftHeld: false,
+  keyRightHeld: false,
+  keyUpHeld: false,
+  keyDownHeld: false,
   stickId: null,
   stickOffset: { x: 0, y: 0 },
-  stickSmooth: new THREE.Vector2()
+  stickSmooth: new THREE.Vector2(),
+  keySmooth: new THREE.Vector2()
 };
 
 const stickArea = document.getElementById('stick-area');
@@ -2316,6 +2348,7 @@ const lyricsCurrent = document.getElementById('lyrics-current');
 const lyricsFullPanel = document.getElementById('lyrics-full-panel');
 const lyricsFullText = document.getElementById('lyrics-full-text');
 const menuToggle = document.getElementById('menu-toggle');
+const cameraCapture = document.getElementById('camera-capture');
 const siteMenu = document.getElementById('site-menu');
 const siteMenuBackdrop = document.getElementById('site-menu-backdrop');
 const menuNavButtons = Array.from(document.querySelectorAll('.menu-nav-btn'));
@@ -2345,6 +2378,14 @@ const blackBoxViewReveal = document.getElementById('black-box-view-reveal');
 const blackBoxCatImage = document.getElementById('black-box-cat-image');
 const blackBoxCaption = document.getElementById('black-box-caption');
 const blackBoxDownload = document.getElementById('black-box-download');
+const cameraShutter = document.getElementById('camera-shutter');
+const captureOverlay = document.getElementById('capture-overlay');
+const captureBackdrop = document.getElementById('capture-backdrop');
+const capturePanel = document.getElementById('capture-panel');
+const captureImage = document.getElementById('capture-image');
+const captureClose = document.getElementById('capture-close');
+const captureSave = document.getElementById('capture-save');
+const captureShare = document.getElementById('capture-share');
 setBlackBoxRevealImage(0);
 const visualizerBars = Array.from(document.querySelectorAll('.viz-bar'));
 const speedLockPanel = document.getElementById('speed-lock-panel');
@@ -2355,6 +2396,7 @@ const speedLockThumb = document.getElementById('speed-lock-thumb');
 const speedLockValue = document.getElementById('speed-lock-value');
 const STICK_LIMIT = 50;
 const tempStick = new THREE.Vector2();
+const tempKey = new THREE.Vector2();
 const tempProjected = new THREE.Vector3();
 const tempCameraDir = new THREE.Vector3();
 const tempPoopUp = new THREE.Vector3();
@@ -2381,14 +2423,15 @@ function applySkyPalette(mode) {
   skyMat.uniforms.nightHorizon.value.copy(palette.nightHorizon);
 }
 
+function getWorldThemeFilter() {
+  if (themeState.mode === 'monochrome') return MONOCHROME_WORLD_FILTER;
+  if (themeState.mode === 'inverted') return INVERT_WORLD_FILTER;
+  return 'none';
+}
+
 function applyWorldTheme() {
   const isInverted = themeState.mode === 'inverted';
-  const isMonochrome = themeState.mode === 'monochrome';
-  canvas.style.filter = isMonochrome
-    ? MONOCHROME_WORLD_FILTER
-    : isInverted
-      ? INVERT_WORLD_FILTER
-      : 'none';
+  canvas.style.filter = getWorldThemeFilter();
   applySkyPalette(isInverted ? 'inverted' : 'normal');
   const lyricColor = isInverted ? 'rgba(10, 10, 10, 0.94)' : 'rgba(249, 252, 255, 0.98)';
   const lyricShadow = isInverted
@@ -2408,6 +2451,25 @@ function applyWorldTheme() {
     lyricsFullText.style.setProperty('-webkit-text-fill-color', fullColor, 'important');
     lyricsFullText.style.setProperty('text-shadow', fullShadow, 'important');
   }
+}
+
+function getInvertedSkyWashState() {
+  camera.getWorldDirection(tempCameraDir);
+  const sunView = tempCameraDir.dot(SUN_DIRECTION);
+  const dayMix = THREE.MathUtils.clamp((sunView + 0.08) / 0.62, 0, 1);
+  const nightMix = THREE.MathUtils.clamp((-sunView + 0.08) / 0.72, 0, 1);
+  const green = new THREE.Color(0xdfffd8);
+  const yellow = new THREE.Color(0xffea84);
+  const wash = yellow.clone().lerp(green, dayMix);
+  const alpha = 0.22 + dayMix * 0.4 + nightMix * 0.18;
+  return {
+    r: Math.round(wash.r * 255),
+    g: Math.round(wash.g * 255),
+    b: Math.round(wash.b * 255),
+    alpha,
+    midAlpha: alpha * 0.68,
+    lowerAlpha: alpha * 0.18
+  };
 }
 
 function forceViewportReset() {
@@ -2568,23 +2630,14 @@ function updateInvertedSkyWash() {
     return;
   }
 
-  camera.getWorldDirection(tempCameraDir);
-  const sunView = tempCameraDir.dot(SUN_DIRECTION);
-  const dayMix = THREE.MathUtils.clamp((sunView + 0.08) / 0.62, 0, 1);
-  const nightMix = THREE.MathUtils.clamp((-sunView + 0.08) / 0.72, 0, 1);
-  const green = new THREE.Color(0xdfffd8);
-  const yellow = new THREE.Color(0xffea84);
-  const wash = yellow.clone().lerp(green, dayMix);
-  const alpha = 0.22 + dayMix * 0.4 + nightMix * 0.18;
-  const midAlpha = alpha * 0.68;
-  const lowerAlpha = alpha * 0.18;
+  const wash = getInvertedSkyWashState();
 
   skyThemeWash.style.opacity = '1';
   skyThemeWash.style.background = `linear-gradient(180deg,
-    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, ${alpha.toFixed(3)}) 0%,
-    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, ${midAlpha.toFixed(3)}) 42%,
-    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, ${lowerAlpha.toFixed(3)}) 68%,
-    rgba(${Math.round(wash.r * 255)}, ${Math.round(wash.g * 255)}, ${Math.round(wash.b * 255)}, 0.0) 78%)`;
+    rgba(${wash.r}, ${wash.g}, ${wash.b}, ${wash.alpha.toFixed(3)}) 0%,
+    rgba(${wash.r}, ${wash.g}, ${wash.b}, ${wash.midAlpha.toFixed(3)}) 42%,
+    rgba(${wash.r}, ${wash.g}, ${wash.b}, ${wash.lowerAlpha.toFixed(3)}) 68%,
+    rgba(${wash.r}, ${wash.g}, ${wash.b}, 0.0) 78%)`;
 }
 
 function queueFlap() {
@@ -2593,6 +2646,17 @@ function queueFlap() {
 
 function refreshAccelHeld() {
   input.accelHeld = input.accelKeyHeld || accelPointers.size > 0;
+}
+
+function resetCameraLook(forceImmediate = false) {
+  input.lookId = null;
+  input.lookDragging = false;
+  state.cameraYawTarget = 0;
+  state.cameraPitchTarget = 0;
+  if (forceImmediate) {
+    state.cameraYawOffset = 0;
+    state.cameraPitchOffset = 0;
+  }
 }
 
 function triggerScrewSpin() {
@@ -2793,6 +2857,253 @@ function setSiteMenuOpen(isOpen) {
   menuToggle?.classList.toggle('is-open', isOpen);
   menuToggle?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
   siteMenu?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (isOpen) resetCameraLook(true);
+}
+
+function setCaptureOverlayOpen(isOpen) {
+  captureUiState.open = isOpen;
+  captureOverlay?.classList.toggle('is-open', isOpen);
+  captureOverlay?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (isOpen) resetCameraLook(true);
+}
+
+function clearCaptureObjectUrl() {
+  if (captureUiState.objectUrl) {
+    URL.revokeObjectURL(captureUiState.objectUrl);
+    captureUiState.objectUrl = '';
+  }
+}
+
+function closeCaptureOverlay() {
+  setCaptureOverlayOpen(false);
+}
+
+function buildCaptureFileName() {
+  const now = new Date();
+  const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+  return `ass-magic-flight-record-${date}-${time}.png`;
+}
+
+function triggerCameraShutter() {
+  if (!cameraShutter) return;
+  if (captureUiState.shutterTimer !== null) {
+    window.clearTimeout(captureUiState.shutterTimer);
+    captureUiState.shutterTimer = null;
+  }
+  cameraShutter.classList.add('is-active');
+  captureUiState.shutterTimer = window.setTimeout(() => {
+    cameraShutter.classList.remove('is-active');
+    captureUiState.shutterTimer = null;
+  }, 140);
+}
+
+function waitForPaintFrame() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(resolve);
+    });
+  });
+}
+
+function canvasToBlob(sourceCanvas) {
+  return new Promise((resolve) => {
+    if (typeof sourceCanvas.toBlob === 'function') {
+      sourceCanvas.toBlob((blob) => resolve(blob), 'image/png');
+      return;
+    }
+    try {
+      const dataUrl = sourceCanvas.toDataURL('image/png');
+      fetch(dataUrl).then((response) => response.blob()).then(resolve).catch(() => resolve(null));
+    } catch (error) {
+      console.error('Failed to create capture data URL:', error);
+      resolve(null);
+    }
+  });
+}
+
+function clamp8(value) {
+  return Math.min(255, Math.max(0, value));
+}
+
+function applyColorMatrix(r, g, b, matrix) {
+  return [
+    r * matrix[0] + g * matrix[1] + b * matrix[2],
+    r * matrix[3] + g * matrix[4] + b * matrix[5],
+    r * matrix[6] + g * matrix[7] + b * matrix[8]
+  ];
+}
+
+function applyMonochromeCaptureFilter(imageData) {
+  const data = imageData.data;
+  const brightness = 1.42;
+  const contrast = 1.78;
+  for (let i = 0; i < data.length; i += 4) {
+    const luminance =
+      data[i] * 0.2126 +
+      data[i + 1] * 0.7152 +
+      data[i + 2] * 0.0722;
+    const brightGray = luminance * brightness;
+    const contrasted = (brightGray - 128) * contrast + 128;
+    const gray = clamp8(contrasted);
+    data[i] = gray;
+    data[i + 1] = gray;
+    data[i + 2] = gray;
+  }
+}
+
+function applyInvertedCaptureFilter(imageData) {
+  const data = imageData.data;
+  const hueRotate180 = [
+    -0.574, 1.43, 0.144,
+    0.426, 0.43, 0.144,
+    0.426, 1.43, -0.856
+  ];
+  const saturate094 = [
+    0.95278, 0.0429, 0.00432,
+    0.01278, 0.9829, 0.00432,
+    0.01278, 0.0429, 0.94432
+  ];
+  const brightness = 1.05;
+
+  for (let i = 0; i < data.length; i += 4) {
+    let r = (255 - data[i]) / 255;
+    let g = (255 - data[i + 1]) / 255;
+    let b = (255 - data[i + 2]) / 255;
+
+    [r, g, b] = applyColorMatrix(r, g, b, hueRotate180);
+    [r, g, b] = applyColorMatrix(r, g, b, saturate094);
+
+    data[i] = clamp8(r * brightness * 255);
+    data[i + 1] = clamp8(g * brightness * 255);
+    data[i + 2] = clamp8(b * brightness * 255);
+  }
+}
+
+function buildThemedCaptureCanvas() {
+  if (themeState.mode === 'normal') {
+    return null;
+  }
+
+  const outputCanvas = document.createElement('canvas');
+  outputCanvas.width = canvas.width;
+  outputCanvas.height = canvas.height;
+  const ctx = outputCanvas.getContext('2d', { alpha: false });
+  if (!ctx) return null;
+
+  ctx.drawImage(canvas, 0, 0, outputCanvas.width, outputCanvas.height);
+
+  if (themeState.mode === 'monochrome' || themeState.mode === 'inverted') {
+    const imageData = ctx.getImageData(0, 0, outputCanvas.width, outputCanvas.height);
+    if (themeState.mode === 'inverted') {
+      applyInvertedCaptureFilter(imageData);
+    } else {
+      applyMonochromeCaptureFilter(imageData);
+    }
+    ctx.putImageData(imageData, 0, 0);
+  }
+
+  if (themeState.mode === 'monochrome') {
+    return outputCanvas;
+  }
+
+  if (themeState.mode === 'inverted') {
+    const wash = getInvertedSkyWashState();
+    const gradient = ctx.createLinearGradient(0, 0, 0, outputCanvas.height);
+    gradient.addColorStop(0, `rgba(${wash.r}, ${wash.g}, ${wash.b}, ${wash.alpha.toFixed(3)})`);
+    gradient.addColorStop(0.42, `rgba(${wash.r}, ${wash.g}, ${wash.b}, ${wash.midAlpha.toFixed(3)})`);
+    gradient.addColorStop(0.68, `rgba(${wash.r}, ${wash.g}, ${wash.b}, ${wash.lowerAlpha.toFixed(3)})`);
+    gradient.addColorStop(0.78, `rgba(${wash.r}, ${wash.g}, ${wash.b}, 0)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+  }
+
+  return outputCanvas;
+}
+
+function captureCanvasBlob() {
+  const themedCanvas = buildThemedCaptureCanvas();
+  return canvasToBlob(themedCanvas || canvas);
+}
+
+function refreshCaptureShareButton() {
+  if (!captureShare) return;
+  const canShareFiles = typeof navigator !== 'undefined'
+    && typeof navigator.share === 'function'
+    && typeof window.File === 'function';
+  captureShare.classList.toggle('is-hidden', !canShareFiles);
+}
+
+async function shareCaptureImage() {
+  if (!captureUiState.blob || !captureShare) return;
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function' || typeof window.File !== 'function') {
+    return;
+  }
+  const file = new File([captureUiState.blob], captureUiState.fileName || buildCaptureFileName(), {
+    type: captureUiState.blob.type || 'image/png'
+  });
+  if (typeof navigator.canShare === 'function' && !navigator.canShare({ files: [file] })) {
+    return;
+  }
+  try {
+    await navigator.share({
+      title: 'ASS MAGIC 飛行記録',
+      text: 'ASS MAGICの飛行風景を記録しました。',
+      files: [file]
+    });
+  } catch (error) {
+    if (error?.name !== 'AbortError') {
+      console.error('Failed to share capture:', error);
+    }
+  }
+}
+
+async function captureFlightRecord() {
+  if (captureUiState.busy || captureUiState.open) return;
+  if (bookUiState.open || blackBoxUiState.open || siteMenu?.classList.contains('is-open')) return;
+  captureUiState.busy = true;
+  if (cameraCapture) cameraCapture.disabled = true;
+  triggerCameraShutter();
+  document.body.classList.add('is-capture-clean');
+  const previousPixelRatio = renderer.getPixelRatio();
+
+  try {
+    await waitForPaintFrame();
+    if (CAPTURE_PIXEL_RATIO > previousPixelRatio + 0.01) {
+      renderer.setPixelRatio(CAPTURE_PIXEL_RATIO);
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+      await waitForPaintFrame();
+    }
+    renderer.render(scene, camera);
+    const blob = await captureCanvasBlob();
+    document.body.classList.remove('is-capture-clean');
+
+    if (!blob) {
+      throw new Error('Capture blob was empty');
+    }
+
+    clearCaptureObjectUrl();
+    captureUiState.blob = blob;
+    captureUiState.fileName = buildCaptureFileName();
+    captureUiState.objectUrl = URL.createObjectURL(blob);
+    if (captureImage) captureImage.src = captureUiState.objectUrl;
+    if (captureSave) {
+      captureSave.href = captureUiState.objectUrl;
+      captureSave.download = captureUiState.fileName;
+    }
+    refreshCaptureShareButton();
+    setCaptureOverlayOpen(true);
+  } catch (error) {
+    document.body.classList.remove('is-capture-clean');
+    console.error('Failed to capture flight record:', error);
+  } finally {
+    if (renderer.getPixelRatio() !== previousPixelRatio) {
+      renderer.setPixelRatio(previousPixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+    }
+    captureUiState.busy = false;
+    if (cameraCapture) cameraCapture.disabled = false;
+  }
 }
 
 function cloneMessages(messages) {
@@ -3127,6 +3438,7 @@ function setBookOverlayOpen(isOpen) {
     refreshAccelHeld();
     input.leftId = null;
     input.rightId = null;
+    resetCameraLook(true);
     input.stickId = null;
     input.stickOffset.x = 0;
     input.stickOffset.y = 0;
@@ -3158,6 +3470,7 @@ function setBlackBoxOverlayOpen(isOpen) {
     refreshAccelHeld();
     input.leftId = null;
     input.rightId = null;
+    resetCameraLook(true);
     input.stickId = null;
     input.stickOffset.x = 0;
     input.stickOffset.y = 0;
@@ -3265,6 +3578,16 @@ function handlePointerDown(e) {
   refreshAccelHeld();
   registerBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
+  if (e.clientY < window.innerHeight * 0.5 && input.lookId === null) {
+    input.lookId = e.pointerId;
+    input.lookDragging = false;
+    input.lookLast.x = e.clientX;
+    input.lookLast.y = e.clientY;
+    input.lookStart.x = e.clientX;
+    input.lookStart.y = e.clientY;
+    return;
+  }
+
   if (e.clientX < window.innerWidth * 0.5 && input.leftId === null) {
     input.leftId = e.pointerId;
     input.leftLast.x = e.clientX;
@@ -3277,6 +3600,31 @@ function handlePointerDown(e) {
 function handlePointerMove(e) {
   e.preventDefault();
   invalidateBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
+
+  if (e.pointerId === input.lookId) {
+    const dx = e.clientX - input.lookLast.x;
+    const dy = e.clientY - input.lookLast.y;
+    const dragDistance = Math.hypot(e.clientX - input.lookStart.x, e.clientY - input.lookStart.y);
+    if (!input.lookDragging && dragDistance > P.CAMERA_LOOK_DRAG_START) {
+      input.lookDragging = true;
+      accelPointers.delete(e.pointerId);
+      refreshAccelHeld();
+    }
+    if (input.lookDragging) {
+      state.cameraYawTarget = THREE.MathUtils.clamp(
+        state.cameraYawTarget - dx * P.CAMERA_LOOK_YAW_SENS,
+        -P.CAMERA_LOOK_MAX_YAW,
+        P.CAMERA_LOOK_MAX_YAW
+      );
+      state.cameraPitchTarget = THREE.MathUtils.clamp(
+        state.cameraPitchTarget - dy * P.CAMERA_LOOK_PITCH_SENS,
+        -P.CAMERA_LOOK_MAX_PITCH,
+        P.CAMERA_LOOK_MAX_PITCH
+      );
+    }
+    input.lookLast.x = e.clientX;
+    input.lookLast.y = e.clientY;
+  }
 
   if (e.pointerId === input.leftId) {
     const dx = e.clientX - input.leftLast.x;
@@ -3308,6 +3656,10 @@ function handlePointerUp(e) {
   const screwTriggered = resolveBackgroundTap(e.pointerId, e.clientX, e.clientY);
   accelPointers.delete(e.pointerId);
   refreshAccelHeld();
+
+  if (e.pointerId === input.lookId) {
+    resetCameraLook();
+  }
 
   if (e.pointerId === input.leftId) {
     input.leftId = null;
@@ -3437,6 +3789,64 @@ for (const control of [menuToggle, siteMenuBackdrop, ...menuNavButtons]) {
     e.stopPropagation();
   });
 }
+
+for (const control of [
+  cameraCapture,
+  captureBackdrop,
+  capturePanel,
+  captureClose,
+  captureSave,
+  captureShare
+]) {
+  if (!control) continue;
+  control.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  control.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  control.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+cameraCapture?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const now = performance.now();
+  if (now - lastCameraTriggerAt < 420) return;
+  lastCameraTriggerAt = now;
+  await captureFlightRecord();
+});
+
+cameraCapture?.addEventListener('pointerdown', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const now = performance.now();
+  if (now - lastCameraTriggerAt < 420) return;
+  lastCameraTriggerAt = now;
+  await captureFlightRecord();
+});
+
+captureBackdrop?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeCaptureOverlay();
+});
+
+captureClose?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeCaptureOverlay();
+});
+
+captureShare?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  await shareCaptureImage();
+});
 
 menuToggle?.addEventListener('click', (e) => {
   e.preventDefault();
@@ -3660,6 +4070,7 @@ loadTrack(0, false);
 refreshSpeedLockUi();
 refreshTrackControls();
 refreshLyricsToggle();
+refreshCaptureShareButton();
 setMenuPage(activeMenuPage);
 
 window.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -3702,26 +4113,33 @@ window.addEventListener('orientationchange', () => {
 
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Escape') {
+    closeCaptureOverlay();
     closeBookOverlay();
+    closeBlackBoxOverlay();
     setSiteMenuOpen(false);
   }
-  if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD') {
+  if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+    e.preventDefault();
     ensureBgm();
   }
   if (e.code === 'Space') {
     input.accelKeyHeld = true;
     refreshAccelHeld();
   }
-  if (e.code === 'KeyW') input.turnY -= 6;
-  if (e.code === 'KeyS') input.turnY += 6;
-  if (e.code === 'KeyA') input.turnX -= 8;
-  if (e.code === 'KeyD') input.turnX += 8;
+  if (e.code === 'KeyW' || e.code === 'ArrowUp') input.keyUpHeld = true;
+  if (e.code === 'KeyS' || e.code === 'ArrowDown') input.keyDownHeld = true;
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.keyLeftHeld = true;
+  if (e.code === 'KeyD' || e.code === 'ArrowRight') input.keyRightHeld = true;
 });
 window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') {
     input.accelKeyHeld = false;
     refreshAccelHeld();
   }
+  if (e.code === 'KeyW' || e.code === 'ArrowUp') input.keyUpHeld = false;
+  if (e.code === 'KeyS' || e.code === 'ArrowDown') input.keyDownHeld = false;
+  if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.keyLeftHeld = false;
+  if (e.code === 'KeyD' || e.code === 'ArrowRight') input.keyRightHeld = false;
 });
 
 function spawnDustPuffs(position, up, forward) {
@@ -3886,16 +4304,28 @@ function updatePlayer(dt) {
     -applyDeadzone(input.stickOffset.x / STICK_LIMIT, P.STICK_DEADZONE) * P.STICK_SCALE,
     -applyDeadzone(input.stickOffset.y / STICK_LIMIT, P.STICK_DEADZONE) * P.STICK_SCALE
   );
+  const keyTarget = tempKey.set(
+    (input.keyLeftHeld ? 1 : 0) - (input.keyRightHeld ? 1 : 0),
+    (input.keyUpHeld ? 1 : 0) - (input.keyDownHeld ? 1 : 0)
+  );
   const stickBlend = 1 - Math.exp(-(input.stickId !== null ? P.STICK_RESPONSE : P.STICK_RETURN) * dt);
+  const keyBlend = 1 - Math.exp(-(((input.keyLeftHeld || input.keyRightHeld || input.keyUpHeld || input.keyDownHeld) ? P.STICK_RESPONSE : P.STICK_RETURN) * 0.8) * dt);
   input.stickSmooth.lerp(stickTarget, stickBlend);
+  input.keySmooth.lerp(keyTarget, keyBlend);
   if (input.stickId === null) {
     input.stickSmooth.y = THREE.MathUtils.damp(input.stickSmooth.y, 0, P.STICK_VERTICAL_RELEASE, dt);
     if (Math.abs(input.stickSmooth.y) < 0.01) input.stickSmooth.y = 0;
   }
-  const stickTurn = input.stickSmooth.x;
-  const stickLift = input.stickSmooth.y;
+  if (!(input.keyLeftHeld || input.keyRightHeld || input.keyUpHeld || input.keyDownHeld)) {
+    input.keySmooth.x = THREE.MathUtils.damp(input.keySmooth.x, 0, P.STICK_RETURN, dt);
+    input.keySmooth.y = THREE.MathUtils.damp(input.keySmooth.y, 0, P.STICK_VERTICAL_RELEASE, dt);
+    if (Math.abs(input.keySmooth.x) < 0.01) input.keySmooth.x = 0;
+    if (Math.abs(input.keySmooth.y) < 0.01) input.keySmooth.y = 0;
+  }
+  const stickTurn = input.stickSmooth.x + input.keySmooth.x;
+  const stickLift = input.stickSmooth.y + input.keySmooth.y;
   const climbInput = THREE.MathUtils.clamp(
-    (input.stickId === null && Math.abs(dragPitch) < 0.0001 ? 0 : stickLift) + dragPitch,
+    ((input.stickId === null && Math.abs(dragPitch) < 0.0001 && Math.abs(input.keySmooth.y) < 0.001) ? 0 : stickLift) + dragPitch,
     -1,
     1
   );
@@ -4135,11 +4565,24 @@ function updateCamera(dt) {
     : P.CAMERA_PITCH_SMOOTH;
   const forwardBlend = 1 - Math.exp(-cameraPitchResponse * dt);
   state.cameraLift = THREE.MathUtils.lerp(state.cameraLift, targetLift, forwardBlend);
+  const lookResponse = input.lookDragging ? P.CAMERA_LOOK_RESPONSE : P.CAMERA_LOOK_RETURN;
+  state.cameraYawOffset = THREE.MathUtils.damp(state.cameraYawOffset, state.cameraYawTarget, lookResponse, dt);
+  state.cameraPitchOffset = THREE.MathUtils.damp(state.cameraPitchOffset, state.cameraPitchTarget, lookResponse, dt);
   const cameraForward = state.forward.clone().addScaledVector(up, state.cameraLift).normalize();
   const speed = state.currentSpeed;
   const dist = P.CAMERA_DIST + speed * P.CAMERA_DIST_SPEED;
   const target = state.pos.clone().addScaledVector(up, P.CAMERA_HEIGHT);
-  const desired = target.clone().addScaledVector(cameraForward, -dist).addScaledVector(up, 1.6);
+  const orbitOffset = cameraForward.clone().multiplyScalar(-dist).addScaledVector(up, 1.6);
+  if (Math.abs(state.cameraYawOffset) > 0.0001) {
+    orbitOffset.applyAxisAngle(up, -state.cameraYawOffset);
+  }
+  if (Math.abs(state.cameraPitchOffset) > 0.0001) {
+    const orbitRight = new THREE.Vector3().crossVectors(orbitOffset, up).normalize();
+    if (orbitRight.lengthSq() > 0.0001) {
+      orbitOffset.applyAxisAngle(orbitRight, -state.cameraPitchOffset);
+    }
+  }
+  const desired = target.clone().add(orbitOffset);
   const smooth = 1 - Math.pow(1 - P.CAMERA_SMOOTH, dt * 60);
   camera.position.lerp(desired, smooth);
   camera.up.lerp(up, smooth).normalize();
@@ -4309,7 +4752,7 @@ function tick() {
   const previousPos = state.pos.clone();
   updateColorCycle();
   updateThemeSystem(dt);
-  const gameplayPaused = bookUiState.open || blackBoxUiState.open;
+  const gameplayPaused = captureUiState.open || bookUiState.open || blackBoxUiState.open;
   if (!gameplayPaused) {
     updatePlayer(dt);
     checkThemeTriggerCollision(previousPos, state.pos);
