@@ -1596,15 +1596,20 @@ function createEarthReturnBillboard() {
   return { earth, glow };
 }
 
+const THEME_TRIGGER_BUCKET_SIZE = 72;
 const themeTriggerZones = [];
+const staticThemeTriggerBuckets = new Map();
+const dynamicThemeTriggerZones = [];
 const themeBoundsBox = new THREE.Box3();
 const themeBoundsSphere = new THREE.Sphere();
 const themeSegment = new THREE.Vector3();
 const themeOffset = new THREE.Vector3();
 const themeClosestPoint = new THREE.Vector3();
 const themeZoneCenter = new THREE.Vector3();
+const themeSegmentMidpoint = new THREE.Vector3();
 const themeProjected = new THREE.Vector3();
 const themeFlashScreen = new THREE.Vector2();
+const themeCandidateZones = [];
 const defaultClearColor = new THREE.Color(0x0a0d12);
 const spaceClearColor = new THREE.Color(0x000000);
 const blendedClearColor = new THREE.Color();
@@ -1662,6 +1667,7 @@ const cloudDriftAxisScratch = new THREE.Vector3();
 const compassTargetDirectionScratch = new THREE.Vector3();
 const duskTowerInverseQuatScratch = new THREE.Quaternion();
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
+let maxStaticThemeTriggerRadius = 0;
 const spaceStarsGeometry = new THREE.BufferGeometry();
 const spaceStarPositions = new Float32Array(SPACE_STAR_COUNT * 3);
 const spaceStarDrift = new Float32Array(SPACE_STAR_COUNT);
@@ -1772,6 +1778,57 @@ for (let i = 0; i < SPACE_ASTEROID_COUNT; i++) {
   spaceAsteroidField.add(asteroid);
 }
 
+function getThemeTriggerBucketCoord(value) {
+  return Math.floor(value / THEME_TRIGGER_BUCKET_SIZE);
+}
+
+function getThemeTriggerBucketKey(x, y, z) {
+  return `${x},${y},${z}`;
+}
+
+function addThemeTriggerZoneToBuckets(zone) {
+  const x = getThemeTriggerBucketCoord(zone.worldCenter.x);
+  const y = getThemeTriggerBucketCoord(zone.worldCenter.y);
+  const z = getThemeTriggerBucketCoord(zone.worldCenter.z);
+  const key = getThemeTriggerBucketKey(x, y, z);
+  const bucket = staticThemeTriggerBuckets.get(key);
+  if (bucket) {
+    bucket.push(zone);
+  } else {
+    staticThemeTriggerBuckets.set(key, [zone]);
+  }
+  maxStaticThemeTriggerRadius = Math.max(maxStaticThemeTriggerRadius, zone.radius);
+}
+
+function collectThemeCandidateZones(center, paddingRadius, target, tag = null) {
+  target.length = 0;
+  const minX = getThemeTriggerBucketCoord(center.x - paddingRadius);
+  const maxX = getThemeTriggerBucketCoord(center.x + paddingRadius);
+  const minY = getThemeTriggerBucketCoord(center.y - paddingRadius);
+  const maxY = getThemeTriggerBucketCoord(center.y + paddingRadius);
+  const minZ = getThemeTriggerBucketCoord(center.z - paddingRadius);
+  const maxZ = getThemeTriggerBucketCoord(center.z + paddingRadius);
+
+  for (let x = minX; x <= maxX; x++) {
+    for (let y = minY; y <= maxY; y++) {
+      for (let z = minZ; z <= maxZ; z++) {
+        const bucket = staticThemeTriggerBuckets.get(getThemeTriggerBucketKey(x, y, z));
+        if (!bucket) continue;
+        for (const zone of bucket) {
+          if (tag !== null && zone.tag !== tag) continue;
+          target.push(zone);
+        }
+      }
+    }
+  }
+
+  for (const zone of dynamicThemeTriggerZones) {
+    if (tag !== null && zone.tag !== tag) continue;
+    target.push(zone);
+  }
+  return target;
+}
+
 function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 1.7, extra = {}) {
   object.updateMatrixWorld(true);
   themeBoundsBox.setFromObject(object);
@@ -1780,7 +1837,7 @@ function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 
   if (!Number.isFinite(themeBoundsSphere.radius) || themeBoundsSphere.radius <= 0) return;
   const dynamic = !!extra.dynamic;
   const localCenter = object.worldToLocal(themeBoundsSphere.center.clone());
-  themeTriggerZones.push({
+  const zone = {
     object,
     localCenter,
     worldCenter: themeBoundsSphere.center.clone(),
@@ -1790,7 +1847,13 @@ function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 
     canTrigger: typeof extra.canTrigger === 'function' ? extra.canTrigger : null,
     tag: extra.tag ?? null,
     themeMode: extra.themeMode ?? null
-  });
+  };
+  themeTriggerZones.push(zone);
+  if (dynamic) {
+    dynamicThemeTriggerZones.push(zone);
+  } else {
+    addThemeTriggerZoneToBuckets(zone);
+  }
 }
 
 function registerThemeTriggersFromChildren(group, radiusScale = 0.82, minRadius = 1.7, extra = {}) {
@@ -3837,7 +3900,12 @@ function forceViewportReset() {
 }
 
 function isInsideThemeTrigger(point) {
-  for (const zone of themeTriggerZones) {
+  const candidates = collectThemeCandidateZones(
+    point,
+    maxStaticThemeTriggerRadius + PLAYER_THEME_HIT_RADIUS,
+    themeCandidateZones
+  );
+  for (const zone of candidates) {
     copyThemeZoneCenter(themeZoneCenter, zone);
     const limit = zone.radius + PLAYER_THEME_HIT_RADIUS;
     if (point.distanceToSquared(themeZoneCenter) <= limit * limit) {
@@ -3848,8 +3916,13 @@ function isInsideThemeTrigger(point) {
 }
 
 function isInsideThemeTriggerTag(point, tag) {
-  for (const zone of themeTriggerZones) {
-    if (zone.tag !== tag) continue;
+  const candidates = collectThemeCandidateZones(
+    point,
+    maxStaticThemeTriggerRadius + PLAYER_THEME_HIT_RADIUS,
+    themeCandidateZones,
+    tag
+  );
+  for (const zone of candidates) {
     copyThemeZoneCenter(themeZoneCenter, zone);
     const limit = zone.radius + PLAYER_THEME_HIT_RADIUS;
     if (point.distanceToSquared(themeZoneCenter) <= limit * limit) {
@@ -4307,8 +4380,12 @@ function checkThemeTriggerCollision(start, end) {
   let bestT = Infinity;
   let bestPoint = null;
   let bestZone = null;
+  const segmentHalfLength = Math.sqrt(start.distanceToSquared(end)) * 0.5;
+  const segmentPadding = segmentHalfLength + maxStaticThemeTriggerRadius + PLAYER_THEME_HIT_RADIUS;
+  themeSegmentMidpoint.copy(start).lerp(end, 0.5);
+  const candidates = collectThemeCandidateZones(themeSegmentMidpoint, segmentPadding, themeCandidateZones);
 
-  for (const zone of themeTriggerZones) {
+  for (const zone of candidates) {
     if (zone.canTrigger && !zone.canTrigger()) continue;
     copyThemeZoneCenter(themeZoneCenter, zone);
     const t = getSegmentSphereHit(start, end, themeZoneCenter, zone.radius + PLAYER_THEME_HIT_RADIUS);
