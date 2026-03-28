@@ -787,6 +787,8 @@ const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
+const BLACK_BOX_REOPEN_TRIGGER_RADIUS = 6.6;
+const BLACK_BOX_REARM_EXIT_RADIUS = 8.4;
 const DUSK_TOWER_ALTITUDE = 24.0;
 const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .multiplyScalar(-1.0)
@@ -3221,6 +3223,21 @@ function placeBlackBoxLandmark() {
   placeBlackBoxOrbit();
 }
 
+function isInsideBlackBoxInteractionZone(point, extraRadius = 0) {
+  const limit = BLACK_BOX_REARM_EXIT_RADIUS + PLAYER_THEME_HIT_RADIUS + extraRadius;
+  return point.distanceToSquared(blackBoxLandmark.position) <= limit * limit;
+}
+
+function getGroundedBlackBoxInteractionHit(start, end) {
+  if (blackBoxUiState.mode !== 'grounded') return null;
+  return getSegmentSphereHit(
+    start,
+    end,
+    blackBoxLandmark.position,
+    BLACK_BOX_REOPEN_TRIGGER_RADIUS + PLAYER_THEME_HIT_RADIUS
+  );
+}
+
 function updateBlackBox(dt) {
   if (blackBoxUiState.mode !== 'orbit') return;
   blackBoxUiState.routeAngle += blackBoxUiState.routeAngleSpeed * dt;
@@ -4242,6 +4259,12 @@ function checkThemeTriggerCollision(start, end) {
   const monochromeHit = getMonochromeSphereHit(start, end);
   if (monochromeHit) {
     handleMonochromeSphereTrigger(monochromeHit, monochromeHit.point);
+    return;
+  }
+
+  const blackBoxInteractionHit = getGroundedBlackBoxInteractionHit(start, end);
+  if (blackBoxInteractionHit !== null) {
+    handleBlackBoxTrigger(themeClosestPoint.clone());
     return;
   }
 
@@ -5847,7 +5870,7 @@ function closeBlackBoxOverlay() {
     window.clearTimeout(blackBoxUiState.pendingTimer);
     blackBoxUiState.pendingTimer = null;
   }
-  blackBoxUiState.rearmRequired = isInsideThemeTriggerTag(state.pos, 'black-box');
+  blackBoxUiState.rearmRequired = isInsideBlackBoxInteractionZone(state.pos);
   setBlackBoxOverlayOpen(false);
 }
 
@@ -5865,7 +5888,7 @@ function handleBookTrigger() {
 function handleBlackBoxTrigger(contactPoint) {
   if (blackBoxUiState.open) return;
   if (blackBoxUiState.rearmRequired) {
-    if (isInsideThemeTriggerTag(state.pos, 'black-box')) {
+    if (isInsideBlackBoxInteractionZone(state.pos)) {
       return;
     }
     blackBoxUiState.rearmRequired = false;
