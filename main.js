@@ -83,7 +83,10 @@ const playlist = playlistData.map((track) => ({
   fullLyrics: typeof track.lyricsText === 'string' ? track.lyricsText.trim() : '',
   fullLyricsPromise: null
 }));
-let currentTrackIndex = 0;
+const INITIAL_TRACK_INDEX = playlist.length > 0
+  ? Math.floor(Math.random() * playlist.length)
+  : 0;
+let currentTrackIndex = INITIAL_TRACK_INDEX;
 let randomTrackQueue = [];
 const bgm = document.getElementById('bgm-audio') || new Audio();
 bgm.preload = 'auto';
@@ -4706,6 +4709,11 @@ function getNextRandomTrackIndex() {
   return typeof nextIndex === 'number' ? nextIndex : currentTrackIndex;
 }
 
+function getInitialRandomTrackIndex() {
+  if (playlist.length <= 1) return 0;
+  return INITIAL_TRACK_INDEX;
+}
+
 function setMenuPage(pageId) {
   activeMenuPage = pageId;
   for (const button of menuNavButtons) {
@@ -6535,7 +6543,7 @@ if (speedLockSlider) {
 bgm.addEventListener('ended', () => {
   nextTrack();
 });
-loadTrack(0, false);
+loadTrack(getInitialRandomTrackIndex(), false);
 refreshSpeedLockUi();
 refreshTrackControls();
 refreshLyricsToggle();
@@ -7239,13 +7247,15 @@ function updateSanctuaryActivation(dt) {
     sanctuaryBeam.visible = false;
     sanctuaryBeam.material.opacity = 0.0;
     sanctuaryPulseMat.opacity = 0.72;
-    sanctuaryLaunchBeam.visible = false;
-    sanctuaryLaunchGlow.visible = false;
-    sanctuaryLaunchBeam.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
-    sanctuaryLaunchGlow.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
-    sanctuaryLaunchMat.opacity = 0.0;
-    sanctuaryLaunchGlowMat.opacity = 0.0;
-    for (const marker of sanctuaryLaunchMarkers) {
+  sanctuaryLaunchBeam.visible = false;
+  sanctuaryLaunchGlow.visible = false;
+  sanctuaryLaunchBeam.position.y = SANCTUARY_BEAM_HEIGHT * 0.01;
+  sanctuaryLaunchGlow.position.y = SANCTUARY_BEAM_HEIGHT * 0.01;
+  sanctuaryLaunchBeam.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
+  sanctuaryLaunchGlow.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
+  sanctuaryLaunchMat.opacity = 0.0;
+  sanctuaryLaunchGlowMat.opacity = 0.0;
+  for (const marker of sanctuaryLaunchMarkers) {
       marker.visible = false;
       marker.material.opacity = 0.0;
     }
@@ -7270,24 +7280,28 @@ function updateSanctuaryActivation(dt) {
   sanctuaryPulseMat.opacity = THREE.MathUtils.lerp(0.72, 0.98, activation);
   sanctuaryLaunchBeam.visible = beamProgress > 0.001;
   sanctuaryLaunchGlow.visible = beamProgress > 0.001;
+  const beamLengthScale = THREE.MathUtils.lerp(0.02, 1.0, beamProgress);
+  const beamHalfHeight = SANCTUARY_BEAM_HEIGHT * beamLengthScale * 0.5;
+  sanctuaryLaunchBeam.position.y = beamHalfHeight;
+  sanctuaryLaunchGlow.position.y = beamHalfHeight;
   sanctuaryLaunchBeam.scale.set(
     SANCTUARY_BEAM_THICKNESS_SCALE,
-    THREE.MathUtils.lerp(0.02, 1.0, beamProgress),
+    beamLengthScale,
     SANCTUARY_BEAM_THICKNESS_SCALE
   );
   sanctuaryLaunchGlow.scale.set(
     SANCTUARY_BEAM_THICKNESS_SCALE,
-    THREE.MathUtils.lerp(0.02, 1.0, beamProgress),
+    beamLengthScale,
     SANCTUARY_BEAM_THICKNESS_SCALE
   );
   sanctuaryLaunchMat.opacity = THREE.MathUtils.lerp(0.0, 0.88, beamProgress);
   sanctuaryLaunchGlowMat.opacity = THREE.MathUtils.lerp(0.0, 0.3, beamProgress);
   const markerScroll = (returnRouteState.sanctuaryActivationTime * 0.19) % 1;
-  const markerSpan = SANCTUARY_BEAM_HEIGHT - 180;
+  const markerSpan = Math.max(0, SANCTUARY_BEAM_HEIGHT * beamLengthScale - 180);
   for (const marker of sanctuaryLaunchMarkers) {
     const cycle = (marker.userData.offset + markerScroll) % 1;
     const pulse = 0.72 + Math.sin((cycle + beamProgress) * Math.PI * 2) * 0.18;
-    marker.visible = beamProgress > 0.06;
+    marker.visible = beamProgress > 0.06 && markerSpan > 0;
     marker.position.y = 90 + cycle * markerSpan;
     marker.scale.setScalar(THREE.MathUtils.lerp(0.86, 1.14, cycle) * SANCTUARY_BEAM_THICKNESS_SCALE);
     marker.material.opacity = marker.visible
