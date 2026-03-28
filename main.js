@@ -5360,7 +5360,7 @@ function shouldIncludeEndingCreditName(name) {
 function renderEndingReturnHistory(entries = returnHistoryState.entries) {
   const sortedEntries = cloneReturnHistoryEntries(entries)
     .filter(Boolean)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   const returnees = sortedEntries
     .filter((entry) => !entry.isTrueReturn)
     .map((entry) => entry.playerName)
