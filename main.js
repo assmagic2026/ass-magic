@@ -530,6 +530,27 @@ function getBgmBaseTargetVolume() {
   return BGM_BASE_VOLUME * getSpaceReturnBgmVolumeFactor();
 }
 
+function isEndingSequenceActive() {
+  return (
+    endingUiState.completed ||
+    endingUiState.whiteoutActive ||
+    endingUiState.transitionActive ||
+    endingUiState.open
+  );
+}
+
+function stopBgmForEnding() {
+  bgm.pause();
+  bgmPending = false;
+  bgm.muted = false;
+  bgmPausedForMonochrome = false;
+  bgmSuppressedForMonochrome = false;
+  bgmPausedForSpaceReturn = false;
+  setRecordSpinning(false);
+  refreshTrackControls();
+  updateLyricsUi();
+}
+
 function shouldHideMusicUi() {
   return (
     returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY &&
@@ -562,7 +583,7 @@ function syncSpaceReturnAudioState() {
     return;
   }
   stopEffectAudio(spaceReturnAudio, true);
-  if (bgmPausedForSpaceReturn && themeState.mode !== 'monochrome' && !endingUiState.completed) {
+  if (bgmPausedForSpaceReturn && themeState.mode !== 'monochrome' && !isEndingSequenceActive()) {
     bgmPausedForSpaceReturn = false;
     playCurrentTrack();
   } else if (!shouldPlaySpaceReturnAudio()) {
@@ -609,6 +630,14 @@ function syncMusicUiVisibility() {
 }
 
 function syncMonochromeBgmState() {
+  if (isEndingSequenceActive()) {
+    bgmPausedForMonochrome = false;
+    bgmSuppressedForMonochrome = false;
+    if (!bgm.paused || bgmPending) {
+      stopBgmForEnding();
+    }
+    return;
+  }
   const monochromeActive = themeState.mode === 'monochrome';
   if (monochromeActive) {
     if (IS_SAFARI_BROWSER) {
@@ -652,6 +681,7 @@ function syncMonochromeBgmState() {
 function playCurrentTrack() {
   if (themeState.mode === 'monochrome') return;
   if (shouldPlaySpaceReturnAudio()) return;
+  if (isEndingSequenceActive()) return;
   if (bgmPending) return;
   const now = performance.now();
   if (now - bgmLastAttemptAt < 90) return;
@@ -665,7 +695,7 @@ function playCurrentTrack() {
   const playResult = bgm.play();
   if (playResult && typeof playResult.then === 'function') {
     playResult.then(() => {
-      if (themeState.mode === 'monochrome') {
+      if (themeState.mode === 'monochrome' || isEndingSequenceActive()) {
         bgm.pause();
         bgmPending = false;
         setRecordSpinning(false);
@@ -710,6 +740,7 @@ function loadTrack(index, autoplay = false) {
 function ensureBgm() {
   if (themeState.mode === 'monochrome') return;
   if (shouldPlaySpaceReturnAudio()) return;
+  if (isEndingSequenceActive()) return;
   if (!bgm.paused) return;
   playCurrentTrack();
 }
@@ -718,6 +749,7 @@ function startBgmFromGesture() {
   primeEffectAudioFromGesture();
   if (themeState.mode === 'monochrome') return;
   if (shouldPlaySpaceReturnAudio()) return;
+  if (isEndingSequenceActive()) return;
   if (!bgm.paused || bgmPending) return;
   bgm.muted = false;
   bgmSuppressedForMonochrome = false;
@@ -4061,11 +4093,7 @@ function triggerEarthEnding() {
   endingUiState.rollTime = 0;
   catRouteState.bubbleActive = false;
   setCatRouteBubbleVisible(false);
-  bgm.pause();
-  bgmPending = false;
-  setRecordSpinning(false);
-  refreshTrackControls();
-  updateLyricsUi();
+  stopBgmForEnding();
   stopEffectAudio(monochromeClockAudio, true);
   stopEffectAudio(spaceReturnAudio, true);
   playEffectAudio(earthArrivalAudio, { restart: true });
@@ -4933,6 +4961,7 @@ function setEndingOverlayOpen(isOpen) {
     (isOpen || endingUiState.transitionActive) ? 'false' : 'true'
   );
   if (isOpen) {
+    stopBgmForEnding();
     queueEndingRollAudio();
   } else {
     clearEndingRollAudioDelay();
