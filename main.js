@@ -250,6 +250,11 @@ function queueEndingRollAudio() {
   }, ENDING_ROLL_AUDIO_DELAY_MS);
 }
 
+function stopEndingRollAudioPlayback() {
+  clearEndingRollAudioDelay();
+  stopEffectAudio(endingRollAudio, true);
+}
+
 function stopRouteEffectAudios() {
   clearEndingRollAudioDelay();
   stopEffectAudio(monochromeClockAudio, true);
@@ -264,25 +269,8 @@ function primeEffectAudioFromGesture() {
   for (const audio of [monochromeClockAudio, earthArrivalAudio, endingRollAudio, spaceReturnAudio]) {
     try {
       audio.load();
-      audio.muted = true;
-      const playResult = audio.play();
-      if (playResult && typeof playResult.then === 'function') {
-        playResult
-          .then(() => {
-            audio.pause();
-            audio.currentTime = 0;
-            audio.muted = false;
-          })
-          .catch(() => {
-            audio.muted = false;
-          });
-      } else {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.muted = false;
-      }
     } catch (error) {
-      audio.muted = false;
+      console.warn('Effect audio preload failed:', error);
     }
   }
 }
@@ -2973,7 +2961,8 @@ const blackBoxUiState = {
   groundedForward: new THREE.Vector3(),
   lastTriggerPoint: new THREE.Vector3(),
   lastTriggerAngle: 0,
-  openedOnce: false
+  openedOnce: false,
+  rearmRequired: false
 };
 const captureUiState = {
   open: false,
@@ -3684,6 +3673,19 @@ function forceViewportReset() {
 
 function isInsideThemeTrigger(point) {
   for (const zone of themeTriggerZones) {
+    zone.object.updateMatrixWorld(true);
+    themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
+    const limit = zone.radius + PLAYER_THEME_HIT_RADIUS;
+    if (point.distanceToSquared(themeZoneCenter) <= limit * limit) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isInsideThemeTriggerTag(point, tag) {
+  for (const zone of themeTriggerZones) {
+    if (zone.tag !== tag) continue;
     zone.object.updateMatrixWorld(true);
     themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
     const limit = zone.radius + PLAYER_THEME_HIT_RADIUS;
@@ -5680,6 +5682,10 @@ function closeBookOverlay() {
 }
 
 function openBlackBoxOverlay() {
+  stopEndingRollAudioPlayback();
+  setEndingOverlayTransitioning(false);
+  setEndingOverlayOpen(false);
+  endingUiState.rollTime = 0;
   closeBookOverlay();
   setBlackBoxView('intro');
   if (blackBoxTitle) {
@@ -5696,6 +5702,7 @@ function closeBlackBoxOverlay() {
     window.clearTimeout(blackBoxUiState.pendingTimer);
     blackBoxUiState.pendingTimer = null;
   }
+  blackBoxUiState.rearmRequired = isInsideThemeTriggerTag(state.pos, 'black-box');
   setBlackBoxOverlayOpen(false);
 }
 
@@ -5712,6 +5719,12 @@ function handleBookTrigger() {
 
 function handleBlackBoxTrigger(contactPoint) {
   if (blackBoxUiState.open) return;
+  if (blackBoxUiState.rearmRequired) {
+    if (isInsideThemeTriggerTag(state.pos, 'black-box')) {
+      return;
+    }
+    blackBoxUiState.rearmRequired = false;
+  }
   if (contactPoint) {
     blackBoxUiState.lastTriggerPoint.copy(contactPoint);
     blackBoxUiState.lastTriggerAngle = blackBoxUiState.routeAngle;
@@ -6129,6 +6142,7 @@ blackBoxClose?.addEventListener('click', (e) => {
 blackBoxOpen?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  stopEndingRollAudioPlayback();
   if (blackBoxUiState.mode !== 'grounded') {
     blackBoxUiState.mode = 'grounded';
     const groundedSource = blackBoxUiState.lastTriggerPoint.lengthSq() > 0.0001
