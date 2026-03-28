@@ -16,7 +16,7 @@ const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: false,
   alpha: false,
-  powerPreference: 'low-power',
+  powerPreference: 'high-performance',
   preserveDrawingBuffer: false
 });
 const RUNTIME_PIXEL_RATIO_MAX = Math.min(window.devicePixelRatio || 1, IS_APPLE_TOUCH_AUDIO ? 1.7 : 1.9);
@@ -144,7 +144,8 @@ const rendererPerfState = {
   currentPixelRatio: GROUND_PIXEL_RATIO_SOFT_CAP,
   smoothedFrameTime: 1 / 60,
   sampleTime: 0,
-  stableTime: 0
+  stableTime: 0,
+  changeCooldown: 0
 };
 const spaceEnvironmentPerfState = {
   initialized: false,
@@ -198,19 +199,26 @@ function getRuntimePixelRatioCeiling() {
 function applyRuntimePixelRatio(nextPixelRatio, force = false, maxOverride = getRuntimePixelRatioCeiling()) {
   const clamped = THREE.MathUtils.clamp(nextPixelRatio, RUNTIME_PIXEL_RATIO_MIN, maxOverride);
   const rounded = Math.round(clamped * 100) / 100;
-  if (!force && Math.abs(rounded - rendererPerfState.currentPixelRatio) < 0.04) return;
+  if (!force && Math.abs(rounded - rendererPerfState.currentPixelRatio) < 0.08) return;
   rendererPerfState.currentPixelRatio = rounded;
   renderer.setPixelRatio(rounded);
   renderer.setSize(window.innerWidth, window.innerHeight, false);
+  rendererPerfState.changeCooldown = IS_APPLE_TOUCH_AUDIO ? 0.6 : 0.4;
 }
 
 function updateRuntimePixelRatio(dt) {
   if (!Number.isFinite(dt) || dt <= 0) return;
   if (captureUiState?.busy || captureUiState?.open) return;
 
+  if (rendererPerfState.changeCooldown > 0) {
+    rendererPerfState.changeCooldown = Math.max(0, rendererPerfState.changeCooldown - dt);
+    rendererPerfState.sampleTime = 0;
+    return;
+  }
+
   rendererPerfState.smoothedFrameTime = THREE.MathUtils.lerp(rendererPerfState.smoothedFrameTime, dt, 0.08);
   rendererPerfState.sampleTime += dt;
-  const sampleInterval = IS_APPLE_TOUCH_AUDIO ? 0.45 : 0.3;
+  const sampleInterval = IS_APPLE_TOUCH_AUDIO ? 0.8 : 0.5;
   if (rendererPerfState.sampleTime < sampleInterval) return;
   rendererPerfState.sampleTime = 0;
 
@@ -228,10 +236,10 @@ function updateRuntimePixelRatio(dt) {
     ? (IS_APPLE_TOUCH_AUDIO ? 1 / 61 : 1 / 59)
     : (IS_APPLE_TOUCH_AUDIO ? 1 / 55 : 1 / 57);
   const stepDown = groundFocusedScene
-    ? (IS_APPLE_TOUCH_AUDIO ? 0.14 : 0.1)
-    : (IS_APPLE_TOUCH_AUDIO ? 0.1 : 0.08);
+    ? (IS_APPLE_TOUCH_AUDIO ? 0.06 : 0.08)
+    : (IS_APPLE_TOUCH_AUDIO ? 0.06 : 0.06);
   const stepUp = groundFocusedScene
-    ? (IS_APPLE_TOUCH_AUDIO ? 0.03 : 0.05)
+    ? (IS_APPLE_TOUCH_AUDIO ? 0.04 : 0.05)
     : (IS_APPLE_TOUCH_AUDIO ? 0.04 : 0.06);
 
   if (rendererPerfState.currentPixelRatio > effectiveMax + 0.01) {
@@ -246,16 +254,11 @@ function updateRuntimePixelRatio(dt) {
     return;
   }
 
-  if (IS_APPLE_TOUCH_AUDIO) {
-    rendererPerfState.stableTime = 0;
-    return;
-  }
-
   if (rendererPerfState.smoothedFrameTime < upThreshold && rendererPerfState.currentPixelRatio < effectiveMax - 0.01) {
-    rendererPerfState.stableTime += 0.3;
+    rendererPerfState.stableTime += sampleInterval;
     const settleTime = groundFocusedScene
-      ? (IS_APPLE_TOUCH_AUDIO ? 1.45 : 1.0)
-      : (IS_APPLE_TOUCH_AUDIO ? 1.7 : 1.4);
+      ? (IS_APPLE_TOUCH_AUDIO ? 2.4 : 1.0)
+      : (IS_APPLE_TOUCH_AUDIO ? 3.0 : 1.4);
     if (rendererPerfState.stableTime >= settleTime) {
       rendererPerfState.stableTime = 0;
       applyRuntimePixelRatio(rendererPerfState.currentPixelRatio + stepUp, false, effectiveMax);
