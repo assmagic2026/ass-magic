@@ -119,6 +119,19 @@ let bgmFilterFrequency = THEME_FILTER_BASE_FREQ;
 let bgmPausedForMonochrome = false;
 let bgmSuppressedForMonochrome = false;
 let bgmPausedForSpaceReturn = false;
+const elementVisibilityState = new WeakMap();
+const TRACK_VISUALIZER_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 1 / 18 : 1 / 30;
+const LYRICS_LAYOUT_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 1 / 12 : 1 / 24;
+const LYRICS_UI_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 1 / 15 : 1 / 24;
+const INFO_PANEL_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 0.18 : 0.08;
+const uiPerfState = {
+  visualizer: 0,
+  lyricsLayout: 0,
+  lyricsUi: 0,
+  info: 0
+};
+let visualizerIdleState = null;
+let lastInfoText = '';
 const monochromeClockAudio = new Audio();
 monochromeClockAudio.src = encodeURI('./振り子時計（エコー入り）.mp3');
 monochromeClockAudio.preload = 'auto';
@@ -235,6 +248,14 @@ function queueEndingRollAudio() {
     if (!endingUiState.open) return;
     playEffectAudio(endingRollAudio);
   }, ENDING_ROLL_AUDIO_DELAY_MS);
+}
+
+function stopRouteEffectAudios() {
+  clearEndingRollAudioDelay();
+  stopEffectAudio(monochromeClockAudio, true);
+  stopEffectAudio(earthArrivalAudio, true);
+  stopEffectAudio(endingRollAudio, true);
+  stopEffectAudio(spaceReturnAudio, true);
 }
 
 function primeEffectAudioFromGesture() {
@@ -454,9 +475,22 @@ function syncSpaceReturnAudioState() {
 
 function setElementUiVisibility(element, isVisible) {
   if (!element) return;
+  if (elementVisibilityState.get(element) === isVisible) return;
+  elementVisibilityState.set(element, isVisible);
   element.style.opacity = isVisible ? '' : '0';
   element.style.visibility = isVisible ? '' : 'hidden';
   element.style.pointerEvents = isVisible ? '' : 'none';
+}
+
+function shouldRunUiStep(bucket, interval, dt, force = false) {
+  if (force) {
+    uiPerfState[bucket] = 0;
+    return true;
+  }
+  uiPerfState[bucket] += dt;
+  if (uiPerfState[bucket] < interval) return false;
+  uiPerfState[bucket] = 0;
+  return true;
 }
 
 function syncMusicUiVisibility() {
@@ -741,9 +775,13 @@ const BLACK_BOX_IMAGE_SET = [
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_PLAYER_STATE_STORAGE_KEY = 'ass-magic-book-player-v1';
 const BOOK_MESSAGE_LIMIT = 12;
+const BOOK_MESSAGE_FETCH_LIMIT = 24;
 const BOOK_MESSAGE_TIMEOUT_MS = 9000;
 const RETURN_HISTORY_STORAGE_KEY = 'ass-magic-return-histories-v1';
 const RETURN_HISTORY_LIMIT = 80;
+const RETURN_HISTORY_BOOK_FALLBACK_AUTHOR = '__return_history__';
+const RETURN_HISTORY_BOOK_FALLBACK_PREFIX = '__return_history__:';
+const RETURN_HISTORY_BOOK_FALLBACK_FETCH_LIMIT = 120;
 const BOOK_RECORD_EXCLUDED_NAMES = new Set(['サーモンユッケ伯爵', '揚げパン大王', '道夫', 'トリケラトプさん']);
 const ENDING_CREDITS_EXCLUDED_NAMES = new Set(['サーモンユッケ伯爵', '道夫', 'トリケラトプさん', '揚げパン大王']);
 const ENDING_ROLL_AUDIO_DELAY_MS = 2000;
@@ -1014,6 +1052,16 @@ function createBasisQuaternion(forward, up) {
   const localUp = new THREE.Vector3().crossVectors(forward, right).normalize();
   const basis = new THREE.Matrix4().makeBasis(right, localUp, forward);
   return new THREE.Quaternion().setFromRotationMatrix(basis);
+}
+
+const basisRightScratch = new THREE.Vector3();
+const basisLocalUpScratch = new THREE.Vector3();
+const basisMatrixScratch = new THREE.Matrix4();
+function writeBasisQuaternion(target, forward, up) {
+  basisRightScratch.crossVectors(up, forward).normalize();
+  basisLocalUpScratch.crossVectors(forward, basisRightScratch).normalize();
+  basisMatrixScratch.makeBasis(basisRightScratch, basisLocalUpScratch, forward);
+  return target.setFromRotationMatrix(basisMatrixScratch);
 }
 
 function getSurfaceAxes(direction) {
@@ -1483,6 +1531,11 @@ const earthGuideDirection = new THREE.Vector3();
 const earthGuideProjected = new THREE.Vector3();
 const compassTargetLocal = new THREE.Vector3();
 const compassTargetProjected = new THREE.Vector3();
+const previousFramePlayerPos = new THREE.Vector3();
+const catDesiredPosition = new THREE.Vector3();
+const catMountForward = new THREE.Vector3();
+const catMountUp = new THREE.Vector3();
+const catTargetQuaternion = new THREE.Quaternion();
 const spaceStarsGeometry = new THREE.BufferGeometry();
 const spaceStarPositions = new Float32Array(SPACE_STAR_COUNT * 3);
 const spaceStarDrift = new Float32Array(SPACE_STAR_COUNT);
@@ -2941,6 +2994,7 @@ const endingUiState = {
   rollTime: 0,
   rollStartY: 0,
   rollEndY: 0,
+  rollCurrentY: 0,
   rollAudioDelayTimer: null,
   open: false,
   completed: false
@@ -3380,16 +3434,16 @@ function updateCatRouteBubble(dt) {
 
 function updateCatCompanion(dt) {
   if (!isCatCompanionActive()) return;
-  const desiredPosition = CAT_ROUTE_MOUNT_OFFSET.clone().applyQuaternion(player.quaternion).add(player.position);
-  const mountForward = state.visualForward.clone().normalize();
-  const mountUp = state.visualUp.clone().normalize();
+  const desiredPosition = catDesiredPosition.copy(CAT_ROUTE_MOUNT_OFFSET).applyQuaternion(player.quaternion).add(player.position);
+  const mountForward = catMountForward.copy(state.visualForward).normalize();
+  const mountUp = catMountUp.copy(state.visualUp).normalize();
   if (mountForward.lengthSq() < 0.0001) {
     mountForward.set(0, 0, 1);
   }
   if (mountUp.lengthSq() < 0.0001) {
     mountUp.set(0, 1, 0);
   }
-  const targetQuaternion = createBasisQuaternion(mountForward, mountUp);
+  const targetQuaternion = writeBasisQuaternion(catTargetQuaternion, mountForward, mountUp);
 
   if (catRouteState.companionIntroActive) {
     catRouteState.companionIntroTime += dt;
@@ -3511,9 +3565,15 @@ const endingRollTrack = document.getElementById('ending-roll-track');
 const endingRestartTrigger = document.getElementById('ending-restart-trigger');
 const endingReturneesList = document.getElementById('ending-returnees-list');
 const endingTrueReturneesList = document.getElementById('ending-true-returnees-list');
+const endingRollCredits = endingRollTrack ? Array.from(endingRollTrack.querySelectorAll('.ending-roll-credit')) : [];
+const endingRollLastCredit = endingTrueReturneesList?.closest('.ending-roll-credit')
+  || endingRollCredits[endingRollCredits.length - 2]
+  || endingRollCredits[endingRollCredits.length - 1]
+  || null;
 const endingClose = document.getElementById('ending-close');
 const catRouteBubble = document.getElementById('cat-route-bubble');
 const hud = document.getElementById('hud');
+const infoPanel = document.getElementById('info');
 setBlackBoxRevealImage(0);
 const visualizerBars = Array.from(document.querySelectorAll('.viz-bar'));
 const speedLockPanel = document.getElementById('speed-lock-panel');
@@ -4424,6 +4484,16 @@ function setCaptureOverlayOpen(isOpen) {
   if (isOpen) resetCameraLook(true);
 }
 
+function hasEndingCreditsClearedViewport() {
+  if (!endingRollLastCredit) {
+    return endingUiState.rollTime >= ENDING_ROLL_DURATION;
+  }
+  const creditBottom = endingUiState.rollCurrentY
+    + endingRollLastCredit.offsetTop
+    + endingRollLastCredit.offsetHeight;
+  return creditBottom <= 0;
+}
+
 function syncEndingPresentation() {
   const endingVisible = endingUiState.whiteoutActive || endingUiState.transitionActive || endingUiState.open;
   const showTrueMessage = endingUiState.whiteoutActive && endingUiState.trueMessageActive;
@@ -4494,7 +4564,7 @@ function syncEndingPresentation() {
     endingRollTrack.style.pointerEvents = endingUiState.open ? 'auto' : 'none';
   }
   if (endingRestartTrigger) {
-    const showRestart = endingUiState.open && endingUiState.rollTime >= ENDING_ROLL_DURATION;
+    const showRestart = endingUiState.open && hasEndingCreditsClearedViewport();
     endingRestartTrigger.classList.toggle('is-visible', showRestart);
   }
   if (endingClose) {
@@ -4514,6 +4584,7 @@ function layoutEndingRoll(reset = false) {
   }
   const progress = THREE.MathUtils.clamp(endingUiState.rollTime / ENDING_ROLL_DURATION, 0, 1);
   const y = THREE.MathUtils.lerp(endingUiState.rollStartY, endingUiState.rollEndY, progress);
+  endingUiState.rollCurrentY = y;
   endingRollTrack.style.transform = `translate3d(-50%, ${y.toFixed(1)}px, 0)`;
 }
 
@@ -4564,7 +4635,6 @@ function closeCaptureOverlay() {
 }
 
 function closeEndingOverlay() {
-  clearEndingRollAudioDelay();
   endingUiState.whiteoutActive = false;
   endingUiState.whiteoutTime = 0;
   endingUiState.transitionTime = 0;
@@ -4572,6 +4642,7 @@ function closeEndingOverlay() {
   endingUiState.trueMessageActive = false;
   endingUiState.trueMessageTime = 0;
   endingUiState.rollTime = 0;
+  endingUiState.rollCurrentY = endingUiState.rollStartY;
   endingWhiteout?.classList.remove('is-active');
   endingWhiteout?.classList.remove('is-true-message');
   if (endingRise) {
@@ -4579,10 +4650,7 @@ function closeEndingOverlay() {
     endingRise.offsetHeight;
     endingRise.style.animation = '';
   }
-  stopEffectAudio(monochromeClockAudio, true);
-  stopEffectAudio(earthArrivalAudio, true);
-  stopEffectAudio(endingRollAudio, true);
-  stopEffectAudio(spaceReturnAudio, true);
+  stopRouteEffectAudios();
   setEndingOverlayTransitioning(false);
   setEndingOverlayOpen(false);
   layoutEndingRoll(true);
@@ -4592,7 +4660,22 @@ function restartFlightFromEnding() {
   const nextUrl = new URL(window.location.href);
   nextUrl.search = '';
   nextUrl.hash = '';
-  window.location.assign(nextUrl.pathname || '/');
+  themeState.mode = 'normal';
+  returnRouteState.phase = RETURN_ROUTE_PHASES.IDLE;
+  returnRouteState.spaceFlightActive = false;
+  returnRouteState.spaceParallelActive = false;
+  returnRouteState.spaceTransition = 0;
+  endingUiState.completed = false;
+  endingUiState.trueEnding = false;
+  catRouteState.reachedEarth = false;
+  catRouteState.reachedEarthWithCat = false;
+  closeEndingOverlay();
+  applyWorldTheme();
+  syncMonochromeEffectState();
+  syncSpaceReturnAudioState();
+  window.setTimeout(() => {
+    window.location.replace(nextUrl.pathname || '/');
+  }, 40);
 }
 
 function buildCaptureFileName() {
@@ -4930,9 +5013,49 @@ function normalizeMessageEntry(entry) {
   };
 }
 
+function buildSharedReturnHistoryMessage(payload) {
+  return `${RETURN_HISTORY_BOOK_FALLBACK_PREFIX}${JSON.stringify({
+    playerName: typeof payload?.playerName === 'string' ? payload.playerName.trim() : '',
+    isTrueReturn: Boolean(payload?.isTrueReturn)
+  })}`;
+}
+
+function parseSharedReturnHistoryMessage(message) {
+  if (typeof message !== 'string' || !message.startsWith(RETURN_HISTORY_BOOK_FALLBACK_PREFIX)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(message.slice(RETURN_HISTORY_BOOK_FALLBACK_PREFIX.length));
+    return {
+      playerName: typeof parsed?.playerName === 'string' ? parsed.playerName.trim() : '',
+      isTrueReturn: Boolean(parsed?.isTrueReturn)
+    };
+  } catch (error) {
+    console.warn('Failed to parse shared return history message:', error);
+    return null;
+  }
+}
+
+function normalizeSharedBookReturnHistoryEntry(entry) {
+  const parsed = parseSharedReturnHistoryMessage(entry?.message);
+  if (!parsed) return null;
+  return normalizeReturnHistoryEntry({
+    id: entry.id,
+    player_name: parsed.playerName,
+    is_true_return: parsed.isTrueReturn,
+    created_at: entry.createdAt ?? entry.created_at
+  });
+}
+
+function isSharedReturnHistoryBookEntry(entry) {
+  const trimmedName = typeof entry?.name === 'string' ? entry.name.trim() : '';
+  return trimmedName === RETURN_HISTORY_BOOK_FALLBACK_AUTHOR
+    || Boolean(parseSharedReturnHistoryMessage(entry?.message));
+}
+
 function shouldIncludeBookMessageEntry(entry) {
   const trimmedName = typeof entry?.name === 'string' ? entry.name.trim() : '';
-  return !BOOK_RECORD_EXCLUDED_NAMES.has(trimmedName);
+  return !BOOK_RECORD_EXCLUDED_NAMES.has(trimmedName) && !isSharedReturnHistoryBookEntry(entry);
 }
 
 function filterVisibleBookMessages(entries) {
@@ -4999,6 +5122,50 @@ function renderEndingReturnHistory(entries = returnHistoryState.entries) {
   }
 }
 
+async function loadSharedBookReturnHistories() {
+  const sharedAuthor = encodeURIComponent(RETURN_HISTORY_BOOK_FALLBACK_AUTHOR);
+  const response = await fetchWithTimeout(
+    getSupabaseRestUrl(`?select=id,name,message,created_at&name=eq.${sharedAuthor}&order=created_at.desc&limit=${RETURN_HISTORY_BOOK_FALLBACK_FETCH_LIMIT}`),
+    {
+      headers: getSupabaseHeaders(),
+      cache: 'no-store'
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`supabase-shared-return-load-${response.status}`);
+  }
+  const payload = await response.json();
+  return (Array.isArray(payload) ? payload : [])
+    .map(normalizeSharedBookReturnHistoryEntry)
+    .filter(Boolean)
+    .slice(0, RETURN_HISTORY_LIMIT);
+}
+
+async function saveSharedBookReturnHistory(payload) {
+  const response = await fetchWithTimeout(
+    getSupabaseRestUrl('?select=id,name,message,created_at'),
+    {
+      method: 'POST',
+      headers: getSupabaseHeaders('return=representation'),
+      body: JSON.stringify([
+        {
+          name: RETURN_HISTORY_BOOK_FALLBACK_AUTHOR,
+          message: buildSharedReturnHistoryMessage(payload)
+        }
+      ])
+    }
+  );
+  if (!response.ok) {
+    throw new Error(`supabase-shared-return-save-${response.status}`);
+  }
+  const payloadRows = await response.json();
+  const savedEntry = normalizeSharedBookReturnHistoryEntry(Array.isArray(payloadRows) ? payloadRows[0] : null);
+  if (!savedEntry) {
+    throw new Error('supabase-shared-return-save-empty');
+  }
+  return savedEntry;
+}
+
 async function loadReturnHistories(options = {}) {
   const force = Boolean(options.force);
   if (!force && returnHistoryState.loadingPromise) {
@@ -5032,7 +5199,16 @@ async function loadReturnHistories(options = {}) {
         return cloneReturnHistoryEntries(entries);
       } catch (error) {
         console.warn('Failed to load Supabase return histories, falling back locally:', error);
-        returnHistoryState.backend = 'degraded';
+        try {
+          const entries = await loadSharedBookReturnHistories();
+          returnHistoryState.backend = 'shared-book';
+          returnHistoryState.entries = entries;
+          renderEndingReturnHistory(entries);
+          return cloneReturnHistoryEntries(entries);
+        } catch (sharedError) {
+          console.warn('Failed to load shared-book return histories, falling back locally:', sharedError);
+          returnHistoryState.backend = 'degraded';
+        }
       }
     }
 
@@ -5096,7 +5272,21 @@ async function saveReturnHistory(payload) {
       return savedEntry;
     } catch (error) {
       console.warn('Failed to save Supabase return history, falling back locally:', error);
-      returnHistoryState.backend = 'degraded';
+      try {
+        const savedEntry = await saveSharedBookReturnHistory({ playerName, isTrueReturn });
+        returnHistoryState.backend = 'shared-book';
+        returnHistoryState.entries = [savedEntry, ...returnHistoryState.entries]
+          .map(normalizeReturnHistoryEntry)
+          .filter(Boolean)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, RETURN_HISTORY_LIMIT);
+        renderEndingReturnHistory(returnHistoryState.entries);
+        void loadReturnHistories({ force: true });
+        return savedEntry;
+      } catch (sharedError) {
+        console.warn('Failed to save shared-book return history, falling back locally:', sharedError);
+        returnHistoryState.backend = 'degraded';
+      }
     }
   } else {
     returnHistoryState.backend = 'local';
@@ -5180,8 +5370,9 @@ async function loadMessages(options = {}) {
 
   if (isSupabaseConfigured()) {
     try {
+      const hiddenAuthor = encodeURIComponent(RETURN_HISTORY_BOOK_FALLBACK_AUTHOR);
       const response = await fetchWithTimeout(
-        getSupabaseRestUrl(`?select=id,name,message,created_at&order=created_at.desc&limit=${BOOK_MESSAGE_LIMIT}`),
+        getSupabaseRestUrl(`?select=id,name,message,created_at&name=not.eq.${hiddenAuthor}&order=created_at.desc&limit=${BOOK_MESSAGE_FETCH_LIMIT}`),
         {
           headers: getSupabaseHeaders(),
           cache: 'no-store'
@@ -5840,6 +6031,10 @@ endingRestartTrigger?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
   restartFlightFromEnding();
+});
+
+window.addEventListener('pagehide', () => {
+  stopRouteEffectAudios();
 });
 
 captureShare?.addEventListener('click', async (e) => {
@@ -7076,6 +7271,8 @@ function updateCamera(dt) {
 function updateTrackVisualizer() {
   if (!visualizerBars.length) return;
   if (!isBgmEffectivelyPlaying()) {
+    if (visualizerIdleState === true) return;
+    visualizerIdleState = true;
     for (const bar of visualizerBars) {
       bar.style.transform = 'scaleY(0.22)';
       bar.style.opacity = '0.42';
@@ -7083,6 +7280,7 @@ function updateTrackVisualizer() {
     return;
   }
 
+  visualizerIdleState = false;
   for (let i = 0; i < visualizerBars.length; i++) {
     const phase = bgm.currentTime * (2.1 + i * 0.23) + i * 0.85;
     const pulse = Math.abs(Math.sin(phase) * 0.66 + Math.cos(phase * 0.57) * 0.34);
@@ -7094,6 +7292,7 @@ function updateTrackVisualizer() {
 
 function updateLyricsLayout() {
   if (!lyricsPanel || !stickArea) return;
+  if (!lyricsVisible && !lyricsFullVisible) return;
   tempProjected.copy(state.pos).project(camera);
   const playerScreenY = (1 - tempProjected.y) * 0.5 * window.innerHeight;
   const stickTop = stickArea.getBoundingClientRect().top;
@@ -7251,7 +7450,7 @@ layoutEndingRoll(true);
 const clock = new THREE.Clock();
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  const previousPos = state.pos.clone();
+  previousFramePlayerPos.copy(state.pos);
   updateColorCycle();
   updateThemeSystem(dt);
   const gameplayPaused =
@@ -7263,7 +7462,7 @@ function tick() {
     endingUiState.whiteoutActive;
   if (!gameplayPaused) {
     updatePlayer(dt);
-    checkThemeTriggerCollision(previousPos, state.pos);
+    checkThemeTriggerCollision(previousFramePlayerPos, state.pos);
     updateBlackBox(dt);
     updateClouds(dt);
     updateDuskTowerCompass(dt);
@@ -7286,15 +7485,20 @@ function tick() {
   updateInvertedSkyWash();
   updateThemeFlash(dt);
   updateThemeDuck(dt);
-  updateTrackVisualizer();
-  updateLyricsLayout();
-  updateLyricsUi();
+  if (shouldRunUiStep('visualizer', TRACK_VISUALIZER_INTERVAL, dt)) {
+    updateTrackVisualizer();
+  }
+  if (shouldRunUiStep('lyricsLayout', LYRICS_LAYOUT_INTERVAL, dt)) {
+    updateLyricsLayout();
+  }
+  if (shouldRunUiStep('lyricsUi', LYRICS_UI_INTERVAL, dt)) {
+    updateLyricsUi();
+  }
   syncMusicUiVisibility();
   syncSpaceReturnAudioState();
   renderer.render(scene, camera);
 
-  const info = document.getElementById('info');
-  if (info) {
+  if (infoPanel && shouldRunUiStep('info', INFO_PANEL_INTERVAL, dt)) {
     const altitude = Math.max(0, getAltitude(state.pos));
     const routeMode = returnRouteState.spaceFlightActive ? 'space' : returnRouteState.phase;
     let earthInfo = '';
@@ -7303,7 +7507,11 @@ function tick() {
       earthInfo = `  earth ${state.pos.distanceTo(earthWorldPosition).toFixed(0)}`;
     }
     const catInfo = catRouteState.debugPreviewActive ? '  cat preview' : '';
-    info.textContent = `speed ${state.currentSpeed.toFixed(1)}  alt ${altitude.toFixed(1)}  mode ${routeMode}${earthInfo}${catInfo}`;
+    const nextInfoText = `speed ${state.currentSpeed.toFixed(1)}  alt ${altitude.toFixed(1)}  mode ${routeMode}${earthInfo}${catInfo}`;
+    if (nextInfoText !== lastInfoText) {
+      infoPanel.textContent = nextInfoText;
+      lastInfoText = nextInfoText;
+    }
   }
 
   requestAnimationFrame(tick);
