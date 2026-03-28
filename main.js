@@ -882,6 +882,7 @@ const BOOK_PLAYER_STATE_STORAGE_KEY = 'ass-magic-book-player-v1';
 const BOOK_MESSAGE_LIMIT = 12;
 const BOOK_MESSAGE_FETCH_LIMIT = 24;
 const BOOK_MESSAGE_TIMEOUT_MS = 9000;
+const BOOK_REARM_EXIT_EXTRA_RADIUS = 3.2;
 const RETURN_HISTORY_STORAGE_KEY = 'ass-magic-return-histories-v1';
 const RETURN_HISTORY_LIMIT = 80;
 const RETURN_HISTORY_BOOK_FALLBACK_AUTHOR = '__return_history__';
@@ -1868,6 +1869,7 @@ function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 
   } else {
     addThemeTriggerZoneToBuckets(zone);
   }
+  return zone;
 }
 
 function registerThemeTriggersFromChildren(group, radiusScale = 0.82, minRadius = 1.7, extra = {}) {
@@ -3144,7 +3146,8 @@ const bookUiState = {
   currentView: 'read',
   pageIndex: 0,
   readPages: [],
-  backend: 'local'
+  backend: 'local',
+  rearmRequired: false
 };
 const catRouteState = {
   blackBoxOpened: false,
@@ -3351,7 +3354,7 @@ function setBlackBoxRevealImage(index) {
 
 placeGiantBookLandmark();
 scene.add(giantBook);
-registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
+const giantBookThemeZone = registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
   tag: 'book',
   onTrigger: (contactPoint) => handleBookTrigger(contactPoint)
 });
@@ -6013,6 +6016,7 @@ function closeBookOverlay() {
     window.clearTimeout(bookUiState.pendingTimer);
     bookUiState.pendingTimer = null;
   }
+  bookUiState.rearmRequired = isInsideBookInteractionZone(state.pos);
   setBookOverlayOpen(false);
 }
 
@@ -6044,6 +6048,12 @@ function closeBlackBoxOverlay() {
 
 function handleBookTrigger() {
   if (bookUiState.open) return;
+  if (bookUiState.rearmRequired) {
+    if (isInsideBookInteractionZone(state.pos, BOOK_REARM_EXIT_EXTRA_RADIUS)) {
+      return;
+    }
+    bookUiState.rearmRequired = false;
+  }
   if (bookUiState.pendingTimer !== null) {
     window.clearTimeout(bookUiState.pendingTimer);
     bookUiState.pendingTimer = null;
@@ -6078,6 +6088,13 @@ function handleBlackBoxTrigger(contactPoint) {
     blackBoxUiState.pendingTimer = null;
   }
   openBlackBoxOverlay();
+}
+
+function isInsideBookInteractionZone(position, extraRadius = 0) {
+  if (!giantBookThemeZone) return false;
+  copyThemeZoneCenter(themeZoneCenter, giantBookThemeZone);
+  const limit = giantBookThemeZone.radius + PLAYER_THEME_HIT_RADIUS + extraRadius;
+  return position.distanceToSquared(themeZoneCenter) <= limit * limit;
 }
 
 function handlePointerDown(e) {
@@ -6456,8 +6473,18 @@ bookBackdrop?.addEventListener('click', (e) => {
   e.stopPropagation();
   closeBookOverlay();
 });
+bookBackdrop?.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBookOverlay();
+});
 
 bookClose?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBookOverlay();
+});
+bookClose?.addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
   closeBookOverlay();
