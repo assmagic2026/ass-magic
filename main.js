@@ -118,6 +118,7 @@ let appleTouchEffectsAttemptAt = 0;
 let bgmFilterFrequency = THEME_FILTER_BASE_FREQ;
 let bgmPausedForMonochrome = false;
 let bgmSuppressedForMonochrome = false;
+let bgmPausedForSpaceReturn = false;
 const monochromeClockAudio = new Audio();
 monochromeClockAudio.src = encodeURI('./振り子時計（エコー入り）.mp3');
 monochromeClockAudio.preload = 'auto';
@@ -430,10 +431,25 @@ function shouldPlaySpaceReturnAudio() {
 
 function syncSpaceReturnAudioState() {
   if (shouldPlaySpaceReturnAudio()) {
+    if (!bgm.paused || bgmPending) {
+      bgmPausedForSpaceReturn = true;
+      bgm.pause();
+      bgmPending = false;
+      bgm.muted = false;
+      setRecordSpinning(false);
+      refreshTrackControls();
+      updateLyricsUi();
+    }
     playEffectAudio(spaceReturnAudio);
     return;
   }
   stopEffectAudio(spaceReturnAudio, true);
+  if (bgmPausedForSpaceReturn && themeState.mode !== 'monochrome' && !endingUiState.completed) {
+    bgmPausedForSpaceReturn = false;
+    playCurrentTrack();
+  } else if (!shouldPlaySpaceReturnAudio()) {
+    bgmPausedForSpaceReturn = false;
+  }
 }
 
 function setElementUiVisibility(element, isVisible) {
@@ -504,6 +520,7 @@ function syncMonochromeBgmState() {
 
 function playCurrentTrack() {
   if (themeState.mode === 'monochrome') return;
+  if (shouldPlaySpaceReturnAudio()) return;
   if (bgmPending) return;
   const now = performance.now();
   if (now - bgmLastAttemptAt < 90) return;
@@ -561,6 +578,7 @@ function loadTrack(index, autoplay = false) {
 
 function ensureBgm() {
   if (themeState.mode === 'monochrome') return;
+  if (shouldPlaySpaceReturnAudio()) return;
   if (!bgm.paused) return;
   playCurrentTrack();
 }
@@ -568,6 +586,7 @@ function ensureBgm() {
 function startBgmFromGesture() {
   primeEffectAudioFromGesture();
   if (themeState.mode === 'monochrome') return;
+  if (shouldPlaySpaceReturnAudio()) return;
   if (!bgm.paused || bgmPending) return;
   bgm.muted = false;
   bgmSuppressedForMonochrome = false;
@@ -4337,6 +4356,7 @@ function stopCurrentTrack() {
   bgm.currentTime = 0;
   bgmPausedForMonochrome = false;
   bgmSuppressedForMonochrome = false;
+  bgmPausedForSpaceReturn = false;
   bgm.muted = false;
   themeDuckTimer = 0;
   themeFilterTimer = 0;
