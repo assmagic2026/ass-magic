@@ -850,6 +850,12 @@ const SPACE_ASTEROID_RADIUS = 260;
 const SPACE_ASTEROID_DEPTH = 1800;
 const COMPASS_SPIN_RATE = 1.35;
 const COMPASS_SETTLE_RATE = 6.8;
+const COMPASS_ASSIST_TRIGGER_RADIUS = 9.8;
+const COMPASS_ASSIST_REARM_EXIT_RADIUS = 13.6;
+const COMPASS_ASSIST_DURATION = 0.92;
+const COMPASS_ASSIST_COOLDOWN = 2.4;
+const COMPASS_ASSIST_TURN_RATE = 9.4;
+const COMPASS_ASSIST_INPUT_RELIEF = 0.9;
 const RETURN_ROUTE_PHASES = Object.freeze({
   IDLE: 'idle',
   CHALLENGE: 'challenge',
@@ -1636,6 +1642,7 @@ const earthGuideDirection = new THREE.Vector3();
 const earthGuideProjected = new THREE.Vector3();
 const compassTargetLocal = new THREE.Vector3();
 const compassTargetProjected = new THREE.Vector3();
+const compassAssistProjected = new THREE.Vector3();
 const previousFramePlayerPos = new THREE.Vector3();
 const catDesiredPosition = new THREE.Vector3();
 const catMountForward = new THREE.Vector3();
@@ -1668,6 +1675,7 @@ const updateCameraSpaceTargetScratch = new THREE.Vector3();
 const updateCameraSpaceDesiredScratch = new THREE.Vector3();
 const cloudDriftAxisScratch = new THREE.Vector3();
 const compassTargetDirectionScratch = new THREE.Vector3();
+const compassAssistTargetScratch = new THREE.Vector3();
 const duskTowerInverseQuatScratch = new THREE.Quaternion();
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
 let maxStaticThemeTriggerRadius = 0;
@@ -3160,6 +3168,13 @@ const returnHistoryState = {
   backend: 'local',
   loadingPromise: null
 };
+const compassAssistState = {
+  active: false,
+  time: 0,
+  cooldown: 0,
+  rearmRequired: false,
+  targetDirection: new THREE.Vector3()
+};
 const blackBoxUiState = {
   open: false,
   pendingTimer: null,
@@ -4315,6 +4330,63 @@ function activateMonochromeWorld(contactPoint, options = {}) {
   return setWorldTheme('monochrome', contactPoint, options);
 }
 
+function getCompassGuidanceMode() {
+  if (
+    themeState.mode === 'monochrome' &&
+    returnRouteState.phase === RETURN_ROUTE_PHASES.CHALLENGE
+  ) {
+    return 'monochrome';
+  }
+  if (
+    returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY &&
+    blackBoxUiState.openedOnce &&
+    blackBoxUiState.mode === 'grounded'
+  ) {
+    return 'black-box';
+  }
+  return null;
+}
+
+function getCompassGuidanceDirection(target = compassTargetDirectionScratch, mode = getCompassGuidanceMode()) {
+  if (mode === 'monochrome') {
+    target.copy(returnRouteState.targetDirection);
+  } else if (mode === 'black-box') {
+    target.copy(blackBoxLandmark.position);
+  } else {
+    return null;
+  }
+  if (target.lengthSq() < 0.0001) return null;
+  return target.normalize();
+}
+
+function clearCompassAssist() {
+  compassAssistState.active = false;
+  compassAssistState.time = 0;
+  compassAssistState.targetDirection.set(0, 0, 0);
+}
+
+function tryActivateCompassAssist(start, end) {
+  if (returnRouteState.spaceFlightActive) return false;
+  if (compassAssistState.cooldown > 0 || compassAssistState.rearmRequired) return false;
+  const guidanceMode = getCompassGuidanceMode();
+  if (!guidanceMode) return false;
+  if (!getCompassGuidanceDirection(compassAssistTargetScratch, guidanceMode)) return false;
+  const hit = getSegmentSphereHit(
+    start,
+    end,
+    duskTower.position,
+    COMPASS_ASSIST_TRIGGER_RADIUS + PLAYER_THEME_HIT_RADIUS
+  );
+  if (hit === null) return false;
+  compassAssistState.active = true;
+  compassAssistState.time = 0;
+  compassAssistState.cooldown = COMPASS_ASSIST_COOLDOWN;
+  compassAssistState.rearmRequired = true;
+  compassAssistState.targetDirection.copy(compassAssistTargetScratch);
+  resetCameraLook();
+  return true;
+}
+
 function handleMonochromeSphereTrigger(hit, contactPoint) {
   if (returnRouteState.phase === RETURN_ROUTE_PHASES.CHALLENGE) {
     if (hit.tag === returnRouteState.targetTag) {
@@ -4376,6 +4448,10 @@ function checkThemeTriggerCollision(start, end) {
       activateSanctuary(themeClosestPoint.clone());
       return;
     }
+  }
+
+  if (tryActivateCompassAssist(start, end)) {
+    return;
   }
 
   if (!hasDayNightInversion() && (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired)) return;
@@ -4920,6 +4996,9 @@ function restartFlightFromEnding() {
   returnRouteState.spaceFlightActive = false;
   returnRouteState.spaceParallelActive = false;
   returnRouteState.spaceTransition = 0;
+  compassAssistState.cooldown = 0;
+  compassAssistState.rearmRequired = false;
+  clearCompassAssist();
   endingUiState.completed = false;
   endingUiState.trueEnding = false;
   catRouteState.reachedEarth = false;
@@ -6846,6 +6925,22 @@ function updatePlayer(dt) {
 
   const up = updatePlayerUpScratch.copy(state.pos).normalize();
   const currentAltitude = getAltitude(state.pos);
+  if (compassAssistState.cooldown > 0) {
+    compassAssistState.cooldown = Math.max(0, compassAssistState.cooldown - dt);
+  }
+  if (compassAssistState.rearmRequired) {
+    const rearmDistanceSq = (COMPASS_ASSIST_REARM_EXIT_RADIUS + PLAYER_THEME_HIT_RADIUS) ** 2;
+    if (state.pos.distanceToSquared(duskTower.position) >= rearmDistanceSq) {
+      compassAssistState.rearmRequired = false;
+    }
+  }
+  const compassGuidanceMode = getCompassGuidanceMode();
+  if (
+    compassAssistState.active &&
+    (!compassGuidanceMode || returnRouteState.spaceFlightActive)
+  ) {
+    clearCompassAssist();
+  }
   const wasSpaceFlightActive = returnRouteState.spaceFlightActive;
   const wasSpaceParallelActive = returnRouteState.spaceParallelActive;
   if (returnRouteState.phase !== RETURN_ROUTE_PHASES.SANCTUARY) {
@@ -6919,6 +7014,34 @@ function updatePlayer(dt) {
       controlUp,
       Math.abs(controlUp.dot(spaceLocalForward)) < 0.92 ? spaceLocalForward : WORLD_UP
     ).normalize();
+  }
+  if (compassAssistState.active && !returnRouteState.spaceParallelActive) {
+    if (!getCompassGuidanceDirection(compassAssistState.targetDirection, compassGuidanceMode)) {
+      clearCompassAssist();
+    } else {
+      compassAssistProjected.copy(compassAssistState.targetDirection)
+        .addScaledVector(controlUp, -compassAssistState.targetDirection.dot(controlUp));
+      if (compassAssistProjected.lengthSq() < 0.0001) {
+        clearCompassAssist();
+      } else {
+        compassAssistProjected.normalize();
+        const assistInputStrength = THREE.MathUtils.clamp(
+          Math.max(Math.abs(turnIntent), Math.abs(climbInput)),
+          0,
+          1
+        );
+        const assistFade = Math.max(0, 1 - compassAssistState.time / COMPASS_ASSIST_DURATION);
+        const assistInfluence = assistFade * (1 - Math.min(1, assistInputStrength * COMPASS_ASSIST_INPUT_RELIEF));
+        if (assistInfluence > 0.0001) {
+          const assistBlend = 1 - Math.exp(-COMPASS_ASSIST_TURN_RATE * assistInfluence * dt);
+          state.forward.lerp(compassAssistProjected, assistBlend).normalize();
+        }
+        compassAssistState.time += dt;
+        if (compassAssistState.time >= COMPASS_ASSIST_DURATION) {
+          clearCompassAssist();
+        }
+      }
+    }
   }
   let earthGuideInfluence = 0;
   if (returnRouteState.spaceParallelActive) {
@@ -7199,33 +7322,20 @@ function updateClouds(dt) {
 function updateDuskTowerCompass(dt) {
   const rotor = duskTower.userData.rotor;
   if (!rotor) return;
-
-  const lockToMonochromeTarget =
-    themeState.mode === 'monochrome' &&
-    returnRouteState.phase === RETURN_ROUTE_PHASES.CHALLENGE;
-
-  let targetDirection = null;
+  const guidanceMode = getCompassGuidanceMode();
   let targetAngleOffset = 0;
-
-  if (lockToMonochromeTarget) {
-    targetDirection = returnRouteState.targetDirection;
-  } else if (
-    returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY &&
-    blackBoxUiState.openedOnce &&
-    blackBoxUiState.mode === 'grounded'
-  ) {
-    targetDirection = blackBoxLandmark.position;
+  if (guidanceMode === 'black-box') {
     targetAngleOffset = Math.PI;
   }
+  const targetDirection = getCompassGuidanceDirection(compassTargetDirectionScratch, guidanceMode);
 
   if (!targetDirection) {
     rotor.rotation.y += dt * COMPASS_SPIN_RATE;
     return;
   }
 
-  compassTargetDirectionScratch.copy(targetDirection).normalize();
-  compassTargetProjected.copy(compassTargetDirectionScratch)
-    .addScaledVector(COMPASS_DIR, -compassTargetDirectionScratch.dot(COMPASS_DIR));
+  compassTargetProjected.copy(targetDirection)
+    .addScaledVector(COMPASS_DIR, -targetDirection.dot(COMPASS_DIR));
   if (compassTargetProjected.lengthSq() < 0.0001) return;
   compassTargetProjected.normalize();
 
