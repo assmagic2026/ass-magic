@@ -5857,7 +5857,8 @@ function openBlackBoxOverlay() {
   closeBookOverlay();
   setBlackBoxView('intro');
   if (blackBoxTitle) {
-    blackBoxTitle.style.display = blackBoxUiState.openedOnce ? 'none' : '';
+    blackBoxTitle.style.visibility = blackBoxUiState.openedOnce ? 'hidden' : 'visible';
+    blackBoxTitle.setAttribute('aria-hidden', blackBoxUiState.openedOnce ? 'true' : 'false');
   }
   if (blackBoxOpen) {
     blackBoxOpen.textContent = blackBoxUiState.openedOnce ? 'また開けちゃう' : '開けてみる';
@@ -6300,8 +6301,18 @@ blackBoxBackdrop?.addEventListener('click', (e) => {
   e.stopPropagation();
   closeBlackBoxOverlay();
 });
+blackBoxBackdrop?.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBlackBoxOverlay();
+});
 
 blackBoxClose?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeBlackBoxOverlay();
+});
+blackBoxClose?.addEventListener('pointerup', (e) => {
   e.preventDefault();
   e.stopPropagation();
   closeBlackBoxOverlay();
