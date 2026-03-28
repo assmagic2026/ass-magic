@@ -2,16 +2,8 @@ import * as THREE from './three.module.js';
 import { playlist as playlistData } from './playlist.js';
 import { supabaseConfig } from './supabase-config.js';
 
-function isRuntimeMobilePerfMode() {
-  const coarsePointer = typeof window.matchMedia === 'function'
-    && window.matchMedia('(pointer: coarse)').matches;
-  return coarsePointer || Math.min(window.innerWidth, window.innerHeight) <= 900;
-}
-
-function getRuntimePixelRatio() {
-  const pixelRatioCap = isRuntimeMobilePerfMode() ? 1 : 1.5;
-  return Math.min(window.devicePixelRatio || 1, pixelRatioCap);
-}
+const IS_APPLE_TOUCH_AUDIO = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_SAFARI_BROWSER = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
 
 const canvas = document.getElementById('c');
 const DEFAULT_CAMERA_FAR = 800;
@@ -25,11 +17,13 @@ const renderer = new THREE.WebGLRenderer({
   antialias: false,
   alpha: false,
   powerPreference: 'low-power',
-  preserveDrawingBuffer: true
+  preserveDrawingBuffer: false
 });
-const MOBILE_RENDER_PERF_MODE = isRuntimeMobilePerfMode();
+const RUNTIME_PIXEL_RATIO_MAX = Math.min(window.devicePixelRatio || 1, IS_APPLE_TOUCH_AUDIO ? 1.7 : 1.9);
+const RUNTIME_PIXEL_RATIO_MIN = Math.min(RUNTIME_PIXEL_RATIO_MAX, IS_APPLE_TOUCH_AUDIO ? 1.05 : 1.2);
+const GROUND_PIXEL_RATIO_SOFT_CAP = Math.min(RUNTIME_PIXEL_RATIO_MAX, IS_APPLE_TOUCH_AUDIO ? 1.42 : RUNTIME_PIXEL_RATIO_MAX);
 const CAPTURE_PIXEL_RATIO = Math.min(Math.max(window.devicePixelRatio || 1, 2), 2.5);
-renderer.setPixelRatio(getRuntimePixelRatio());
+renderer.setPixelRatio(GROUND_PIXEL_RATIO_SOFT_CAP);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x0a0d12, 1);
 
@@ -122,8 +116,6 @@ let bgmAudioContext = null;
 let bgmMediaSource = null;
 let bgmGainNode = null;
 let bgmLowpassNode = null;
-const IS_APPLE_TOUCH_AUDIO = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-const IS_SAFARI_BROWSER = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
 let appleTouchEffectsReady = false;
 let appleTouchEffectsAttemptAt = 0;
 let bgmFilterFrequency = THEME_FILTER_BASE_FREQ;
@@ -135,11 +127,21 @@ const TRACK_VISUALIZER_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 1 / 18 : 1 / 30;
 const LYRICS_LAYOUT_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 1 / 12 : 1 / 24;
 const LYRICS_UI_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 1 / 15 : 1 / 24;
 const INFO_PANEL_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 0.18 : 0.08;
+const COLOR_CYCLE_INTERVAL = IS_APPLE_TOUCH_AUDIO ? 1 / 24 : 1 / 30;
 const uiPerfState = {
   visualizer: 0,
   lyricsLayout: 0,
   lyricsUi: 0,
   info: 0
+};
+const colorCyclePerfState = {
+  accumulator: 0
+};
+const rendererPerfState = {
+  currentPixelRatio: GROUND_PIXEL_RATIO_SOFT_CAP,
+  smoothedFrameTime: 1 / 60,
+  sampleTime: 0,
+  stableTime: 0
 };
 let visualizerIdleState = null;
 let lastInfoText = '';
@@ -170,6 +172,92 @@ spaceReturnAudio.playsInline = true;
 spaceReturnAudio.crossOrigin = 'anonymous';
 spaceReturnAudio.volume = 0.78;
 let effectAudioPrimed = false;
+
+function getRuntimePixelRatioCeiling() {
+  if (
+    IS_APPLE_TOUCH_AUDIO &&
+    returnRouteState.spaceTransition < 0.08 &&
+    !returnRouteState.spaceFlightActive &&
+    returnRouteState.phase !== RETURN_ROUTE_PHASES.SANCTUARY &&
+    !endingUiState.open &&
+    !endingUiState.transitionActive &&
+    !endingUiState.whiteoutActive
+  ) {
+    return GROUND_PIXEL_RATIO_SOFT_CAP;
+  }
+  return RUNTIME_PIXEL_RATIO_MAX;
+}
+
+function applyRuntimePixelRatio(nextPixelRatio, force = false, maxOverride = getRuntimePixelRatioCeiling()) {
+  const clamped = THREE.MathUtils.clamp(nextPixelRatio, RUNTIME_PIXEL_RATIO_MIN, maxOverride);
+  const rounded = Math.round(clamped * 100) / 100;
+  if (!force && Math.abs(rounded - rendererPerfState.currentPixelRatio) < 0.04) return;
+  rendererPerfState.currentPixelRatio = rounded;
+  renderer.setPixelRatio(rounded);
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+}
+
+function updateRuntimePixelRatio(dt) {
+  if (!Number.isFinite(dt) || dt <= 0) return;
+  if (captureUiState?.busy || captureUiState?.open) return;
+
+  rendererPerfState.smoothedFrameTime = THREE.MathUtils.lerp(rendererPerfState.smoothedFrameTime, dt, 0.08);
+  rendererPerfState.sampleTime += dt;
+  const sampleInterval = IS_APPLE_TOUCH_AUDIO ? 0.45 : 0.3;
+  if (rendererPerfState.sampleTime < sampleInterval) return;
+  rendererPerfState.sampleTime = 0;
+
+  const heavyScene = returnRouteState.spaceTransition > 0.08
+    || returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY
+    || endingUiState.open
+    || endingUiState.transitionActive
+    || endingUiState.whiteoutActive;
+  const groundFocusedScene = !heavyScene;
+  const effectiveMax = getRuntimePixelRatioCeiling();
+  const downThreshold = groundFocusedScene
+    ? (IS_APPLE_TOUCH_AUDIO ? 1 / 52 : 1 / 48)
+    : (IS_APPLE_TOUCH_AUDIO ? 1 / 44 : 1 / 43);
+  const upThreshold = groundFocusedScene
+    ? (IS_APPLE_TOUCH_AUDIO ? 1 / 61 : 1 / 59)
+    : (IS_APPLE_TOUCH_AUDIO ? 1 / 55 : 1 / 57);
+  const stepDown = groundFocusedScene
+    ? (IS_APPLE_TOUCH_AUDIO ? 0.14 : 0.1)
+    : (IS_APPLE_TOUCH_AUDIO ? 0.1 : 0.08);
+  const stepUp = groundFocusedScene
+    ? (IS_APPLE_TOUCH_AUDIO ? 0.03 : 0.05)
+    : (IS_APPLE_TOUCH_AUDIO ? 0.04 : 0.06);
+
+  if (rendererPerfState.currentPixelRatio > effectiveMax + 0.01) {
+    rendererPerfState.stableTime = 0;
+    applyRuntimePixelRatio(effectiveMax, true, effectiveMax);
+    return;
+  }
+
+  if (rendererPerfState.smoothedFrameTime > downThreshold && rendererPerfState.currentPixelRatio > RUNTIME_PIXEL_RATIO_MIN + 0.01) {
+    rendererPerfState.stableTime = 0;
+    applyRuntimePixelRatio(rendererPerfState.currentPixelRatio - stepDown, false, effectiveMax);
+    return;
+  }
+
+  if (IS_APPLE_TOUCH_AUDIO) {
+    rendererPerfState.stableTime = 0;
+    return;
+  }
+
+  if (rendererPerfState.smoothedFrameTime < upThreshold && rendererPerfState.currentPixelRatio < effectiveMax - 0.01) {
+    rendererPerfState.stableTime += 0.3;
+    const settleTime = groundFocusedScene
+      ? (IS_APPLE_TOUCH_AUDIO ? 1.45 : 1.0)
+      : (IS_APPLE_TOUCH_AUDIO ? 1.7 : 1.4);
+    if (rendererPerfState.stableTime >= settleTime) {
+      rendererPerfState.stableTime = 0;
+      applyRuntimePixelRatio(rendererPerfState.currentPixelRatio + stepUp, false, effectiveMax);
+    }
+    return;
+  }
+
+  rendererPerfState.stableTime = 0;
+}
 
 function fitFullLyricsText() {
   if (!lyricsFullPanel || !lyricsFullText || !lyricsFullVisible || !lastLyricsFull) return;
@@ -714,7 +802,7 @@ const SANCTUARY_RING_TRIGGER_HEIGHT = 10;
 const SANCTUARY_RING_TRIGGER_RADIUS = 56;
 const SANCTUARY_ACTIVATION_DURATION = 1.6;
 const SANCTUARY_BEAM_HEIGHT = 6400;
-const SANCTUARY_BEAM_MARKER_COUNT = MOBILE_RENDER_PERF_MODE ? 8 : 18;
+const SANCTUARY_BEAM_MARKER_COUNT = 18;
 const SANCTUARY_BEAM_THICKNESS_SCALE = 0.1;
 const SPACE_RETURN_MODE_ALTITUDE = 220;
 const SPACE_RETURN_ACTIVATION_HOLD = 0.32;
@@ -744,11 +832,11 @@ const ENDING_WHITEOUT_DURATION = 1.05;
 const ENDING_BLACK_RISE_DURATION = 0.65;
 const ENDING_TRUE_MESSAGE_DURATION = 2.2;
 const ENDING_ROLL_DURATION = 46;
-const SPACE_STAR_COUNT = MOBILE_RENDER_PERF_MODE ? 52 : 88;
+const SPACE_STAR_COUNT = 88;
 const SPACE_STAR_RADIUS = 240;
 const SPACE_STAR_DEPTH = 1500;
 const SPACE_STAR_SPEED_MULTIPLIER = 2.4;
-const SPACE_ASTEROID_COUNT = MOBILE_RENDER_PERF_MODE ? 3 : 5;
+const SPACE_ASTEROID_COUNT = 5;
 const SPACE_ASTEROID_RADIUS = 260;
 const SPACE_ASTEROID_DEPTH = 1800;
 const COMPASS_SPIN_RATE = 1.35;
@@ -1000,7 +1088,11 @@ function registerMaterialCycle(material, includeEmissive = false, hueRange = 0.1
   if (includeEmissive && material.emissive) registerColorCycle(material.emissive, hueRange * 0.7, satRange * 0.4, lightRange * 0.4);
 }
 
-function updateColorCycle() {
+function updateColorCycle(dt) {
+  if (!colorCycleEntries.length || !Number.isFinite(dt) || dt <= 0) return;
+  colorCyclePerfState.accumulator += dt;
+  if (colorCyclePerfState.accumulator < COLOR_CYCLE_INTERVAL) return;
+  colorCyclePerfState.accumulator = Math.max(0, colorCyclePerfState.accumulator - COLOR_CYCLE_INTERVAL);
   const now = performance.now();
   for (const entry of colorCycleEntries) {
     const t = Math.min(1, (now - entry.start) / 15000);
@@ -1535,6 +1627,35 @@ const catDesiredPosition = new THREE.Vector3();
 const catMountForward = new THREE.Vector3();
 const catMountUp = new THREE.Vector3();
 const catTargetQuaternion = new THREE.Quaternion();
+const updatePlayerPrevForwardScratch = new THREE.Vector3();
+const updatePlayerUpScratch = new THREE.Vector3();
+const updatePlayerRightScratch = new THREE.Vector3();
+const updatePlayerNextUpScratch = new THREE.Vector3();
+const updatePlayerCrossScratch = new THREE.Vector3();
+const updatePlayerFlightForwardScratch = new THREE.Vector3();
+const updatePlayerVisualPosScratch = new THREE.Vector3();
+const updatePlayerShadowDirectionScratch = new THREE.Vector3();
+const updatePlayerLookQuatScratch = new THREE.Quaternion();
+const updatePlayerRollQuatScratch = new THREE.Quaternion();
+const updateSpeedEffectsRightScratch = new THREE.Vector3();
+const updateSpeedEffectsForwardQuatScratch = new THREE.Quaternion();
+const updateCameraGroundUpScratch = new THREE.Vector3();
+const updateCameraForwardScratch = new THREE.Vector3();
+const updateCameraGroundTargetScratch = new THREE.Vector3();
+const updateCameraOrbitOffsetScratch = new THREE.Vector3();
+const updateCameraOrbitRightScratch = new THREE.Vector3();
+const updateCameraGroundDesiredScratch = new THREE.Vector3();
+const updateCameraDesiredScratch = new THREE.Vector3();
+const updateCameraTargetScratch = new THREE.Vector3();
+const updateCameraUpScratch = new THREE.Vector3();
+const updateCameraSpaceUpScratch = new THREE.Vector3();
+const updateCameraSpaceForwardScratch = new THREE.Vector3();
+const updateCameraSpaceTargetScratch = new THREE.Vector3();
+const updateCameraSpaceDesiredScratch = new THREE.Vector3();
+const cloudDriftAxisScratch = new THREE.Vector3();
+const compassTargetDirectionScratch = new THREE.Vector3();
+const duskTowerInverseQuatScratch = new THREE.Quaternion();
+const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
 const spaceStarsGeometry = new THREE.BufferGeometry();
 const spaceStarPositions = new Float32Array(SPACE_STAR_COUNT * 3);
 const spaceStarDrift = new Float32Array(SPACE_STAR_COUNT);
@@ -4872,7 +4993,7 @@ async function shareCaptureImage() {
 }
 
 async function captureFlightRecord() {
-  if (captureUiState.busy || captureUiState.open) return;
+  if (!cameraCapture || captureUiState.busy || captureUiState.open) return;
   if (bookUiState.open || blackBoxUiState.open || siteMenu?.classList.contains('is-open')) return;
   captureUiState.busy = true;
   if (cameraCapture) cameraCapture.disabled = true;
@@ -6471,8 +6592,8 @@ function updatePlayerVisuals(dt, up, flightForward, speed, turnIntent, climbInpu
 }
 
 function updateSpeedEffects(dt, up, flightForward, speed) {
-  const right = new THREE.Vector3().crossVectors(up, flightForward).normalize();
-  const forwardQuat = createBasisQuaternion(flightForward, up);
+  const right = updateSpeedEffectsRightScratch.crossVectors(up, flightForward).normalize();
+  writeBasisQuaternion(updateSpeedEffectsForwardQuatScratch, flightForward, up);
   boostTrail.visible = false;
 
   const diveStrength = THREE.MathUtils.clamp(state.diveTimer / 0.9, 0, 1);
@@ -6485,7 +6606,7 @@ function updateSpeedEffects(dt, up, flightForward, speed) {
         .addScaledVector(flightForward, 4 + i * 1.8)
         .addScaledVector(right, sway * (1.3 + i * 0.16))
         .addScaledVector(up, ((i % 3) - 1) * 0.6);
-      streak.quaternion.copy(forwardQuat);
+      streak.quaternion.copy(updateSpeedEffectsForwardQuatScratch);
       diveStreakMats[i].opacity = diveStrength * (0.3 - i * 0.016);
     } else {
       streak.visible = false;
@@ -6541,7 +6662,7 @@ function updateSpeedEffects(dt, up, flightForward, speed) {
 }
 
 function updatePlayer(dt) {
-  const prevForward = state.forward.clone();
+  const prevForward = updatePlayerPrevForwardScratch.copy(state.forward);
   const dragYaw = -input.turnX * P.YAW_SENS;
   const dragPitch = input.turnY * P.PITCH_SENS;
   const stickTarget = tempStick.set(
@@ -6591,7 +6712,7 @@ function updatePlayer(dt) {
   input.turnX = 0;
   input.turnY = 0;
 
-  const up = state.pos.clone().normalize();
+  const up = updatePlayerUpScratch.copy(state.pos).normalize();
   const currentAltitude = getAltitude(state.pos);
   const wasSpaceFlightActive = returnRouteState.spaceFlightActive;
   const wasSpaceParallelActive = returnRouteState.spaceParallelActive;
@@ -6681,8 +6802,7 @@ function updatePlayer(dt) {
     }
   }
 
-  const right = new THREE.Vector3();
-  right.crossVectors(controlUp, state.forward).normalize();
+  const right = updatePlayerRightScratch.crossVectors(controlUp, state.forward).normalize();
   if (right.lengthSq() < 0.0001) {
     right.set(1, 0, 0);
   }
@@ -6773,7 +6893,7 @@ function updatePlayer(dt) {
   const maxAscentSpeed = cruiseSpeed * Math.tan(P.MAX_ASCENT_ANGLE);
   state.radialSpeed = Math.min(state.radialSpeed, maxAscentSpeed);
   const orbitRadius = state.pos.length();
-  let nextUp = up.clone();
+  let nextUp = updatePlayerNextUpScratch.copy(up);
   let nextRadius = orbitRadius;
   let surfaceRadius = getSurfaceRadius(nextUp) + PLAYER_CLEARANCE;
 
@@ -6785,12 +6905,12 @@ function updatePlayer(dt) {
     if (earthGuideProjected.lengthSq() > 0.0001 && earthGuideInfluence > 0.0001) {
       state.pos.addScaledVector(earthGuideProjected, EARTH_GUIDE_PULL_SPEED * earthGuideInfluence * dt);
     }
-    nextUp = controlUp.clone();
+    nextUp.copy(controlUp).normalize();
     nextRadius = state.pos.length();
     surfaceRadius = nextRadius;
   } else {
     const moveAngle = (cruiseSpeed * dt) / orbitRadius;
-    nextUp = up.clone().applyAxisAngle(right, moveAngle).normalize();
+    nextUp.copy(up).applyAxisAngle(right, moveAngle).normalize();
 
     state.forward.applyAxisAngle(right, moveAngle).normalize();
     state.forward.addScaledVector(nextUp, -state.forward.dot(nextUp)).normalize();
@@ -6828,7 +6948,7 @@ function updatePlayer(dt) {
     state.pos.copy(nextUp).multiplyScalar(nextRadius);
   }
   const signedTurn = Math.atan2(
-    new THREE.Vector3().crossVectors(prevForward, state.forward).dot(nextUp),
+    updatePlayerCrossScratch.crossVectors(prevForward, state.forward).dot(nextUp),
     THREE.MathUtils.clamp(prevForward.dot(state.forward), -1, 1)
   );
   const bankTarget = THREE.MathUtils.clamp(
@@ -6871,19 +6991,20 @@ function updatePlayer(dt) {
     );
   const bodyPitchResponse = bodyPitchTarget < state.bodyPitch ? P.BODY_DESCEND_PITCH_RESPONSE : P.BODY_PITCH_RESPONSE;
   state.bodyPitch = THREE.MathUtils.damp(state.bodyPitch, bodyPitchTarget, bodyPitchResponse, dt);
-  const flightForward = returnRouteState.spaceParallelActive
-    ? state.forward.clone()
-    : state.forward.clone().applyAxisAngle(right, -state.bodyPitch).normalize();
-  const lookQuat = createBasisQuaternion(flightForward, nextUp);
-  const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), state.roll + state.screwSpinAngle);
-  player.quaternion.copy(lookQuat).multiply(rollQuat);
+  const flightForward = updatePlayerFlightForwardScratch.copy(state.forward);
+  if (!returnRouteState.spaceParallelActive) {
+    flightForward.applyAxisAngle(right, -state.bodyPitch).normalize();
+  }
+  writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, nextUp);
+  updatePlayerRollQuatScratch.setFromAxisAngle(FORWARD_AXIS, state.roll + state.screwSpinAngle);
+  player.quaternion.copy(updatePlayerLookQuatScratch).multiply(updatePlayerRollQuatScratch);
 
   bobPhase += dt * 0.7;
   const bob = Math.sin(bobPhase) * 0.22 + Math.sin(bobPhase * 0.37 + 1.1) * 0.08;
-  const screwVisualPos = state.pos.clone().addScaledVector(flightForward, state.screwForwardOffset);
+  const screwVisualPos = updatePlayerVisualPosScratch.copy(state.pos).addScaledVector(flightForward, state.screwForwardOffset);
   player.position.copy(screwVisualPos).addScaledVector(nextUp, bob);
 
-  const shadowDirection = screwVisualPos.clone().normalize();
+  const shadowDirection = updatePlayerShadowDirectionScratch.copy(screwVisualPos).normalize();
   const shadowRadius = getSurfaceRadius(shadowDirection) + 0.06;
   const altitude = Math.max(0, nextRadius - surfaceRadius);
   if (returnRouteState.spaceParallelActive) {
@@ -6892,7 +7013,7 @@ function updatePlayer(dt) {
     shadow.visible = true;
     const shadowScale = THREE.MathUtils.clamp(1.1 - altitude * 0.16, 0.34, 1.08);
     shadow.position.copy(shadowDirection).multiplyScalar(shadowRadius);
-    shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shadowDirection);
+    shadow.quaternion.setFromUnitVectors(FORWARD_AXIS, shadowDirection);
     shadow.scale.set(shadowScale * 1.15, shadowScale * 0.8, 1);
     shadow.material.opacity = THREE.MathUtils.clamp(0.24 - altitude * 0.055, 0.05, 0.22);
   }
@@ -6912,7 +7033,7 @@ function updateClouds(dt) {
   if (FREEZE_CLOUD_DRIFT_FOR_TEST) return;
 
   for (const cloud of clouds.children) {
-    const axis = new THREE.Vector3().crossVectors(WORLD_UP, cloud.userData.direction).normalize();
+    const axis = cloudDriftAxisScratch.crossVectors(WORLD_UP, cloud.userData.direction).normalize();
     if (axis.lengthSq() > 0.0001) {
       cloud.userData.direction.applyAxisAngle(axis, dt * cloud.userData.drift);
       cloud.userData.direction.normalize();
@@ -6921,7 +7042,7 @@ function updateClouds(dt) {
   }
 
   for (const veil of cloudVeils.children) {
-    const axis = new THREE.Vector3().crossVectors(WORLD_UP, veil.userData.direction).normalize();
+    const axis = cloudDriftAxisScratch.crossVectors(WORLD_UP, veil.userData.direction).normalize();
     if (axis.lengthSq() > 0.0001) {
       veil.userData.direction.applyAxisAngle(axis, dt * veil.userData.drift);
       veil.userData.direction.normalize();
@@ -6930,7 +7051,7 @@ function updateClouds(dt) {
   }
 
   for (const fog of nightFog.children) {
-    const axis = new THREE.Vector3().crossVectors(NIGHT_AXIS_A, fog.userData.direction).normalize();
+    const axis = cloudDriftAxisScratch.crossVectors(NIGHT_AXIS_A, fog.userData.direction).normalize();
     if (axis.lengthSq() > 0.0001) {
       fog.userData.direction.applyAxisAngle(axis, dt * fog.userData.drift);
       fog.userData.direction.normalize();
@@ -6970,13 +7091,14 @@ function updateDuskTowerCompass(dt) {
     return;
   }
 
-  compassTargetProjected.copy(targetDirection)
-    .normalize()
-    .addScaledVector(COMPASS_DIR, -targetDirection.clone().normalize().dot(COMPASS_DIR));
+  compassTargetDirectionScratch.copy(targetDirection).normalize();
+  compassTargetProjected.copy(compassTargetDirectionScratch)
+    .addScaledVector(COMPASS_DIR, -compassTargetDirectionScratch.dot(COMPASS_DIR));
   if (compassTargetProjected.lengthSq() < 0.0001) return;
   compassTargetProjected.normalize();
 
-  compassTargetLocal.copy(compassTargetProjected).applyQuaternion(duskTower.quaternion.clone().invert());
+  duskTowerInverseQuatScratch.copy(duskTower.quaternion).invert();
+  compassTargetLocal.copy(compassTargetProjected).applyQuaternion(duskTowerInverseQuatScratch);
   compassTargetLocal.y = 0;
   if (compassTargetLocal.lengthSq() < 0.0001) return;
   compassTargetLocal.normalize();
@@ -7222,7 +7344,7 @@ function updateEndingSequence(dt) {
 }
 
 function updateCamera(dt) {
-  const groundUp = state.visualUp.clone().normalize();
+  const groundUp = updateCameraGroundUpScratch.copy(state.visualUp).normalize();
   const targetLift = THREE.MathUtils.clamp(state.visualForward.dot(groundUp), -0.5, 0.5);
   const cameraPitchResponse = targetLift < state.cameraLift
     ? P.CAMERA_DESCEND_PITCH_SMOOTH
@@ -7232,33 +7354,33 @@ function updateCamera(dt) {
   const lookResponse = input.lookDragging ? P.CAMERA_LOOK_RESPONSE : P.CAMERA_LOOK_RETURN;
   state.cameraYawOffset = THREE.MathUtils.damp(state.cameraYawOffset, state.cameraYawTarget, lookResponse, dt);
   state.cameraPitchOffset = THREE.MathUtils.damp(state.cameraPitchOffset, state.cameraPitchTarget, lookResponse, dt);
-  const cameraForward = state.forward.clone().addScaledVector(groundUp, state.cameraLift).normalize();
+  const cameraForward = updateCameraForwardScratch.copy(state.forward).addScaledVector(groundUp, state.cameraLift).normalize();
   const speed = state.currentSpeed;
   const dist = P.CAMERA_DIST + speed * P.CAMERA_DIST_SPEED;
-  const groundTarget = state.pos.clone().addScaledVector(groundUp, P.CAMERA_HEIGHT);
-  const orbitOffset = cameraForward.clone().multiplyScalar(-dist).addScaledVector(groundUp, 1.6);
+  const groundTarget = updateCameraGroundTargetScratch.copy(state.pos).addScaledVector(groundUp, P.CAMERA_HEIGHT);
+  const orbitOffset = updateCameraOrbitOffsetScratch.copy(cameraForward).multiplyScalar(-dist).addScaledVector(groundUp, 1.6);
   if (Math.abs(state.cameraYawOffset) > 0.0001) {
     orbitOffset.applyAxisAngle(groundUp, -state.cameraYawOffset);
   }
   if (Math.abs(state.cameraPitchOffset) > 0.0001) {
-    const orbitRight = new THREE.Vector3().crossVectors(orbitOffset, groundUp).normalize();
+    const orbitRight = updateCameraOrbitRightScratch.crossVectors(orbitOffset, groundUp).normalize();
     if (orbitRight.lengthSq() > 0.0001) {
       orbitOffset.applyAxisAngle(orbitRight, -state.cameraPitchOffset);
     }
   }
-  const groundDesired = groundTarget.clone().add(orbitOffset);
+  const groundDesired = updateCameraGroundDesiredScratch.copy(groundTarget).add(orbitOffset);
   const speedFactor = THREE.MathUtils.clamp((speed - P.MIN_FWD_SPEED) / Math.max(P.GLIDE_SPEED - P.MIN_FWD_SPEED + P.BOOST_ENERGY, 1), 0, 1);
   const groundFov = P.BASE_FOV + speedFactor * P.SPEED_FOV;
 
-  let desired = groundDesired.clone();
-  let target = groundTarget.clone();
-  let up = groundUp.clone();
+  const desired = updateCameraDesiredScratch.copy(groundDesired);
+  const target = updateCameraTargetScratch.copy(groundTarget);
+  const up = updateCameraUpScratch.copy(groundUp);
   let targetFov = groundFov;
   const spaceBlend = returnRouteState.spaceTransition;
 
   if (spaceBlend > 0.001 && returnRouteState.spaceUpDirection.lengthSq() > 0.0001) {
-    const spaceUp = returnRouteState.spaceUpDirection.clone().normalize();
-    const spaceForward = state.visualForward.clone().normalize();
+    const spaceUp = updateCameraSpaceUpScratch.copy(returnRouteState.spaceUpDirection).normalize();
+    const spaceForward = updateCameraSpaceForwardScratch.copy(state.visualForward).normalize();
     if (returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY && !endingUiState.completed) {
       getEarthReturnWorldPosition(earthWorldPosition);
       earthGuideDirection.copy(earthWorldPosition).sub(state.pos);
@@ -7267,10 +7389,10 @@ function updateCamera(dt) {
         spaceForward.lerp(earthGuideDirection, 0.82).normalize();
       }
     }
-    const spaceTarget = state.pos.clone()
+    const spaceTarget = updateCameraSpaceTargetScratch.copy(state.pos)
       .addScaledVector(spaceUp, SPACE_CAMERA_HEIGHT)
       .addScaledVector(spaceForward, SPACE_CAMERA_LOOK_AHEAD);
-    const spaceDesired = state.pos.clone()
+    const spaceDesired = updateCameraSpaceDesiredScratch.copy(state.pos)
       .addScaledVector(spaceUp, SPACE_CAMERA_HEIGHT + SPACE_CAMERA_LIFT)
       .addScaledVector(spaceForward, -SPACE_CAMERA_TRAIL);
     desired.lerp(spaceDesired, spaceBlend);
@@ -7426,12 +7548,9 @@ function updateLyricsUi() {
 }
 
 window.addEventListener('resize', () => {
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  camera.aspect = w / h;
+  camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setPixelRatio(getRuntimePixelRatio());
-  renderer.setSize(w, h);
+  applyRuntimePixelRatio(rendererPerfState.currentPixelRatio, true);
   lastLyricsPanelY = null;
   lastLyricsFullTop = null;
   updateLyricsLayout();
@@ -7477,7 +7596,7 @@ const clock = new THREE.Clock();
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
   previousFramePlayerPos.copy(state.pos);
-  updateColorCycle();
+  updateColorCycle(dt);
   updateThemeSystem(dt);
   const gameplayPaused =
     captureUiState.open ||
@@ -7522,6 +7641,7 @@ function tick() {
   }
   syncMusicUiVisibility();
   syncSpaceReturnAudioState();
+  updateRuntimePixelRatio(dt);
   renderer.render(scene, camera);
 
   if (infoPanel && shouldRunUiStep('info', INFO_PANEL_INTERVAL, dt)) {
