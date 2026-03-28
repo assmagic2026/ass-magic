@@ -3,6 +3,12 @@ import { playlist as playlistData } from './playlist.js';
 import { supabaseConfig } from './supabase-config.js';
 
 const canvas = document.getElementById('c');
+const DEFAULT_CAMERA_FAR = 800;
+const SPACE_CAMERA_FAR = 14000;
+const DEFAULT_FOG_NEAR = 90;
+const DEFAULT_FOG_FAR = 560;
+const SPACE_FOG_NEAR = 2400;
+const SPACE_FOG_FAR = 14000;
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: false,
@@ -17,9 +23,12 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x0a0d12, 1);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x0a0d12, 90, 560);
+scene.fog = new THREE.Fog(0x0a0d12, DEFAULT_FOG_NEAR, DEFAULT_FOG_FAR);
 
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 800);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, DEFAULT_CAMERA_FAR);
+const runtimeUrlParams = new URLSearchParams(window.location.search);
+const DEBUG_CAT_PREVIEW = runtimeUrlParams.get('catdebug') === '1';
+const DEBUG_SANCTUARY_START = runtimeUrlParams.get('sanctuarydebug') === '1';
 
 function parseLyricTimestamp(value) {
   if (typeof value === 'number') return value;
@@ -103,9 +112,39 @@ let bgmMediaSource = null;
 let bgmGainNode = null;
 let bgmLowpassNode = null;
 const IS_APPLE_TOUCH_AUDIO = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IS_SAFARI_BROWSER = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
 let appleTouchEffectsReady = false;
 let appleTouchEffectsAttemptAt = 0;
 let bgmFilterFrequency = THEME_FILTER_BASE_FREQ;
+let bgmPausedForMonochrome = false;
+let bgmSuppressedForMonochrome = false;
+const monochromeClockAudio = new Audio();
+monochromeClockAudio.src = encodeURI('./振り子時計（エコー入り）.mp3');
+monochromeClockAudio.preload = 'auto';
+monochromeClockAudio.loop = true;
+monochromeClockAudio.playsInline = true;
+monochromeClockAudio.crossOrigin = 'anonymous';
+monochromeClockAudio.volume = 0.72;
+const earthArrivalAudio = new Audio();
+earthArrivalAudio.src = encodeURI('./過去を思い出す.mp3');
+earthArrivalAudio.preload = 'auto';
+earthArrivalAudio.playsInline = true;
+earthArrivalAudio.crossOrigin = 'anonymous';
+earthArrivalAudio.volume = 0.9;
+const endingRollAudio = new Audio();
+endingRollAudio.src = encodeURI('./森の羊水　piano 1 2.m4a');
+endingRollAudio.preload = 'auto';
+endingRollAudio.playsInline = true;
+endingRollAudio.crossOrigin = 'anonymous';
+endingRollAudio.volume = 0.72;
+const spaceReturnAudio = new Audio();
+spaceReturnAudio.src = encodeURI('./死後の世界.mp3');
+spaceReturnAudio.preload = 'auto';
+spaceReturnAudio.loop = true;
+spaceReturnAudio.playsInline = true;
+spaceReturnAudio.crossOrigin = 'anonymous';
+spaceReturnAudio.volume = 0.78;
+let effectAudioPrimed = false;
 
 function fitFullLyricsText() {
   if (!lyricsFullPanel || !lyricsFullText || !lyricsFullVisible || !lastLyricsFull) return;
@@ -146,8 +185,101 @@ function applyBgmFilterFrequency(value) {
   }
 }
 
+function stopEffectAudio(audio, reset = false) {
+  if (!audio) return;
+  try {
+    audio.pause();
+    if (reset) audio.currentTime = 0;
+  } catch (error) {
+    console.warn('Effect audio stop failed:', error);
+  }
+}
+
+function playEffectAudio(audio, { restart = false, startTime = null } = {}) {
+  if (!audio) return;
+  if (restart || startTime !== null) {
+    try {
+      audio.currentTime = startTime !== null ? Math.max(0, startTime) : 0;
+    } catch (error) {
+      console.warn('Effect audio rewind failed:', error);
+    }
+  }
+  if (!audio.paused && !restart) return;
+  audio.muted = false;
+  const playResult = audio.play();
+  if (playResult && typeof playResult.catch === 'function') {
+    playResult.catch((error) => {
+      if (error?.name === 'AbortError') return;
+      console.warn('Effect audio playback was blocked or failed:', error);
+    });
+  }
+}
+
+function clearEndingRollAudioDelay() {
+  if (endingUiState.rollAudioDelayTimer !== null) {
+    window.clearTimeout(endingUiState.rollAudioDelayTimer);
+    endingUiState.rollAudioDelayTimer = null;
+  }
+}
+
+function queueEndingRollAudio() {
+  clearEndingRollAudioDelay();
+  try {
+    endingRollAudio.currentTime = 0;
+  } catch (error) {
+    console.warn('Effect audio rewind failed:', error);
+  }
+  endingUiState.rollAudioDelayTimer = window.setTimeout(() => {
+    endingUiState.rollAudioDelayTimer = null;
+    if (!endingUiState.open) return;
+    playEffectAudio(endingRollAudio);
+  }, ENDING_ROLL_AUDIO_DELAY_MS);
+}
+
+function primeEffectAudioFromGesture() {
+  if (effectAudioPrimed) return;
+  effectAudioPrimed = true;
+  for (const audio of [monochromeClockAudio, earthArrivalAudio, endingRollAudio, spaceReturnAudio]) {
+    try {
+      audio.load();
+      audio.muted = true;
+      const playResult = audio.play();
+      if (playResult && typeof playResult.then === 'function') {
+        playResult
+          .then(() => {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.muted = false;
+          })
+          .catch(() => {
+            audio.muted = false;
+          });
+      } else {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      }
+    } catch (error) {
+      audio.muted = false;
+    }
+  }
+}
+
+function syncMonochromeEffectState() {
+  const monochromeActive = themeState.mode === 'monochrome' && !endingUiState.completed;
+  if (monochromeActive) {
+    playEffectAudio(monochromeClockAudio);
+    return;
+  }
+  stopEffectAudio(monochromeClockAudio, true);
+}
+
+function isBgmEffectivelyPlaying() {
+  return !bgm.paused && !bgmSuppressedForMonochrome;
+}
+
 function ensureBgmAudioChain(forceOnApple = false) {
-  if (IS_APPLE_TOUCH_AUDIO && !forceOnApple) {
+  if ((IS_APPLE_TOUCH_AUDIO || IS_SAFARI_BROWSER) && !forceOnApple) {
     applyBgmOutputVolume(bgmOutputVolume);
     return;
   }
@@ -221,7 +353,7 @@ function setRecordSpinning(isPlaying) {
 
 function refreshTrackControls() {
   if (!trackToggle) return;
-  const isPlaying = !bgm.paused;
+  const isPlaying = isBgmEffectivelyPlaying();
   trackToggle.classList.toggle('is-playing', isPlaying);
   trackToggle.setAttribute('aria-label', isPlaying ? 'Stop' : 'Play');
 }
@@ -264,18 +396,135 @@ function ensureTrackFullLyrics(track) {
   return track.fullLyricsPromise;
 }
 
+function getSpaceReturnBgmVolumeFactor() {
+  if (returnRouteState.phase !== RETURN_ROUTE_PHASES.SANCTUARY || !returnRouteState.spaceFlightActive) return 1;
+  const altitude = Math.max(0, getAltitude(state.pos));
+  const fade = THREE.MathUtils.smoothstep(
+    altitude,
+    SPACE_RETURN_MODE_ALTITUDE + 20,
+    SPACE_RETURN_MODE_ALTITUDE + 260
+  );
+  return THREE.MathUtils.lerp(1, 0, fade);
+}
+
+function getBgmBaseTargetVolume() {
+  return BGM_BASE_VOLUME * getSpaceReturnBgmVolumeFactor();
+}
+
+function shouldHideMusicUi() {
+  return (
+    returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY &&
+    returnRouteState.spaceFlightActive &&
+    getSpaceReturnBgmVolumeFactor() <= 0.02 &&
+    !endingUiState.completed
+  );
+}
+
+function shouldPlaySpaceReturnAudio() {
+  return (
+    returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY &&
+    returnRouteState.spaceFlightActive &&
+    !endingUiState.completed
+  );
+}
+
+function syncSpaceReturnAudioState() {
+  if (shouldPlaySpaceReturnAudio()) {
+    playEffectAudio(spaceReturnAudio);
+    return;
+  }
+  stopEffectAudio(spaceReturnAudio, true);
+}
+
+function setElementUiVisibility(element, isVisible) {
+  if (!element) return;
+  element.style.opacity = isVisible ? '' : '0';
+  element.style.visibility = isVisible ? '' : 'hidden';
+  element.style.pointerEvents = isVisible ? '' : 'none';
+}
+
+function syncMusicUiVisibility() {
+  const showMusicUi = !shouldHideMusicUi();
+  setElementUiVisibility(trackCard, showMusicUi);
+  setElementUiVisibility(trackControls, showMusicUi);
+
+  if (!showMusicUi) {
+    lyricsPanel?.classList.remove('is-visible', 'is-idle');
+    lyricsPanel?.setAttribute('aria-hidden', 'true');
+    lyricsFullPanel?.classList.remove('is-visible');
+    lyricsFullPanel?.setAttribute('aria-hidden', 'true');
+    lyricsVisible = false;
+    lyricsFullVisible = false;
+  }
+
+  setElementUiVisibility(lyricsPanel, showMusicUi && lyricsVisible);
+  setElementUiVisibility(lyricsFullPanel, showMusicUi && lyricsFullVisible);
+}
+
+function syncMonochromeBgmState() {
+  const monochromeActive = themeState.mode === 'monochrome';
+  if (monochromeActive) {
+    if (IS_SAFARI_BROWSER) {
+      if (!bgm.paused || bgmPending) {
+        bgmPausedForMonochrome = false;
+        bgmSuppressedForMonochrome = true;
+        bgm.muted = true;
+        setRecordSpinning(false);
+        refreshTrackControls();
+        updateLyricsUi();
+      }
+      return;
+    }
+    if (!bgm.paused || bgmPending) {
+      bgmPausedForMonochrome = true;
+      bgmSuppressedForMonochrome = false;
+      bgm.pause();
+      bgmPending = false;
+      setRecordSpinning(false);
+      refreshTrackControls();
+      updateLyricsUi();
+    }
+    return;
+  }
+
+  if (bgmSuppressedForMonochrome) {
+    bgmSuppressedForMonochrome = false;
+    bgm.muted = false;
+    setRecordSpinning(!bgm.paused);
+    refreshTrackControls();
+    updateLyricsUi();
+    return;
+  }
+
+  if (bgmPausedForMonochrome) {
+    bgmPausedForMonochrome = false;
+    playCurrentTrack();
+  }
+}
+
 function playCurrentTrack() {
+  if (themeState.mode === 'monochrome') return;
   if (bgmPending) return;
   const now = performance.now();
   if (now - bgmLastAttemptAt < 90) return;
   bgmLastAttemptAt = now;
+  bgm.muted = false;
+  bgmSuppressedForMonochrome = false;
   ensureBgmAudioChain();
-  applyBgmOutputVolume(BGM_BASE_VOLUME);
+  applyBgmOutputVolume(getBgmBaseTargetVolume());
   applyBgmFilterFrequency(THEME_FILTER_BASE_FREQ);
   bgmPending = true;
   const playResult = bgm.play();
   if (playResult && typeof playResult.then === 'function') {
     playResult.then(() => {
+      if (themeState.mode === 'monochrome') {
+        bgm.pause();
+        bgmPending = false;
+        setRecordSpinning(false);
+        refreshTrackControls();
+        updateLyricsUi();
+        return;
+      }
       setRecordSpinning(true);
       refreshTrackControls();
       updateLyricsUi();
@@ -298,7 +547,7 @@ function loadTrack(index, autoplay = false) {
   bgm.pause();
   themeDuckTimer = 0;
   themeFilterTimer = 0;
-  applyBgmOutputVolume(BGM_BASE_VOLUME);
+  applyBgmOutputVolume(getBgmBaseTargetVolume());
   applyBgmFilterFrequency(THEME_FILTER_BASE_FREQ);
   bgm.src = encodeURI(track.src);
   bgm.load();
@@ -311,13 +560,17 @@ function loadTrack(index, autoplay = false) {
 }
 
 function ensureBgm() {
+  if (themeState.mode === 'monochrome') return;
   if (!bgm.paused) return;
   playCurrentTrack();
 }
 
 function startBgmFromGesture() {
+  primeEffectAudioFromGesture();
+  if (themeState.mode === 'monochrome') return;
   if (!bgm.paused || bgmPending) return;
   bgm.muted = false;
+  bgmSuppressedForMonochrome = false;
   ensureBgmAudioChain();
   playCurrentTrack();
 }
@@ -335,7 +588,7 @@ function updateThemeDuck(dt) {
     themeFilterTimer = Math.max(0, themeFilterTimer - dt);
   }
 
-  const targetVolume = themeDuckTimer > 0 ? THEME_DUCK_VOLUME : BGM_BASE_VOLUME;
+  const targetVolume = (themeDuckTimer > 0 ? THEME_DUCK_VOLUME : getBgmBaseTargetVolume());
   const response = targetVolume < bgmOutputVolume ? THEME_DUCK_DOWN_RATE : THEME_DUCK_UP_RATE;
   const blend = 1 - Math.exp(-response * dt);
   applyBgmOutputVolume(THREE.MathUtils.lerp(bgmOutputVolume, targetVolume, blend));
@@ -379,6 +632,10 @@ const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, -1.4)
   .addScaledVector(NIGHT_AXIS_B, -0.8)
   .normalize();
+const SANCTUARY_DIR = NIGHT_CENTER.clone()
+  .addScaledVector(NIGHT_AXIS_A, 1.08)
+  .addScaledVector(NIGHT_AXIS_B, 0.48)
+  .normalize();
 const BLACK_BOX_ALTITUDE = 0.4;
 const BLACK_BOX_GROUND_ALTITUDE = 0.96;
 const BLACK_BOX_LOOKAHEAD_SECONDS = 20.0;
@@ -386,14 +643,70 @@ const BLACK_BOX_LOOKAHEAD_SPEED = 40;
 const BLACK_BOX_SPEED = 200;
 const BLACK_BOX_PHASE_LEAD_SECONDS = 0.0;
 const BLACK_BOX_ROLL = Math.PI * 0.2;
-const DUSK_TOWER_ALTITUDE = -9.5;
+const DUSK_TOWER_ALTITUDE = 24.0;
 const DUSK_TOWER_DIR = NIGHT_AXIS_A.clone()
   .multiplyScalar(-1.0)
   .addScaledVector(NIGHT_AXIS_B, 0.14)
   .addScaledVector(SUN_DIRECTION, 0.12)
   .normalize();
+const COMPASS_DIR = DUSK_TOWER_DIR.clone()
+  .addScaledVector(SUN_DIRECTION, -DUSK_TOWER_DIR.dot(SUN_DIRECTION))
+  .normalize();
 const DAY_MONO_SPHERE_CENTER_ALTITUDE = 40.0;
 const DAY_MONO_SPHERE_RADIUS = 18.0;
+const NIGHT_MONO_SPHERE_CENTER_ALTITUDE = 40.0;
+const NIGHT_MONO_SPHERE_RADIUS = 18.0;
+const SANCTUARY_TRIGGER_HEIGHT = 30;
+const SANCTUARY_TRIGGER_RADIUS = 36;
+const SANCTUARY_RING_TRIGGER_HEIGHT = 10;
+const SANCTUARY_RING_TRIGGER_RADIUS = 56;
+const SANCTUARY_ACTIVATION_DURATION = 1.6;
+const SANCTUARY_BEAM_HEIGHT = 6400;
+const SANCTUARY_BEAM_MARKER_COUNT = 18;
+const SANCTUARY_BEAM_THICKNESS_SCALE = 0.1;
+const SPACE_RETURN_MODE_ALTITUDE = 220;
+const SPACE_RETURN_ACTIVATION_HOLD = 0.32;
+const SPACE_RETURN_MIN_ASCENT_SPEED = 0.8;
+const SPACE_PARALLEL_RETURN_RATE = 0.08;
+const SPACE_PARALLEL_RETURN_MAX = 1.8;
+const SPACE_PARALLEL_RETURN_DEADZONE = 18;
+const SPACE_CAMERA_LOOK_AHEAD = 34;
+const SPACE_CAMERA_TRAIL = 18;
+const SPACE_CAMERA_HEIGHT = 1.6;
+const SPACE_CAMERA_LIFT = 0.55;
+const SPACE_CAMERA_SMOOTH = 0.2;
+const SPACE_TRANSITION_IN_RATE = 1.45;
+const SPACE_TRANSITION_OUT_RATE = 4.4;
+const EARTH_RETURN_DISTANCE = SANCTUARY_BEAM_HEIGHT;
+const EARTH_RETURN_SIZE = 220;
+const EARTH_RETURN_GLOW_SIZE = 380;
+const EARTH_APPROACH_START_DISTANCE = 4800;
+const EARTH_APPROACH_END_DISTANCE = 320;
+const EARTH_CONTACT_DISTANCE = 150;
+const EARTH_GUIDE_TURN_RATE = 1.35;
+const EARTH_GUIDE_PULL_SPEED = 11;
+const EARTH_GUIDE_INPUT_RELIEF = 0.92;
+const KEYBOARD_ARROW_STICK_SCALE_X = 0.5;
+const KEYBOARD_ARROW_STICK_SCALE_Y = 1.0;
+const ENDING_WHITEOUT_DURATION = 1.05;
+const ENDING_BLACK_RISE_DURATION = 0.65;
+const ENDING_TRUE_MESSAGE_DURATION = 2.2;
+const ENDING_ROLL_DURATION = 46;
+const SPACE_STAR_COUNT = 88;
+const SPACE_STAR_RADIUS = 240;
+const SPACE_STAR_DEPTH = 1500;
+const SPACE_STAR_SPEED_MULTIPLIER = 2.4;
+const SPACE_ASTEROID_COUNT = 5;
+const SPACE_ASTEROID_RADIUS = 260;
+const SPACE_ASTEROID_DEPTH = 1800;
+const COMPASS_SPIN_RATE = 1.35;
+const COMPASS_SETTLE_RATE = 6.8;
+const RETURN_ROUTE_PHASES = Object.freeze({
+  IDLE: 'idle',
+  CHALLENGE: 'challenge',
+  INVERTED: 'inverted',
+  SANCTUARY: 'sanctuary'
+});
 const BLACK_BOX_IMAGE_SET = [
   {
     src: './blackbox.jpg',
@@ -407,12 +720,28 @@ const BLACK_BOX_IMAGE_SET = [
   }
 ];
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
+const BOOK_PLAYER_STATE_STORAGE_KEY = 'ass-magic-book-player-v1';
 const BOOK_MESSAGE_LIMIT = 12;
 const BOOK_MESSAGE_TIMEOUT_MS = 9000;
+const RETURN_HISTORY_STORAGE_KEY = 'ass-magic-return-histories-v1';
+const RETURN_HISTORY_LIMIT = 80;
+const BOOK_RECORD_EXCLUDED_NAMES = new Set(['サーモンユッケ伯爵', '揚げパン大王', '道夫', 'トリケラトプさん']);
+const ENDING_CREDITS_EXCLUDED_NAMES = new Set(['サーモンユッケ伯爵', '道夫', 'トリケラトプさん', '揚げパン大王']);
+const ENDING_ROLL_AUDIO_DELAY_MS = 2000;
 const CAT_PREVIEW_HEIGHT = 4.6;
 const CAT_PREVIEW_ALTITUDE = 0.18;
 const CAT_PREVIEW_LOOKAHEAD_SECONDS = 5;
 const CAT_PREVIEW_LOOKAHEAD_SPEED = 40;
+const CAT_ROUTE_BUBBLE_DURATION = 3.8;
+const CAT_ROUTE_JOIN_DURATION = 1.75;
+const CAT_ROUTE_FOLLOW_DISTANCE = 1.8;
+const CAT_ROUTE_FOLLOW_SIDE = 0.0;
+const CAT_ROUTE_FOLLOW_HEIGHT = 0.0;
+const CAT_ROUTE_FOLLOW_RESPONSE = 8.8;
+const CAT_ROUTE_CATCHUP_RESPONSE = 20.0;
+const CAT_ROUTE_ROTATION_RESPONSE = 7.2;
+const CAT_ROUTE_COMPANION_SCALE = 0.1512;
+const CAT_ROUTE_MOUNT_OFFSET = new THREE.Vector3(0.34, 0.02, 0.12);
 const INVERT_WORLD_FILTER = 'invert(1) hue-rotate(180deg) saturate(0.94) brightness(1.05)';
 const MONOCHROME_WORLD_FILTER = 'grayscale(1) contrast(1.78) brightness(1.42)';
 const FREEZE_CLOUD_DRIFT_FOR_TEST = true;
@@ -839,31 +1168,268 @@ function createIsoscelesPrismGeometry(apexAngleDeg, depth, height) {
 
 function createDuskTowerLandmark() {
   const group = new THREE.Group();
-  const shellMat = new THREE.MeshBasicMaterial({
-    color: 0xff3328,
+  const needleDarkMat = new THREE.MeshBasicMaterial({
+    color: 0x0a0d12,
     toneMapped: false,
-    fog: false,
-    side: THREE.DoubleSide
+    fog: false
   });
-  const prism = new THREE.Mesh(createIsoscelesPrismGeometry(25, 118, 258), shellMat);
-  group.add(prism);
-  group.userData.shellMat = shellMat;
+  const needleLightMat = new THREE.MeshBasicMaterial({
+    color: 0xf3f7ff,
+    toneMapped: false,
+    fog: false
+  });
+
+  const rotor = new THREE.Group();
+  group.add(rotor);
+
+  const northNeedle = new THREE.Mesh(
+    new THREE.ConeGeometry(1.64, 16.8, 4),
+    needleLightMat
+  );
+  northNeedle.position.z = 7.6;
+  northNeedle.rotation.x = Math.PI * 0.5;
+  rotor.add(northNeedle);
+
+  const southNeedle = new THREE.Mesh(
+    new THREE.ConeGeometry(1.64, 16.8, 4),
+    needleDarkMat
+  );
+  southNeedle.position.z = -7.6;
+  southNeedle.rotation.x = -Math.PI * 0.5;
+  rotor.add(southNeedle);
+
+  group.userData.rotor = rotor;
 
   return group;
 }
 
-function createDayMonochromeSphereLandmark() {
+function createMonochromeSphereLandmark(radius, color) {
   const group = new THREE.Group();
   const shellMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
+    color,
     toneMapped: false,
     fog: false
   });
-  const sphereGeo = new THREE.SphereGeometry(DAY_MONO_SPHERE_RADIUS, 18, 12);
+  const sphereGeo = new THREE.SphereGeometry(radius, 18, 12);
   const sphere = new THREE.Mesh(sphereGeo, shellMat);
   group.add(sphere);
 
   return group;
+}
+
+function createEarthTexture(size = 768) {
+  const earthCanvas = document.createElement('canvas');
+  earthCanvas.width = size;
+  earthCanvas.height = size;
+  const ctx = earthCanvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(earthCanvas);
+
+  const clamp01 = (value) => THREE.MathUtils.clamp(value, 0, 1);
+  const smoothstep01 = (edge0, edge1, value) => {
+    const t = clamp01((value - edge0) / Math.max(0.0001, edge1 - edge0));
+    return t * t * (3 - 2 * t);
+  };
+  const mix = (a, b, t) => a + (b - a) * t;
+  const viewDir = new THREE.Vector3(0, 0, 1);
+  const lightDir = new THREE.Vector3(-0.42, -0.26, 0.87).normalize();
+  const reflectDir = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  const textureData = ctx.createImageData(size, size);
+  const data = textureData.data;
+
+  for (let y = 0; y < size; y++) {
+    const v = ((y + 0.5) / size) * 2 - 1;
+    for (let x = 0; x < size; x++) {
+      const u = ((x + 0.5) / size) * 2 - 1;
+      const rr = u * u + v * v;
+      const i = (y * size + x) * 4;
+
+      if (rr > 1) {
+        data[i + 3] = 0;
+        continue;
+      }
+
+      const z = Math.sqrt(1 - rr);
+      normal.set(u, -v, z).normalize();
+      const lon = Math.atan2(normal.x, normal.z);
+      const lat = Math.asin(normal.y);
+
+      const terrainNoise =
+        Math.sin(lon * 2.8 + lat * 3.7)
+        + Math.sin(lon * 5.4 - lat * 2.3) * 0.58
+        + Math.cos((normal.x * 4.8) + (normal.y * 7.6) - (normal.z * 3.1)) * 0.52
+        + Math.sin((normal.x - normal.z) * 8.9 + normal.y * 4.7) * 0.28;
+      const ridgeNoise =
+        Math.cos(lon * 10.5 + lat * 5.7) * 0.22
+        + Math.sin((normal.x + normal.y) * 13.1 - normal.z * 6.4) * 0.18;
+      const humidityNoise =
+        Math.sin(lon * 4.2 - lat * 6.1)
+        + Math.cos((normal.x * 5.7) - (normal.z * 4.8) + (normal.y * 2.2)) * 0.42;
+      const polarMask = smoothstep01(0.58, 0.92, Math.abs(normal.y));
+      const landField = terrainNoise * 0.5 + ridgeNoise * 0.5 + polarMask * 0.14;
+      const landMask = smoothstep01(0.08, 0.23, landField);
+      const elevation = smoothstep01(0.18, 0.9, landField + ridgeNoise * 0.8);
+
+      const light = clamp01(normal.dot(lightDir) * 0.88 + 0.18);
+      const shadow = Math.pow(light, 0.82);
+      const rim = Math.pow(1 - z, 2.7);
+      const waterBand = smoothstep01(-1, 1, Math.sin(lon * 2.4 + normal.y * 5.1));
+      const warmCurrent = smoothstep01(-1, 1, Math.cos((lon - lat) * 3.4));
+
+      let r = mix(9, 36, waterBand);
+      let g = mix(28, 102, warmCurrent);
+      let b = mix(72, 192, waterBand * 0.6 + 0.2);
+
+      const specularBase = Math.max(0, reflectDir.copy(normal).multiplyScalar(2 * normal.dot(lightDir)).sub(lightDir).dot(viewDir));
+      const specular = Math.pow(specularBase, 22) * (1 - landMask) * 0.9;
+
+      const vegetation = smoothstep01(-0.5, 0.85, humidityNoise);
+      const desertMask = smoothstep01(0.18, 0.72, 1 - vegetation) * (1 - polarMask * 0.85);
+      const mountainMask = smoothstep01(0.42, 0.92, elevation);
+
+      if (landMask > 0.001) {
+        const lushR = mix(38, 72, vegetation);
+        const lushG = mix(74, 128, vegetation);
+        const lushB = mix(28, 64, vegetation);
+        const desertR = mix(118, 176, desertMask);
+        const desertG = mix(104, 154, desertMask);
+        const desertB = mix(72, 108, desertMask);
+        r = mix(lushR, desertR, desertMask);
+        g = mix(lushG, desertG, desertMask * 0.92);
+        b = mix(lushB, desertB, desertMask * 0.82);
+
+        const mountainLift = mountainMask * 92;
+        r += mountainLift;
+        g += mountainLift * 0.88;
+        b += mountainLift * 0.8;
+
+        if (polarMask > 0.12) {
+          const ice = smoothstep01(0.18, 0.8, polarMask + elevation * 0.3);
+          r = mix(r, 236, ice);
+          g = mix(g, 243, ice);
+          b = mix(b, 248, ice);
+        }
+      }
+
+      const cloudNoise =
+        Math.sin(lon * 8.2 + lat * 13.4) * 0.32
+        + Math.cos(lon * 12.8 - lat * 7.1) * 0.28
+        + Math.sin((normal.x * 18.4) + (normal.y * 21.6) - (normal.z * 9.2)) * 0.2
+        + Math.cos((normal.x - normal.z) * 16.5 + normal.y * 14.1) * 0.2;
+      const cloudMask = smoothstep01(0.32, 0.74, cloudNoise + rim * 0.22);
+
+      r *= 0.58 + shadow * 0.62;
+      g *= 0.58 + shadow * 0.64;
+      b *= 0.62 + shadow * 0.66;
+
+      r += specular * 165;
+      g += specular * 176;
+      b += specular * 190;
+
+      r = mix(r, 244, cloudMask * 0.46);
+      g = mix(g, 248, cloudMask * 0.48);
+      b = mix(b, 252, cloudMask * 0.5);
+
+      const atmosphere = Math.pow(rim, 0.6);
+      r = mix(r, 118, atmosphere * 0.36);
+      g = mix(g, 181, atmosphere * 0.42);
+      b = mix(b, 255, atmosphere * 0.66);
+
+      data[i] = Math.round(THREE.MathUtils.clamp(r, 0, 255));
+      data[i + 1] = Math.round(THREE.MathUtils.clamp(g, 0, 255));
+      data[i + 2] = Math.round(THREE.MathUtils.clamp(b, 0, 255));
+      data[i + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(textureData, 0, 0);
+  const texture = new THREE.CanvasTexture(earthCanvas);
+  if ('colorSpace' in texture && 'SRGBColorSpace' in THREE) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  } else if ('encoding' in texture && 'sRGBEncoding' in THREE) {
+    texture.encoding = THREE.sRGBEncoding;
+  }
+  if ('anisotropy' in texture && renderer?.capabilities) {
+    texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  }
+  const earthPhoto = new Image();
+  earthPhoto.decoding = 'async';
+  earthPhoto.onload = () => {
+    const center = size * 0.5;
+    const photoCropSize = Math.min(earthPhoto.width, earthPhoto.height) * 0.92;
+    const sx = (earthPhoto.width - photoCropSize) * 0.5;
+    const sy = (earthPhoto.height - photoCropSize) * 0.49;
+    ctx.clearRect(0, 0, size, size);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(center, center, size * 0.496, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(earthPhoto, sx, sy, photoCropSize, photoCropSize, 0, 0, size, size);
+    ctx.restore();
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    const alphaMask = ctx.createRadialGradient(center, center, size * 0.43, center, center, size * 0.5);
+    alphaMask.addColorStop(0, 'rgba(255,255,255,1)');
+    alphaMask.addColorStop(0.95, 'rgba(255,255,255,1)');
+    alphaMask.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = alphaMask;
+    ctx.fillRect(0, 0, size, size);
+    ctx.restore();
+    texture.needsUpdate = true;
+  };
+  earthPhoto.src = './earth.jpg';
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createEarthReturnBillboard() {
+  const earthTexture = createEarthTexture();
+  const spriteMat = new THREE.SpriteMaterial({
+    map: earthTexture,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    fog: false
+  });
+  spriteMat.toneMapped = false;
+
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 256;
+  glowCanvas.height = 256;
+  const glowCtx = glowCanvas.getContext('2d');
+  if (glowCtx) {
+    const glowGrad = glowCtx.createRadialGradient(128, 128, 26, 128, 128, 128);
+    glowGrad.addColorStop(0, 'rgba(255,255,255,0.7)');
+    glowGrad.addColorStop(0.35, 'rgba(120,180,255,0.28)');
+    glowGrad.addColorStop(1, 'rgba(120,180,255,0)');
+    glowCtx.fillStyle = glowGrad;
+    glowCtx.fillRect(0, 0, 256, 256);
+  }
+  const glowTexture = new THREE.CanvasTexture(glowCanvas);
+  const glowMat = new THREE.SpriteMaterial({
+    map: glowTexture,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthTest: true,
+    depthWrite: false,
+    fog: false
+  });
+  glowMat.toneMapped = false;
+
+  const earth = new THREE.Sprite(spriteMat);
+  earth.scale.setScalar(EARTH_RETURN_SIZE);
+  earth.visible = false;
+  earth.renderOrder = 0;
+  earth.frustumCulled = false;
+
+  const glow = new THREE.Sprite(glowMat);
+  glow.scale.setScalar(EARTH_RETURN_GLOW_SIZE);
+  glow.visible = false;
+  glow.renderOrder = 0;
+  glow.frustumCulled = false;
+
+  return { earth, glow };
 }
 
 const themeTriggerZones = [];
@@ -875,6 +1441,138 @@ const themeClosestPoint = new THREE.Vector3();
 const themeZoneCenter = new THREE.Vector3();
 const themeProjected = new THREE.Vector3();
 const themeFlashScreen = new THREE.Vector2();
+const defaultClearColor = new THREE.Color(0x0a0d12);
+const spaceClearColor = new THREE.Color(0x000000);
+const blendedClearColor = new THREE.Color();
+const monochromeSphereWorld = new THREE.Vector3();
+const activeSunDirection = new THREE.Vector3();
+const sanctuaryTriggerWorld = new THREE.Vector3();
+const sanctuaryRingTriggerWorld = new THREE.Vector3();
+const sanctuaryBoundsTriggerLocalCenter = new THREE.Vector3();
+let sanctuaryBoundsTriggerRadius = SANCTUARY_RING_TRIGGER_RADIUS;
+const sanctuaryBeamBaseWorld = new THREE.Vector3();
+const sanctuaryBeamTopWorld = new THREE.Vector3();
+const sanctuaryBeamDirectionWorld = new THREE.Vector3();
+const beamClosestPointWorld = new THREE.Vector3();
+const fallbackSpaceAxis = new THREE.Vector3(1, 0, 0);
+const spaceLocalForward = new THREE.Vector3(0, 0, 1);
+const beamRelativeWorld = new THREE.Vector3();
+const spaceUpCandidate = new THREE.Vector3();
+const spaceForwardProjected = new THREE.Vector3();
+const earthWorldPosition = new THREE.Vector3();
+const earthGuideDirection = new THREE.Vector3();
+const earthGuideProjected = new THREE.Vector3();
+const compassTargetLocal = new THREE.Vector3();
+const compassTargetProjected = new THREE.Vector3();
+const spaceStarsGeometry = new THREE.BufferGeometry();
+const spaceStarPositions = new Float32Array(SPACE_STAR_COUNT * 3);
+const spaceStarDrift = new Float32Array(SPACE_STAR_COUNT);
+const spaceAsteroidField = new THREE.Group();
+const spaceAsteroids = [];
+
+function createSpaceStarSpriteTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 96;
+  canvas.height = 96;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const gradient = ctx.createRadialGradient(48, 48, 0, 48, 48, 48);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.2, 'rgba(250,253,255,0.98)');
+  gradient.addColorStop(0.48, 'rgba(224,234,255,0.68)');
+  gradient.addColorStop(0.72, 'rgba(188,206,255,0.22)');
+  gradient.addColorStop(1, 'rgba(188,206,255,0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function createSpaceAsteroidGeometry() {
+  const geometry = new THREE.IcosahedronGeometry(1, 1);
+  const position = geometry.attributes.position;
+  const stretchX = 0.82 + Math.random() * 0.45;
+  const stretchY = 0.74 + Math.random() * 0.55;
+  const stretchZ = 0.78 + Math.random() * 0.5;
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const wobble = 0.78 + Math.random() * 0.44;
+    position.setXYZ(i, x * stretchX * wobble, y * stretchY * wobble, z * stretchZ * wobble);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function resetSpaceStar(index, z = null) {
+  const radius = Math.sqrt(Math.random()) * SPACE_STAR_RADIUS;
+  const angle = Math.random() * Math.PI * 2;
+  const zPos = z ?? THREE.MathUtils.randFloat(-SPACE_STAR_DEPTH * 0.45, SPACE_STAR_DEPTH * 0.5);
+  const i3 = index * 3;
+  spaceStarPositions[i3] = Math.cos(angle) * radius;
+  spaceStarPositions[i3 + 1] = Math.sin(angle) * radius * 0.7;
+  spaceStarPositions[i3 + 2] = zPos;
+  spaceStarDrift[index] = 0.7 + Math.random() * 0.52;
+}
+
+function resetSpaceAsteroid(mesh, z = null) {
+  const radius = THREE.MathUtils.lerp(42, SPACE_ASTEROID_RADIUS, Math.random());
+  const angle = Math.random() * Math.PI * 2;
+  const zPos = z ?? THREE.MathUtils.randFloat(220, SPACE_ASTEROID_DEPTH * 0.5);
+  const size = THREE.MathUtils.lerp(2.4, 8.6, Math.random());
+
+  mesh.position.set(
+    Math.cos(angle) * radius,
+    Math.sin(angle) * radius * 0.58 + THREE.MathUtils.randFloatSpread(20),
+    zPos
+  );
+  mesh.rotation.set(
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2,
+    Math.random() * Math.PI * 2
+  );
+  mesh.scale.set(
+    size * THREE.MathUtils.lerp(0.72, 1.28, Math.random()),
+    size * THREE.MathUtils.lerp(0.76, 1.34, Math.random()),
+    size * THREE.MathUtils.lerp(0.72, 1.22, Math.random())
+  );
+  mesh.userData.drift = 0.24 + Math.random() * 0.46;
+  mesh.userData.spin.set(
+    THREE.MathUtils.randFloatSpread(1.1),
+    THREE.MathUtils.randFloatSpread(1.1),
+    THREE.MathUtils.randFloatSpread(1.1)
+  );
+  mesh.userData.opacity = THREE.MathUtils.lerp(0.26, 0.72, Math.random());
+}
+
+for (let i = 0; i < SPACE_STAR_COUNT; i++) {
+  resetSpaceStar(i);
+}
+spaceStarsGeometry.setAttribute('position', new THREE.BufferAttribute(spaceStarPositions, 3));
+for (let i = 0; i < SPACE_ASTEROID_COUNT; i++) {
+  const asteroid = new THREE.Mesh(
+    createSpaceAsteroidGeometry(),
+    new THREE.MeshLambertMaterial({
+      color: 0x8b94a3,
+      emissive: 0x11161d,
+      emissiveIntensity: 0.18,
+      flatShading: true,
+      transparent: true,
+      opacity: 0.42,
+      fog: false
+    })
+  );
+  asteroid.userData.spin = new THREE.Vector3();
+  resetSpaceAsteroid(asteroid);
+  asteroid.visible = false;
+  spaceAsteroids.push(asteroid);
+  spaceAsteroidField.add(asteroid);
+}
 
 function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 1.7, extra = {}) {
   object.updateMatrixWorld(true);
@@ -888,6 +1586,7 @@ function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 
     localCenter,
     radius: Math.max(minRadius, themeBoundsSphere.radius * radiusScale),
     onTrigger: typeof extra.onTrigger === 'function' ? extra.onTrigger : null,
+    canTrigger: typeof extra.canTrigger === 'function' ? extra.canTrigger : null,
     tag: extra.tag ?? null,
     themeMode: extra.themeMode ?? null
   });
@@ -1258,6 +1957,31 @@ const skyMat = new THREE.ShaderMaterial({
 const sky = new THREE.Mesh(new THREE.SphereGeometry(420, 20, 20), skyMat);
 scene.add(sky);
 
+const spaceStarSpriteTexture = createSpaceStarSpriteTexture();
+const spaceStars = new THREE.Points(
+  spaceStarsGeometry,
+  new THREE.PointsMaterial({
+    color: 0xf7fbff,
+    size: 4.6,
+    map: spaceStarSpriteTexture,
+    alphaTest: 0.16,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.86,
+    depthWrite: false,
+    fog: false,
+    blending: THREE.NormalBlending
+  })
+);
+spaceStars.visible = false;
+scene.add(spaceStars);
+spaceAsteroidField.visible = false;
+scene.add(spaceAsteroidField);
+
+const earthReturn = createEarthReturnBillboard();
+scene.add(earthReturn.glow);
+scene.add(earthReturn.earth);
+
 const sun = new THREE.Group();
 const sunCore = new THREE.Mesh(
   new THREE.SphereGeometry(8, 14, 14),
@@ -1375,34 +2099,111 @@ const sanctuaryShellMat = new THREE.MeshLambertMaterial({ color: 0x0b1222, emiss
 const sanctuaryAccentMat = new THREE.MeshBasicMaterial({ color: 0x68f0ff });
 const sanctuaryPulseMat = new THREE.MeshBasicMaterial({ color: 0xff77dd, transparent: true, opacity: 0.72 });
 const sanctuaryWarmMat = new THREE.MeshBasicMaterial({ color: 0xffc26b });
+const sanctuaryLaunchMat = new THREE.MeshBasicMaterial({
+  color: 0xe8fbff,
+  transparent: true,
+  opacity: 0.0,
+  side: THREE.DoubleSide,
+  depthWrite: true,
+  fog: false,
+  blending: THREE.AdditiveBlending
+});
+const sanctuaryLaunchGlowMat = new THREE.MeshBasicMaterial({
+  color: 0xb8f6ff,
+  transparent: true,
+  opacity: 0.0,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+  fog: false,
+  blending: THREE.AdditiveBlending
+});
+const sanctuaryMarkerMat = new THREE.MeshBasicMaterial({
+  color: 0xf8fdff,
+  transparent: true,
+  opacity: 0.0,
+  side: THREE.DoubleSide,
+  depthWrite: true,
+  fog: false,
+  blending: THREE.AdditiveBlending
+});
 registerMaterialCycle(sanctuaryShellMat, true, 0.24, 0.05, 0.03);
 registerMaterialCycle(sanctuaryAccentMat, false, 0.26, 0.07, 0.04);
 registerMaterialCycle(sanctuaryPulseMat, false, 0.24, 0.08, 0.03);
 registerMaterialCycle(sanctuaryWarmMat, false, 0.18, 0.06, 0.03);
+const sanctuaryTriggerObjects = [];
 
 const sanctuaryBase = new THREE.Mesh(new THREE.CylinderGeometry(13, 18, 8, 8), sanctuaryShellMat);
 sanctuaryBase.position.y = 4;
 sanctuary.add(sanctuaryBase);
+sanctuaryTriggerObjects.push(sanctuaryBase);
 
 const sanctuaryRing = new THREE.Mesh(new THREE.TorusGeometry(18, 1.2, 5, 18), sanctuaryAccentMat);
 sanctuaryRing.rotation.x = Math.PI * 0.5;
 sanctuaryRing.position.y = 7.2;
 sanctuary.add(sanctuaryRing);
+sanctuaryTriggerObjects.push(sanctuaryRing);
 
 const sanctuaryCore = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 5.6, 24, 6), sanctuaryShellMat);
 sanctuaryCore.position.y = 18;
 sanctuary.add(sanctuaryCore);
+sanctuaryTriggerObjects.push(sanctuaryCore);
 
 const sanctuaryCap = new THREE.Mesh(new THREE.OctahedronGeometry(4.8, 0), sanctuaryPulseMat);
 sanctuaryCap.position.y = 31;
 sanctuary.add(sanctuaryCap);
+sanctuaryTriggerObjects.push(sanctuaryCap);
 
 const sanctuaryBeam = new THREE.Mesh(
   new THREE.CylinderGeometry(1.3, 2.8, 120, 8, 1, true),
-  new THREE.MeshBasicMaterial({ color: 0x7ee9ff, transparent: true, opacity: 0.24 })
+  new THREE.MeshBasicMaterial({
+    color: 0x7ee9ff,
+    transparent: true,
+    opacity: 0.24,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    fog: false,
+    blending: THREE.AdditiveBlending
+  })
 );
 sanctuaryBeam.position.y = 66;
+sanctuaryBeam.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 1, SANCTUARY_BEAM_THICKNESS_SCALE);
 sanctuary.add(sanctuaryBeam);
+
+const sanctuaryLaunchRig = new THREE.Group();
+sanctuaryLaunchRig.position.y = 66;
+sanctuary.add(sanctuaryLaunchRig);
+
+const sanctuaryLaunchBeam = new THREE.Mesh(
+  new THREE.CylinderGeometry(3.8, 8.8, SANCTUARY_BEAM_HEIGHT, 12, 1, true),
+  sanctuaryLaunchMat
+);
+sanctuaryLaunchBeam.position.y = SANCTUARY_BEAM_HEIGHT * 0.5;
+sanctuaryLaunchBeam.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
+sanctuaryLaunchBeam.visible = false;
+sanctuaryLaunchRig.add(sanctuaryLaunchBeam);
+
+const sanctuaryLaunchGlow = new THREE.Mesh(
+  new THREE.CylinderGeometry(9.2, 18.4, SANCTUARY_BEAM_HEIGHT, 14, 1, true),
+  sanctuaryLaunchGlowMat
+);
+sanctuaryLaunchGlow.position.copy(sanctuaryLaunchBeam.position);
+sanctuaryLaunchGlow.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
+sanctuaryLaunchGlow.visible = false;
+sanctuaryLaunchRig.add(sanctuaryLaunchGlow);
+
+const sanctuaryLaunchMarkers = [];
+for (let i = 0; i < SANCTUARY_BEAM_MARKER_COUNT; i++) {
+  const marker = new THREE.Mesh(
+    new THREE.TorusGeometry(16.5, 0.28, 6, 18),
+    sanctuaryMarkerMat.clone()
+  );
+  marker.rotation.x = Math.PI * 0.5;
+  marker.scale.setScalar(SANCTUARY_BEAM_THICKNESS_SCALE);
+  marker.visible = false;
+  marker.userData.offset = i / SANCTUARY_BEAM_MARKER_COUNT;
+  sanctuaryLaunchMarkers.push(marker);
+  sanctuaryLaunchRig.add(marker);
+}
 
 for (let i = 0; i < V.SANCTUARY_HALO_COUNT; i++) {
   const halo = new THREE.Mesh(new THREE.TorusGeometry(12 + i * 6, 0.36 + i * 0.08, 4, 16), i === 1 ? sanctuaryPulseMat : sanctuaryAccentMat);
@@ -1411,6 +2212,7 @@ for (let i = 0; i < V.SANCTUARY_HALO_COUNT; i++) {
   halo.userData.spin = (i % 2 === 0 ? 1 : -1) * (0.18 + i * 0.06);
   sanctuaryAnimatedHalos.push(halo);
   sanctuary.add(halo);
+  sanctuaryTriggerObjects.push(halo);
 }
 
 for (let i = 0; i < V.SANCTUARY_SPOKE_COUNT; i++) {
@@ -1427,15 +2229,27 @@ for (let i = 0; i < V.SANCTUARY_SPOKE_COUNT; i++) {
   spoke.position.set(Math.cos(angle) * 22, 0, Math.sin(angle) * 22);
   spoke.rotation.y = -angle;
   sanctuary.add(spoke);
+  sanctuaryTriggerObjects.push(spoke);
 }
 
 const sanctuaryLight = new THREE.PointLight(0x7ee9ff, 1.55, 180, 2);
 sanctuaryLight.position.y = 40;
 sanctuary.add(sanctuaryLight);
 
-alignObjectToSphere(sanctuary, NIGHT_CENTER, 0.9, 0.24);
+alignObjectToSphere(sanctuary, SANCTUARY_DIR, 0.9, 0.24);
 scene.add(sanctuary);
-registerThemeTriggerFromObject(sanctuary, 0.58, 11.5);
+sanctuary.updateMatrixWorld(true);
+themeBoundsBox.makeEmpty();
+for (const triggerObject of sanctuaryTriggerObjects) {
+  themeBoundsBox.expandByObject(triggerObject);
+}
+if (!themeBoundsBox.isEmpty()) {
+  themeBoundsBox.getBoundingSphere(themeBoundsSphere);
+  if (Number.isFinite(themeBoundsSphere.radius) && themeBoundsSphere.radius > 0) {
+    sanctuaryBoundsTriggerLocalCenter.copy(sanctuary.worldToLocal(themeBoundsSphere.center.clone()));
+    sanctuaryBoundsTriggerRadius = Math.max(SANCTUARY_RING_TRIGGER_RADIUS, themeBoundsSphere.radius * 1.08);
+  }
+}
 
 const planetGeo = new THREE.IcosahedronGeometry(PLANET_RADIUS, 4);
 const planetColors = [];
@@ -1523,22 +2337,23 @@ registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
 
 // Visual Upgrade Phase 1 landmark hierarchy removed.
 
-const dayMonochromeSphere = createDayMonochromeSphereLandmark();
-const dayMonochromeSphereForward = DUSK_TOWER_DIR.clone()
-  .addScaledVector(SUN_DIRECTION, -DUSK_TOWER_DIR.dot(SUN_DIRECTION))
+const dayMonochromeSphere = createMonochromeSphereLandmark(DAY_MONO_SPHERE_RADIUS, 0x111111);
+const dayMonochromeSphereForward = COMPASS_DIR.clone()
+  .addScaledVector(SUN_DIRECTION, -COMPASS_DIR.dot(SUN_DIRECTION))
   .normalize();
 placeDirectedOnSphere(dayMonochromeSphere, SUN_DIRECTION, dayMonochromeSphereForward, DAY_MONO_SPHERE_CENTER_ALTITUDE, 0.0);
 scene.add(dayMonochromeSphere);
-registerThemeTriggerFromObject(dayMonochromeSphere, 0.98, 17.8, {
-  tag: 'monochrome-sphere',
-  themeMode: 'monochrome'
-});
+
+const nightMonochromeSphere = createMonochromeSphereLandmark(NIGHT_MONO_SPHERE_RADIUS, 0xffffff);
+placeDirectedOnSphere(nightMonochromeSphere, NIGHT_CENTER, NIGHT_AXIS_A, NIGHT_MONO_SPHERE_CENTER_ALTITUDE, 0.0);
+scene.add(nightMonochromeSphere);
 
 const duskTower = createDuskTowerLandmark();
+duskTower.scale.setScalar(2.8);
 const duskTowerForward = SUN_DIRECTION.clone()
-  .addScaledVector(DUSK_TOWER_DIR, -SUN_DIRECTION.dot(DUSK_TOWER_DIR))
+  .addScaledVector(COMPASS_DIR, -SUN_DIRECTION.dot(COMPASS_DIR))
   .normalize();
-placeDirectedOnSphere(duskTower, DUSK_TOWER_DIR, duskTowerForward, DUSK_TOWER_ALTITUDE, 0.0);
+placeDirectedOnSphere(duskTower, COMPASS_DIR, duskTowerForward, DUSK_TOWER_ALTITUDE, 0.0);
 scene.add(duskTower);
 
 const beaconGroup = new THREE.Group();
@@ -2020,6 +2835,22 @@ const themeState = {
   startupGrace: THEME_STARTUP_GRACE,
   clearRequired: false
 };
+const returnRouteState = {
+  phase: RETURN_ROUTE_PHASES.IDLE,
+  originTag: null,
+  targetTag: 'night-monochrome-sphere',
+  targetDirection: NIGHT_CENTER.clone(),
+  sanctuaryActivationTime: 0,
+  sanctuaryStartAltitude: 0,
+  earthApproachStartDistance: 0,
+  beamDirection: SANCTUARY_DIR.clone(),
+  spaceUpDirection: new THREE.Vector3(),
+  spaceActivationCharge: 0,
+  spaceTransition: 0,
+  spaceCameraSnapPending: false,
+  spaceParallelActive: false,
+  spaceFlightActive: false
+};
 const bookUiState = {
   open: false,
   pendingTimer: null,
@@ -2028,6 +2859,31 @@ const bookUiState = {
   pageIndex: 0,
   readPages: [],
   backend: 'local'
+};
+const catRouteState = {
+  blackBoxOpened: false,
+  catFound: false,
+  catRouteAvailable: false,
+  catFollowing: false,
+  debugPreviewActive: false,
+  reachedEarth: false,
+  reachedEarthWithCat: false,
+  hasWrittenNameInBook: false,
+  bookPlayerName: '',
+  latestBookMessageId: '',
+  bubbleActive: false,
+  bubbleTime: 0,
+  companionIntroActive: false,
+  companionIntroTime: 0,
+  companionStart: new THREE.Vector3(),
+  companionPosition: new THREE.Vector3(),
+  companionForward: new THREE.Vector3(),
+  companionUp: new THREE.Vector3()
+};
+const returnHistoryState = {
+  entries: [],
+  backend: 'local',
+  loadingPromise: null
 };
 const blackBoxUiState = {
   open: false,
@@ -2054,6 +2910,21 @@ const captureUiState = {
   blob: null,
   fileName: '',
   shutterTimer: null
+};
+const endingUiState = {
+  whiteoutActive: false,
+  whiteoutTime: 0,
+  transitionActive: false,
+  transitionTime: 0,
+  trueEnding: false,
+  trueMessageActive: false,
+  trueMessageTime: 0,
+  rollTime: 0,
+  rollStartY: 0,
+  rollEndY: 0,
+  rollAudioDelayTimer: null,
+  open: false,
+  completed: false
 };
 let lastCameraTriggerAt = 0;
 
@@ -2267,8 +3138,101 @@ function addCatPreviewAccents(catRoot, size) {
   catRoot.add(accentGroup);
 }
 
+function createCatCompanionRearVisual() {
+  const group = new THREE.Group();
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xfcfcfb });
+  const bodyShadeMat = new THREE.MeshLambertMaterial({ color: 0xf2f2ee });
+  const brownMat = new THREE.MeshLambertMaterial({ color: 0x6a4632 });
+  const innerEarMat = new THREE.MeshLambertMaterial({ color: 0xe7cdbf });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1.05, 14, 12), bodyMat);
+  body.scale.set(0.94, 0.62, 1.82);
+  body.position.set(0, 0.96, -0.08);
+  group.add(body);
+
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.86, 14, 12), bodyShadeMat);
+  shoulders.scale.set(0.82, 0.58, 0.92);
+  shoulders.position.set(0, 1.08, 0.92);
+  group.add(shoulders);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.68, 14, 12), bodyMat);
+  head.scale.set(0.82, 0.7, 0.76);
+  head.position.set(0, 1.1, 1.72);
+  group.add(head);
+
+  for (const side of [-1, 1]) {
+    const earOuter = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.42, 4), brownMat);
+    earOuter.position.set(side * 0.28, 1.52, 1.9);
+    earOuter.rotation.x = -0.1;
+    earOuter.rotation.z = side * -0.2;
+    group.add(earOuter);
+
+    const earInner = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.24, 4), innerEarMat);
+    earInner.position.set(side * 0.28, 1.48, 1.92);
+    earInner.rotation.x = -0.1;
+    earInner.rotation.z = side * -0.2;
+    group.add(earInner);
+  }
+
+  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 1.24, 4, 8), brownMat);
+  tail.position.set(0.62, 1.18, -1.48);
+  tail.rotation.z = -0.54;
+  tail.rotation.x = 0.82;
+  group.add(tail);
+
+  const hindLeft = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.72, 3, 6), bodyShadeMat);
+  hindLeft.position.set(-0.34, 0.72, -1.62);
+  hindLeft.rotation.x = Math.PI * 0.5;
+  hindLeft.rotation.z = 0.16;
+  group.add(hindLeft);
+
+  const hindRight = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.72, 3, 6), bodyShadeMat);
+  hindRight.position.set(0.34, 0.72, -1.62);
+  hindRight.rotation.x = Math.PI * 0.5;
+  hindRight.rotation.z = -0.16;
+  group.add(hindRight);
+
+  const frontLeft = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.88, 3, 6), bodyMat);
+  frontLeft.position.set(-0.28, 0.82, 2.04);
+  frontLeft.rotation.x = Math.PI * 0.5;
+  frontLeft.rotation.z = 0.08;
+  group.add(frontLeft);
+
+  const frontRight = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.88, 3, 6), bodyMat);
+  frontRight.position.set(0.28, 0.82, 2.04);
+  frontRight.rotation.x = Math.PI * 0.5;
+  frontRight.rotation.z = -0.08;
+  group.add(frontRight);
+
+  group.scale.setScalar(CAT_ROUTE_COMPANION_SCALE);
+  return group;
+}
+
+function ensureCatCompanionRearVisual() {
+  let companionRear = catPreviewAnchor.userData.companionRear;
+  if (!companionRear) {
+    companionRear = createCatCompanionRearVisual();
+    companionRear.visible = false;
+    catPreviewAnchor.userData.companionRear = companionRear;
+    catPreviewAnchor.add(companionRear);
+  }
+  return companionRear;
+}
+
+function setCatPreviewMode(mode) {
+  const previewOffset = catPreviewAnchor.userData.previewOffset;
+  const companionRear = ensureCatCompanionRearVisual();
+  if (previewOffset) {
+    previewOffset.visible = mode !== 'follow';
+  }
+  if (companionRear) {
+    companionRear.visible = mode === 'follow';
+  }
+}
+
 async function initCatPreview() {
   placeCatPreviewAnchor();
+  ensureCatCompanionRearVisual();
   try {
     const catModel = await loadStaticGlbNode('./neko.glb', 19, { excludeNodes: [16, 17, 20], unlit: true });
     const catOffset = new THREE.Group();
@@ -2299,11 +3263,139 @@ async function initCatPreview() {
       THREE.MathUtils.clamp(scaledSize.z * 0.42, 0.75, 2.1),
       1
     );
+    catPreviewShadow.visible = false;
 
+    catPreviewAnchor.userData.previewOffset = catOffset;
+    setCatPreviewMode(catRouteState.catFollowing ? 'follow' : 'preview');
     catPreviewAnchor.visible = true;
   } catch (error) {
     console.error('Failed to load cat preview:', error);
   }
+}
+
+function refreshCatRouteAvailability() {
+  catRouteState.catRouteAvailable =
+    catRouteState.blackBoxOpened &&
+    catRouteState.catFound &&
+    returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY &&
+    !catRouteState.catFollowing &&
+    !endingUiState.completed;
+}
+
+function isCatCompanionActive() {
+  return catRouteState.catFollowing || catRouteState.debugPreviewActive;
+}
+
+function setCatRouteBubbleVisible(isVisible) {
+  catRouteBubble?.classList.toggle('is-active', isVisible);
+  catRouteBubble?.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
+}
+
+function startCatRouteBubble() {
+  catRouteState.bubbleActive = true;
+  catRouteState.bubbleTime = 0;
+  setCatRouteBubbleVisible(true);
+}
+
+function startCatFollowing(contactPoint = null) {
+  catRouteState.catFollowing = true;
+  catRouteState.debugPreviewActive = false;
+  catRouteState.reachedEarthWithCat = false;
+  refreshCatRouteAvailability();
+  ensureCatCompanionRearVisual();
+  startCatRouteBubble();
+  setCatPreviewMode('follow');
+
+  const sourcePoint = contactPoint && contactPoint.lengthSq() > 0.0001
+    ? contactPoint.clone()
+    : blackBoxLandmark.position.clone();
+  const sourceUp = sourcePoint.clone().normalize();
+  catRouteState.companionStart.copy(sourcePoint).addScaledVector(sourceUp, 1.3);
+  catRouteState.companionPosition.copy(catRouteState.companionStart);
+  catRouteState.companionForward.copy(state.visualForward).normalize();
+  catRouteState.companionUp.copy(sourceUp).normalize();
+  catRouteState.companionIntroActive = true;
+  catRouteState.companionIntroTime = 0;
+
+  catPreviewAnchor.position.copy(catRouteState.companionStart);
+  catPreviewAnchor.visible = true;
+  catPreviewShadow.visible = false;
+  catPreviewAnchor.quaternion.copy(createBasisQuaternion(catRouteState.companionForward, catRouteState.companionUp));
+  catPreviewAnchor.updateMatrixWorld(true);
+}
+
+function setCatDebugPreviewEnabled(isEnabled) {
+  if (isEnabled) {
+    catRouteState.debugPreviewActive = true;
+    ensureCatCompanionRearVisual();
+    setCatPreviewMode('follow');
+    catRouteState.companionIntroActive = false;
+    catRouteState.companionPosition.copy(state.pos);
+    catRouteState.companionForward.copy(state.visualForward).normalize();
+    catRouteState.companionUp.copy(state.visualUp).normalize();
+    catPreviewAnchor.visible = true;
+    catPreviewShadow.visible = false;
+    return;
+  }
+
+  catRouteState.debugPreviewActive = false;
+  if (catRouteState.catFollowing) return;
+  setCatPreviewMode('preview');
+  placeCatPreviewAnchor();
+  catPreviewShadow.visible = false;
+  catPreviewAnchor.visible = true;
+  catPreviewAnchor.updateMatrixWorld(true);
+}
+
+function updateCatRouteBubble(dt) {
+  if (!catRouteState.bubbleActive) {
+    setCatRouteBubbleVisible(false);
+    return;
+  }
+  catRouteState.bubbleTime += dt;
+  if (catRouteState.bubbleTime >= CAT_ROUTE_BUBBLE_DURATION) {
+    catRouteState.bubbleActive = false;
+    setCatRouteBubbleVisible(false);
+  }
+}
+
+function updateCatCompanion(dt) {
+  if (!isCatCompanionActive()) return;
+  const desiredPosition = CAT_ROUTE_MOUNT_OFFSET.clone().applyQuaternion(player.quaternion).add(player.position);
+  const mountForward = state.visualForward.clone().normalize();
+  const mountUp = state.visualUp.clone().normalize();
+  if (mountForward.lengthSq() < 0.0001) {
+    mountForward.set(0, 0, 1);
+  }
+  if (mountUp.lengthSq() < 0.0001) {
+    mountUp.set(0, 1, 0);
+  }
+  const targetQuaternion = createBasisQuaternion(mountForward, mountUp);
+
+  if (catRouteState.companionIntroActive) {
+    catRouteState.companionIntroTime += dt;
+    const introT = THREE.MathUtils.clamp(catRouteState.companionIntroTime / CAT_ROUTE_JOIN_DURATION, 0, 1);
+    catRouteState.companionPosition.lerpVectors(
+      catRouteState.companionStart,
+      desiredPosition,
+      easeOutCubic(introT)
+    );
+    if (introT >= 1) {
+      catRouteState.companionIntroActive = false;
+    }
+  } else {
+    catRouteState.companionPosition.copy(desiredPosition);
+  }
+
+  catPreviewAnchor.position.copy(catRouteState.companionPosition);
+  if (catRouteState.companionIntroActive) {
+    const rotationBlend = 1 - Math.exp(-CAT_ROUTE_ROTATION_RESPONSE * dt);
+    catPreviewAnchor.quaternion.slerp(targetQuaternion, rotationBlend);
+  } else {
+    catPreviewAnchor.quaternion.copy(targetQuaternion);
+  }
+  catPreviewShadow.visible = false;
+  catPreviewAnchor.updateMatrixWorld(true);
 }
 
 let bobPhase = Math.random() * Math.PI * 2;
@@ -2325,6 +3417,10 @@ const input = {
   keyRightHeld: false,
   keyUpHeld: false,
   keyDownHeld: false,
+  arrowLeftHeld: false,
+  arrowRightHeld: false,
+  arrowUpHeld: false,
+  arrowDownHeld: false,
   stickId: null,
   stickOffset: { x: 0, y: 0 },
   stickSmooth: new THREE.Vector2(),
@@ -2386,6 +3482,19 @@ const captureImage = document.getElementById('capture-image');
 const captureClose = document.getElementById('capture-close');
 const captureSave = document.getElementById('capture-save');
 const captureShare = document.getElementById('capture-share');
+const endingWhiteout = document.getElementById('ending-whiteout');
+const endingTrueMessage = document.getElementById('ending-true-message');
+const endingOverlay = document.getElementById('ending-overlay');
+const endingPanel = document.getElementById('ending-panel');
+const endingRise = document.getElementById('ending-rise');
+const endingRollViewport = document.getElementById('ending-roll-viewport');
+const endingRollTrack = document.getElementById('ending-roll-track');
+const endingRestartTrigger = document.getElementById('ending-restart-trigger');
+const endingReturneesList = document.getElementById('ending-returnees-list');
+const endingTrueReturneesList = document.getElementById('ending-true-returnees-list');
+const endingClose = document.getElementById('ending-close');
+const catRouteBubble = document.getElementById('cat-route-bubble');
+const hud = document.getElementById('hud');
 setBlackBoxRevealImage(0);
 const visualizerBars = Array.from(document.querySelectorAll('.viz-bar'));
 const speedLockPanel = document.getElementById('speed-lock-panel');
@@ -2429,8 +3538,19 @@ function getWorldThemeFilter() {
   return 'none';
 }
 
+function hasDayNightInversion() {
+  return returnRouteState.phase === RETURN_ROUTE_PHASES.INVERTED || returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY;
+}
+
+function getActiveSunDirection(target) {
+  return target.copy(hasDayNightInversion() ? NIGHT_CENTER : SUN_DIRECTION);
+}
+
 function applyWorldTheme() {
   const isInverted = themeState.mode === 'inverted';
+  if (themeState.mode !== 'monochrome' && returnRouteState.phase === RETURN_ROUTE_PHASES.CHALLENGE) {
+    failMonochromeChallenge();
+  }
   canvas.style.filter = getWorldThemeFilter();
   applySkyPalette(isInverted ? 'inverted' : 'normal');
   const lyricColor = isInverted ? 'rgba(10, 10, 10, 0.94)' : 'rgba(249, 252, 255, 0.98)';
@@ -2451,11 +3571,13 @@ function applyWorldTheme() {
     lyricsFullText.style.setProperty('-webkit-text-fill-color', fullColor, 'important');
     lyricsFullText.style.setProperty('text-shadow', fullShadow, 'important');
   }
+  syncMonochromeBgmState();
+  syncMonochromeEffectState();
 }
 
 function getInvertedSkyWashState() {
   camera.getWorldDirection(tempCameraDir);
-  const sunView = tempCameraDir.dot(SUN_DIRECTION);
+  const sunView = tempCameraDir.dot(getActiveSunDirection(activeSunDirection));
   const dayMix = THREE.MathUtils.clamp((sunView + 0.08) / 0.62, 0, 1);
   const nightMix = THREE.MathUtils.clamp((-sunView + 0.08) / 0.72, 0, 1);
   const green = new THREE.Color(0xdfffd8);
@@ -2509,14 +3631,359 @@ function startThemeFlash(contactPoint) {
   themeState.flashScreenPoint.copy(themeFlashScreen);
 }
 
-function setWorldTheme(nextMode, contactPoint) {
-  if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
+function setWorldTheme(nextMode, contactPoint, options = {}) {
+  const force = options.force === true;
+  if (!force && (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired)) return false;
   triggerThemeDuck();
   themeState.mode = nextMode;
   themeState.cooldown = THEME_TRIGGER_COOLDOWN;
   themeState.clearRequired = true;
+  if (force) {
+    themeState.armed = true;
+    themeState.startupGrace = 0;
+  }
   applyWorldTheme();
   startThemeFlash(contactPoint);
+  return true;
+}
+
+function applyDayNightProgression() {
+  getActiveSunDirection(activeSunDirection);
+  skyMat.uniforms.sunDirection.value.copy(activeSunDirection);
+  atmosphereMat.uniforms.sunDirection.value.copy(activeSunDirection);
+  sun.position.copy(activeSunDirection).multiplyScalar(SUN_DISTANCE * 0.9);
+  sunLight.position.copy(activeSunDirection).multiplyScalar(SUN_DISTANCE);
+  nightFill.position.copy(activeSunDirection).multiplyScalar(-SUN_DISTANCE * 0.8);
+}
+
+function getSanctuaryTriggerWorldPosition(target) {
+  return sanctuary.localToWorld(target.set(0, SANCTUARY_TRIGGER_HEIGHT, 0));
+}
+
+function getSanctuaryRingTriggerWorldPosition(target) {
+  return sanctuary.localToWorld(target.set(0, SANCTUARY_RING_TRIGGER_HEIGHT, 0));
+}
+
+function getSanctuaryBoundsTriggerWorldPosition(target) {
+  return sanctuary.localToWorld(target.copy(sanctuaryBoundsTriggerLocalCenter));
+}
+
+function getSanctuaryBeamBaseWorldPosition(target) {
+  return sanctuary.localToWorld(target.set(0, 66, 0));
+}
+
+function getSanctuaryBeamTipWorldPosition(target) {
+  return sanctuary.localToWorld(target.set(0, SANCTUARY_BEAM_HEIGHT + 66, 0));
+}
+
+function getSanctuaryBeamDirection(target) {
+  getSanctuaryBeamBaseWorldPosition(sanctuaryBeamBaseWorld);
+  getSanctuaryBeamTipWorldPosition(sanctuaryBeamTopWorld);
+  return target.copy(sanctuaryBeamTopWorld).sub(sanctuaryBeamBaseWorld).normalize();
+}
+
+function projectVectorOnPlane(target, vector, planeNormal) {
+  return target.copy(vector).addScaledVector(planeNormal, -vector.dot(planeNormal));
+}
+
+function getBeamAxisDistanceForPosition(position) {
+  if (returnRouteState.beamDirection.lengthSq() < 0.0001) return 0;
+  getSanctuaryBeamBaseWorldPosition(sanctuaryBeamBaseWorld);
+  return Math.max(
+    0,
+    beamRelativeWorld.copy(position).sub(sanctuaryBeamBaseWorld).dot(returnRouteState.beamDirection)
+  );
+}
+
+function getBeamClosestPointForPosition(position, target) {
+  const axisDistance = getBeamAxisDistanceForPosition(position);
+  return target.copy(sanctuaryBeamBaseWorld).addScaledVector(returnRouteState.beamDirection, axisDistance);
+}
+
+function getEarthReturnWorldPosition(target) {
+  getSanctuaryBeamTipWorldPosition(sanctuaryBeamTopWorld);
+  return target.copy(sanctuaryBeamTopWorld)
+    .addScaledVector(returnRouteState.beamDirection, EARTH_RETURN_DISTANCE - SANCTUARY_BEAM_HEIGHT);
+}
+
+function triggerEarthEnding() {
+  if (endingUiState.completed) return;
+  catRouteState.reachedEarth = true;
+  catRouteState.reachedEarthWithCat = catRouteState.catFollowing;
+  endingUiState.trueEnding = catRouteState.reachedEarthWithCat;
+  endingUiState.trueMessageActive = false;
+  endingUiState.trueMessageTime = 0;
+  endingUiState.completed = true;
+  endingUiState.whiteoutActive = true;
+  endingUiState.whiteoutTime = 0;
+  endingUiState.transitionTime = 0;
+  endingUiState.rollTime = 0;
+  catRouteState.bubbleActive = false;
+  setCatRouteBubbleVisible(false);
+  bgm.pause();
+  bgmPending = false;
+  setRecordSpinning(false);
+  refreshTrackControls();
+  updateLyricsUi();
+  stopEffectAudio(monochromeClockAudio, true);
+  stopEffectAudio(spaceReturnAudio, true);
+  playEffectAudio(earthArrivalAudio, { restart: true });
+  setEndingOverlayOpen(false);
+  setEndingOverlayTransitioning(false);
+  if (endingRise) {
+    endingRise.style.animation = 'none';
+    endingRise.offsetHeight;
+    endingRise.style.animation = '';
+  }
+  endingWhiteout?.classList.add('is-active');
+  earthReturn.earth.visible = false;
+  earthReturn.glow.visible = false;
+  refreshCatRouteAvailability();
+  if (catRouteState.hasWrittenNameInBook) {
+    renderEndingReturnHistory([
+      {
+        id: `pending-return-${Date.now()}`,
+        playerName: catRouteState.bookPlayerName,
+        isTrueReturn: catRouteState.reachedEarthWithCat,
+        createdAt: new Date().toISOString()
+      },
+      ...returnHistoryState.entries
+    ]);
+  }
+  void recordReturnHistoryForEnding();
+  syncEndingPresentation();
+}
+
+function ensureSpaceParallelUpDirection() {
+  if (returnRouteState.beamDirection.lengthSq() < 0.0001) return;
+  if (returnRouteState.spaceUpDirection.lengthSq() >= 0.0001) return;
+
+  projectVectorOnPlane(spaceUpCandidate, state.visualUp, returnRouteState.beamDirection);
+  if (spaceUpCandidate.lengthSq() < 0.0001) {
+    getBeamClosestPointForPosition(state.pos, beamClosestPointWorld);
+    beamRelativeWorld.copy(state.pos).sub(beamClosestPointWorld);
+    projectVectorOnPlane(spaceUpCandidate, beamRelativeWorld, returnRouteState.beamDirection);
+  }
+  if (spaceUpCandidate.lengthSq() < 0.0001) {
+    spaceUpCandidate.crossVectors(
+      Math.abs(returnRouteState.beamDirection.dot(WORLD_UP)) < 0.92 ? WORLD_UP : fallbackSpaceAxis,
+      returnRouteState.beamDirection
+    );
+  }
+  if (spaceUpCandidate.lengthSq() < 0.0001) {
+    spaceUpCandidate.set(0, 1, 0);
+  }
+  returnRouteState.spaceUpDirection.copy(spaceUpCandidate).normalize();
+  alignSpaceForwardToReturnTarget(returnRouteState.spaceUpDirection);
+  state.radialSpeed = 0;
+}
+
+function alignSpaceForwardToReturnTarget(controlUp = returnRouteState.spaceUpDirection) {
+  if (controlUp.lengthSq() < 0.0001) return;
+
+  let hasTarget = false;
+  if (returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY) {
+    getEarthReturnWorldPosition(earthWorldPosition);
+    earthGuideDirection.copy(earthWorldPosition).sub(state.pos);
+    if (earthGuideDirection.lengthSq() > 0.0001) {
+      projectVectorOnPlane(spaceForwardProjected, earthGuideDirection, controlUp);
+      hasTarget = spaceForwardProjected.lengthSq() > 0.0001;
+    }
+  }
+  if (!hasTarget) {
+    projectVectorOnPlane(spaceForwardProjected, returnRouteState.beamDirection, controlUp);
+  }
+  if (spaceForwardProjected.lengthSq() > 0.0001) {
+    state.forward.copy(spaceForwardProjected).normalize();
+    state.visualForward.copy(state.forward);
+  }
+}
+
+function getMonochromeSphereHit(start, end) {
+  if (hasDayNightInversion()) return null;
+
+  const candidates = [
+    {
+      object: dayMonochromeSphere,
+      tag: 'day-monochrome-sphere',
+      originTag: 'day',
+      radius: DAY_MONO_SPHERE_RADIUS
+    },
+    {
+      object: nightMonochromeSphere,
+      tag: 'night-monochrome-sphere',
+      originTag: 'night',
+      radius: NIGHT_MONO_SPHERE_RADIUS
+    }
+  ];
+
+  let best = null;
+  let bestT = Infinity;
+  for (const candidate of candidates) {
+    candidate.object.getWorldPosition(monochromeSphereWorld);
+    const t = getSegmentSphereHit(
+      start,
+      end,
+      monochromeSphereWorld,
+      candidate.radius + PLAYER_THEME_HIT_RADIUS + 1.8
+    );
+    if (t !== null && t < bestT) {
+      bestT = t;
+      best = {
+        ...candidate,
+        point: themeClosestPoint.clone()
+      };
+    }
+  }
+  return best;
+}
+
+function armMonochromeChallenge(originTag) {
+  returnRouteState.phase = RETURN_ROUTE_PHASES.CHALLENGE;
+  returnRouteState.originTag = originTag;
+  returnRouteState.targetTag = originTag === 'night' ? 'day-monochrome-sphere' : 'night-monochrome-sphere';
+  returnRouteState.targetDirection.copy(originTag === 'night' ? SUN_DIRECTION : NIGHT_CENTER);
+}
+
+function failMonochromeChallenge() {
+  returnRouteState.phase = RETURN_ROUTE_PHASES.IDLE;
+  returnRouteState.originTag = null;
+  returnRouteState.targetTag = 'night-monochrome-sphere';
+  returnRouteState.targetDirection.copy(NIGHT_CENTER);
+  returnRouteState.sanctuaryActivationTime = 0;
+  returnRouteState.sanctuaryStartAltitude = 0;
+  returnRouteState.earthApproachStartDistance = 0;
+  returnRouteState.spaceUpDirection.set(0, 0, 0);
+  returnRouteState.spaceActivationCharge = 0;
+  returnRouteState.spaceTransition = 0;
+  returnRouteState.spaceCameraSnapPending = false;
+  returnRouteState.spaceParallelActive = false;
+  returnRouteState.spaceFlightActive = false;
+  refreshCatRouteAvailability();
+}
+
+function completeMonochromeChallenge(contactPoint) {
+  returnRouteState.phase = RETURN_ROUTE_PHASES.INVERTED;
+  returnRouteState.originTag = null;
+  returnRouteState.targetTag = 'night-monochrome-sphere';
+  returnRouteState.targetDirection.copy(NIGHT_CENTER);
+  returnRouteState.sanctuaryActivationTime = 0;
+  returnRouteState.sanctuaryStartAltitude = 0;
+  returnRouteState.earthApproachStartDistance = 0;
+  returnRouteState.spaceUpDirection.set(0, 0, 0);
+  returnRouteState.spaceActivationCharge = 0;
+  returnRouteState.spaceTransition = 0;
+  returnRouteState.spaceCameraSnapPending = false;
+  returnRouteState.spaceParallelActive = false;
+  returnRouteState.spaceFlightActive = false;
+  themeState.mode = 'normal';
+  themeState.cooldown = THEME_TRIGGER_COOLDOWN;
+  themeState.clearRequired = true;
+  applyDayNightProgression();
+  applyWorldTheme();
+  startThemeFlash(contactPoint);
+  refreshCatRouteAvailability();
+}
+
+function activateSanctuary(contactPoint) {
+  if (returnRouteState.phase !== RETURN_ROUTE_PHASES.INVERTED) return;
+  returnRouteState.phase = RETURN_ROUTE_PHASES.SANCTUARY;
+  returnRouteState.sanctuaryActivationTime = 0;
+  returnRouteState.sanctuaryStartAltitude = Math.max(0, getAltitude(state.pos));
+  returnRouteState.earthApproachStartDistance = 0;
+  returnRouteState.spaceUpDirection.set(0, 0, 0);
+  returnRouteState.spaceActivationCharge = 0;
+  returnRouteState.spaceTransition = 0;
+  returnRouteState.spaceCameraSnapPending = false;
+  returnRouteState.spaceParallelActive = false;
+  returnRouteState.spaceFlightActive = false;
+  getSanctuaryBeamDirection(returnRouteState.beamDirection);
+  if (returnRouteState.beamDirection.lengthSq() < 0.0001) {
+    returnRouteState.beamDirection.copy(SANCTUARY_DIR).normalize();
+  }
+  triggerThemeDuck();
+  startThemeFlash(contactPoint);
+  refreshCatRouteAvailability();
+}
+
+function debugJumpToSanctuaryCheckpoint() {
+  closeCaptureOverlay();
+  closeBookOverlay();
+  closeBlackBoxOverlay();
+  closeEndingOverlay();
+  setSiteMenuOpen(false);
+
+  stopEffectAudio(monochromeClockAudio, true);
+  stopEffectAudio(earthArrivalAudio, true);
+  stopEffectAudio(endingRollAudio, true);
+  stopEffectAudio(spaceReturnAudio, true);
+
+  themeState.mode = 'normal';
+  themeState.cooldown = 0;
+  themeState.flashActive = false;
+  themeState.flashTime = 0;
+  themeState.armed = true;
+  themeState.startupGrace = 0;
+  themeState.clearRequired = false;
+
+  returnRouteState.phase = RETURN_ROUTE_PHASES.INVERTED;
+  returnRouteState.originTag = null;
+  returnRouteState.targetTag = 'night-monochrome-sphere';
+  returnRouteState.targetDirection.copy(NIGHT_CENTER);
+  returnRouteState.sanctuaryActivationTime = 0;
+  returnRouteState.sanctuaryStartAltitude = 0;
+  returnRouteState.earthApproachStartDistance = 0;
+  returnRouteState.spaceUpDirection.set(0, 0, 0);
+  returnRouteState.spaceActivationCharge = 0;
+  returnRouteState.spaceTransition = 0;
+  returnRouteState.spaceCameraSnapPending = false;
+  returnRouteState.spaceParallelActive = false;
+  returnRouteState.spaceFlightActive = false;
+
+  const sanctuaryUp = sanctuary.position.clone().normalize();
+  const sanctuaryForward = new THREE.Vector3(0, 0, 1)
+    .applyQuaternion(sanctuary.quaternion)
+    .addScaledVector(sanctuaryUp, 0)
+    .normalize();
+  const startDirection = sanctuaryUp.clone().addScaledVector(sanctuaryForward, -0.1).normalize();
+  const startAltitude = Math.max(P.NEUTRAL_ALTITUDE, 10);
+  state.pos.copy(startDirection).multiplyScalar(getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + startAltitude);
+
+  const towardSanctuary = sanctuary.position.clone()
+    .sub(state.pos)
+    .addScaledVector(startDirection, -sanctuary.position.clone().sub(state.pos).dot(startDirection));
+  if (towardSanctuary.lengthSq() > 0.0001) {
+    state.forward.copy(towardSanctuary.normalize());
+  } else {
+    state.forward.copy(sanctuaryForward);
+  }
+  state.visualForward.copy(state.forward);
+  state.visualUp.copy(startDirection);
+  state.radialSpeed = 0;
+  state.currentSpeed = Math.max(state.speedLock, 40);
+  state.holdAccel = 0;
+  state.diveTimer = 0;
+  state.diveEnergy = 0;
+  state.onGround = false;
+  state.wasOnGround = false;
+  state.flaps = P.MAX_FLAPS;
+  state.bodyPitch = 0;
+  state.roll = 0;
+  state.screwSpinActive = false;
+  state.screwSpinTime = 0;
+  state.screwSpinAngle = 0;
+  state.screwForwardOffset = 0;
+  state.cameraYawTarget = 0;
+  state.cameraPitchTarget = 0;
+  state.cameraYawOffset = 0;
+  state.cameraPitchOffset = 0;
+  state.cameraLift = 0;
+
+  activateSanctuary(sanctuary.position.clone());
+  applyDayNightProgression();
+  applyWorldTheme();
+  syncMusicUiVisibility();
+  syncSpaceReturnAudioState();
 }
 
 function toggleWorldInversion(contactPoint) {
@@ -2524,18 +3991,75 @@ function toggleWorldInversion(contactPoint) {
   setWorldTheme(nextMode, contactPoint);
 }
 
-function activateMonochromeWorld(contactPoint) {
-  setWorldTheme('monochrome', contactPoint);
+function activateMonochromeWorld(contactPoint, options = {}) {
+  return setWorldTheme('monochrome', contactPoint, options);
+}
+
+function handleMonochromeSphereTrigger(hit, contactPoint) {
+  if (returnRouteState.phase === RETURN_ROUTE_PHASES.CHALLENGE) {
+    if (hit.tag === returnRouteState.targetTag) {
+      completeMonochromeChallenge(contactPoint);
+      return;
+    }
+    if (hit.tag === `${returnRouteState.originTag}-monochrome-sphere`) {
+      return;
+    }
+  }
+
+  if (activateMonochromeWorld(contactPoint, { force: true })) {
+    armMonochromeChallenge(hit.originTag);
+  }
 }
 
 function checkThemeTriggerCollision(start, end) {
-  if (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired) return;
+  const monochromeHit = getMonochromeSphereHit(start, end);
+  if (monochromeHit) {
+    handleMonochromeSphereTrigger(monochromeHit, monochromeHit.point);
+    return;
+  }
+
+  if (returnRouteState.phase === RETURN_ROUTE_PHASES.INVERTED) {
+    getSanctuaryTriggerWorldPosition(sanctuaryTriggerWorld);
+    let sanctuaryHit = getSegmentSphereHit(
+      start,
+      end,
+      sanctuaryTriggerWorld,
+      SANCTUARY_TRIGGER_RADIUS + PLAYER_THEME_HIT_RADIUS
+    );
+    getSanctuaryRingTriggerWorldPosition(sanctuaryRingTriggerWorld);
+    const sanctuaryRingHit = getSegmentSphereHit(
+      start,
+      end,
+      sanctuaryRingTriggerWorld,
+      SANCTUARY_RING_TRIGGER_RADIUS + PLAYER_THEME_HIT_RADIUS
+    );
+    if (sanctuaryHit === null || (sanctuaryRingHit !== null && sanctuaryRingHit < sanctuaryHit)) {
+      sanctuaryHit = sanctuaryRingHit;
+    }
+    getSanctuaryBoundsTriggerWorldPosition(sanctuaryTriggerWorld);
+    const sanctuaryBoundsHit = getSegmentSphereHit(
+      start,
+      end,
+      sanctuaryTriggerWorld,
+      sanctuaryBoundsTriggerRadius + PLAYER_THEME_HIT_RADIUS
+    );
+    if (sanctuaryHit === null || (sanctuaryBoundsHit !== null && sanctuaryBoundsHit < sanctuaryHit)) {
+      sanctuaryHit = sanctuaryBoundsHit;
+    }
+    if (sanctuaryHit !== null) {
+      activateSanctuary(themeClosestPoint.clone());
+      return;
+    }
+  }
+
+  if (!hasDayNightInversion() && (!themeState.armed || themeState.cooldown > 0 || themeState.clearRequired)) return;
 
   let bestT = Infinity;
   let bestPoint = null;
   let bestZone = null;
 
   for (const zone of themeTriggerZones) {
+    if (zone.canTrigger && !zone.canTrigger()) continue;
     zone.object.updateMatrixWorld(true);
     themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
     const t = getSegmentSphereHit(start, end, themeZoneCenter, zone.radius + PLAYER_THEME_HIT_RADIUS);
@@ -2547,11 +4071,21 @@ function checkThemeTriggerCollision(start, end) {
   }
 
   if (bestPoint) {
-    if (bestZone?.themeMode === 'monochrome') {
-      activateMonochromeWorld(bestPoint);
-    } else {
+    if (returnRouteState.phase === RETURN_ROUTE_PHASES.CHALLENGE) {
+      failMonochromeChallenge();
       toggleWorldInversion(bestPoint);
+      if (bestZone?.onTrigger) {
+        bestZone.onTrigger(bestPoint.clone());
+      }
+      return;
     }
+    if (hasDayNightInversion()) {
+      if (bestZone?.tag === 'book' || bestZone?.tag === 'black-box') {
+        bestZone.onTrigger?.(bestPoint.clone());
+      }
+      return;
+    }
+    toggleWorldInversion(bestPoint);
     if (bestZone?.onTrigger) {
       bestZone.onTrigger(bestPoint.clone());
     }
@@ -2801,9 +4335,12 @@ function stopCurrentTrack() {
   if (bgm.paused || bgmPending) return;
   bgm.pause();
   bgm.currentTime = 0;
+  bgmPausedForMonochrome = false;
+  bgmSuppressedForMonochrome = false;
+  bgm.muted = false;
   themeDuckTimer = 0;
   themeFilterTimer = 0;
-  applyBgmOutputVolume(BGM_BASE_VOLUME);
+  applyBgmOutputVolume(getBgmBaseTargetVolume());
   applyBgmFilterFrequency(THEME_FILTER_BASE_FREQ);
   setRecordSpinning(false);
   refreshTrackControls();
@@ -2867,6 +4404,134 @@ function setCaptureOverlayOpen(isOpen) {
   if (isOpen) resetCameraLook(true);
 }
 
+function syncEndingPresentation() {
+  const endingVisible = endingUiState.whiteoutActive || endingUiState.transitionActive || endingUiState.open;
+  const showTrueMessage = endingUiState.whiteoutActive && endingUiState.trueMessageActive;
+  if (canvas) {
+    canvas.style.opacity = endingVisible ? '0' : '';
+  }
+  if (hud) {
+    hud.style.opacity = endingVisible ? '0' : '';
+    hud.style.pointerEvents = endingVisible ? 'none' : '';
+  }
+  if (endingOverlay) {
+    endingOverlay.style.position = 'fixed';
+    endingOverlay.style.inset = '0';
+    endingOverlay.style.zIndex = '40';
+    endingOverlay.style.overflow = 'hidden';
+    endingOverlay.style.opacity = endingVisible ? '1' : '0';
+    endingOverlay.style.pointerEvents = endingUiState.open ? 'auto' : 'none';
+    endingOverlay.style.background = endingUiState.open ? '#000' : 'rgba(0, 0, 0, 0)';
+  }
+  if (endingWhiteout) {
+    endingWhiteout.classList.toggle('is-true-message', showTrueMessage);
+    endingWhiteout.setAttribute('aria-hidden', endingVisible ? 'false' : 'true');
+  }
+  if (endingTrueMessage) {
+    endingTrueMessage.style.opacity = showTrueMessage ? '1' : '0';
+  }
+  if (endingPanel) {
+    endingPanel.style.position = 'absolute';
+    endingPanel.style.inset = '0';
+    endingPanel.style.width = '100%';
+    endingPanel.style.height = '100%';
+    endingPanel.style.maxWidth = 'none';
+    endingPanel.style.padding = '0';
+    endingPanel.style.margin = '0';
+    endingPanel.style.border = '0';
+    endingPanel.style.borderRadius = '0';
+    endingPanel.style.boxShadow = 'none';
+    endingPanel.style.backdropFilter = 'none';
+    endingPanel.style.background = 'none';
+    endingPanel.style.pointerEvents = endingUiState.open ? 'auto' : 'none';
+  }
+  if (endingRise) {
+    endingRise.style.position = 'absolute';
+    endingRise.style.inset = '0';
+    endingRise.style.pointerEvents = 'none';
+    endingRise.style.background = 'none';
+    endingRise.style.opacity = '0';
+  }
+  if (endingRollViewport) {
+    endingRollViewport.style.position = 'absolute';
+    endingRollViewport.style.inset = '0';
+    endingRollViewport.style.overflow = 'hidden';
+    endingRollViewport.style.background = endingUiState.open ? '#000' : 'transparent';
+    endingRollViewport.style.pointerEvents = endingUiState.open ? 'auto' : 'none';
+  }
+  if (endingRollTrack) {
+    endingRollTrack.style.position = 'absolute';
+    endingRollTrack.style.left = '50%';
+    endingRollTrack.style.top = '0';
+    endingRollTrack.style.width = '100%';
+    endingRollTrack.style.display = 'flex';
+    endingRollTrack.style.flexDirection = 'column';
+    endingRollTrack.style.alignItems = 'center';
+    endingRollTrack.style.gap = '14vh';
+    endingRollTrack.style.padding = '18vh 0 34vh';
+    endingRollTrack.style.animation = 'none';
+    endingRollTrack.style.willChange = 'transform';
+    endingRollTrack.style.pointerEvents = endingUiState.open ? 'auto' : 'none';
+  }
+  if (endingRestartTrigger) {
+    const showRestart = endingUiState.open && endingUiState.rollTime >= ENDING_ROLL_DURATION;
+    endingRestartTrigger.classList.toggle('is-visible', showRestart);
+  }
+  if (endingClose) {
+    endingClose.style.display = 'none';
+  }
+}
+
+function layoutEndingRoll(reset = false) {
+  if (!endingRollTrack) return;
+  const viewportHeight = Math.max(window.innerHeight, 1);
+  const startY = viewportHeight + 60;
+  const endY = -(endingRollTrack.scrollHeight + viewportHeight * 0.3);
+  endingUiState.rollStartY = startY;
+  endingUiState.rollEndY = endY;
+  if (reset) {
+    endingUiState.rollTime = 0;
+  }
+  const progress = THREE.MathUtils.clamp(endingUiState.rollTime / ENDING_ROLL_DURATION, 0, 1);
+  const y = THREE.MathUtils.lerp(endingUiState.rollStartY, endingUiState.rollEndY, progress);
+  endingRollTrack.style.transform = `translate3d(-50%, ${y.toFixed(1)}px, 0)`;
+}
+
+function setEndingOverlayOpen(isOpen) {
+  endingUiState.open = isOpen;
+  endingOverlay?.classList.toggle('is-open', isOpen);
+  endingOverlay?.setAttribute(
+    'aria-hidden',
+    (isOpen || endingUiState.transitionActive) ? 'false' : 'true'
+  );
+  if (isOpen) {
+    queueEndingRollAudio();
+  } else {
+    clearEndingRollAudioDelay();
+    stopEffectAudio(endingRollAudio, true);
+  }
+  syncEndingPresentation();
+  if (isOpen) {
+    layoutEndingRoll(true);
+    resetCameraLook(true);
+  }
+}
+
+function setEndingOverlayTransitioning(isTransitioning) {
+  endingUiState.transitionActive = isTransitioning;
+  endingOverlay?.classList.toggle('is-transitioning', isTransitioning);
+  endingOverlay?.setAttribute(
+    'aria-hidden',
+    (endingUiState.open || isTransitioning) ? 'false' : 'true'
+  );
+  if (endingRise) {
+    endingRise.style.transition = 'none';
+    endingRise.style.opacity = '0';
+    endingRise.style.transform = 'translate3d(0, 100%, 0)';
+  }
+  syncEndingPresentation();
+}
+
 function clearCaptureObjectUrl() {
   if (captureUiState.objectUrl) {
     URL.revokeObjectURL(captureUiState.objectUrl);
@@ -2876,6 +4541,38 @@ function clearCaptureObjectUrl() {
 
 function closeCaptureOverlay() {
   setCaptureOverlayOpen(false);
+}
+
+function closeEndingOverlay() {
+  clearEndingRollAudioDelay();
+  endingUiState.whiteoutActive = false;
+  endingUiState.whiteoutTime = 0;
+  endingUiState.transitionTime = 0;
+  endingUiState.trueEnding = false;
+  endingUiState.trueMessageActive = false;
+  endingUiState.trueMessageTime = 0;
+  endingUiState.rollTime = 0;
+  endingWhiteout?.classList.remove('is-active');
+  endingWhiteout?.classList.remove('is-true-message');
+  if (endingRise) {
+    endingRise.style.animation = 'none';
+    endingRise.offsetHeight;
+    endingRise.style.animation = '';
+  }
+  stopEffectAudio(monochromeClockAudio, true);
+  stopEffectAudio(earthArrivalAudio, true);
+  stopEffectAudio(endingRollAudio, true);
+  stopEffectAudio(spaceReturnAudio, true);
+  setEndingOverlayTransitioning(false);
+  setEndingOverlayOpen(false);
+  layoutEndingRoll(true);
+}
+
+function restartFlightFromEnding() {
+  const nextUrl = new URL(window.location.href);
+  nextUrl.search = '';
+  nextUrl.hash = '';
+  window.location.assign(nextUrl.pathname || '/');
 }
 
 function buildCaptureFileName() {
@@ -3110,6 +4807,49 @@ function cloneMessages(messages) {
   return messages.map((entry) => ({ ...entry }));
 }
 
+function cloneReturnHistoryEntries(entries) {
+  return entries.map((entry) => ({ ...entry }));
+}
+
+function persistBookPlayerState() {
+  try {
+    window.localStorage.setItem(
+      BOOK_PLAYER_STATE_STORAGE_KEY,
+      JSON.stringify({
+        hasWrittenNameInBook: catRouteState.hasWrittenNameInBook,
+        bookPlayerName: catRouteState.bookPlayerName,
+        latestBookMessageId: catRouteState.latestBookMessageId
+      })
+    );
+  } catch (error) {
+    console.warn('Failed to persist book player state:', error);
+  }
+}
+
+function loadBookPlayerState() {
+  try {
+    const stored = window.localStorage.getItem(BOOK_PLAYER_STATE_STORAGE_KEY);
+    if (!stored) return;
+    const parsed = JSON.parse(stored);
+    const bookPlayerName = typeof parsed?.bookPlayerName === 'string' ? parsed.bookPlayerName.trim() : '';
+    catRouteState.hasWrittenNameInBook = Boolean(parsed?.hasWrittenNameInBook) && bookPlayerName.length > 0;
+    catRouteState.bookPlayerName = catRouteState.hasWrittenNameInBook ? bookPlayerName : '';
+    catRouteState.latestBookMessageId = typeof parsed?.latestBookMessageId === 'string'
+      ? parsed.latestBookMessageId
+      : '';
+  } catch (error) {
+    console.warn('Failed to load book player state:', error);
+  }
+}
+
+function rememberBookPlayerState(name, entryId = '') {
+  const trimmedName = typeof name === 'string' ? name.trim() : '';
+  catRouteState.hasWrittenNameInBook = trimmedName.length > 0;
+  catRouteState.bookPlayerName = trimmedName;
+  catRouteState.latestBookMessageId = entryId ? String(entryId) : '';
+  persistBookPlayerState();
+}
+
 function isSupabaseConfigured() {
   return Boolean(
     typeof supabaseConfig?.url === 'string' &&
@@ -3123,9 +4863,18 @@ function getSupabaseTableName() {
   return (supabaseConfig?.table || 'book_messages').trim() || 'book_messages';
 }
 
+function getSupabaseReturnHistoryTableName() {
+  return (supabaseConfig?.returnHistoryTable || 'return_histories').trim() || 'return_histories';
+}
+
 function getSupabaseRestUrl(query = '') {
   const baseUrl = supabaseConfig.url.replace(/\/+$/, '');
   return `${baseUrl}/rest/v1/${encodeURIComponent(getSupabaseTableName())}${query}`;
+}
+
+function getSupabaseReturnHistoryRestUrl(query = '') {
+  const baseUrl = supabaseConfig.url.replace(/\/+$/, '');
+  return `${baseUrl}/rest/v1/${encodeURIComponent(getSupabaseReturnHistoryTableName())}${query}`;
 }
 
 function getSupabaseHeaders(prefer = '') {
@@ -3159,6 +4908,222 @@ function normalizeMessageEntry(entry) {
     message: entry.message,
     createdAt: String(entry.createdAt ?? entry.created_at ?? new Date().toISOString())
   };
+}
+
+function shouldIncludeBookMessageEntry(entry) {
+  const trimmedName = typeof entry?.name === 'string' ? entry.name.trim() : '';
+  return !BOOK_RECORD_EXCLUDED_NAMES.has(trimmedName);
+}
+
+function filterVisibleBookMessages(entries) {
+  return entries.filter((entry) => shouldIncludeBookMessageEntry(entry));
+}
+
+function purgeExcludedBookMessagesFromStorage() {
+  try {
+    const stored = window.localStorage.getItem(BOOK_MESSAGE_STORAGE_KEY);
+    if (!stored) return;
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return;
+    const normalizedMessages = parsed.map(normalizeMessageEntry).filter(Boolean);
+    const visibleMessages = filterVisibleBookMessages(normalizedMessages);
+    if (visibleMessages.length === normalizedMessages.length) return;
+    window.localStorage.setItem(BOOK_MESSAGE_STORAGE_KEY, JSON.stringify(visibleMessages));
+  } catch (error) {
+    console.warn('Failed to purge excluded book messages:', error);
+  }
+}
+
+function normalizeReturnHistoryEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const playerName = typeof entry.playerName === 'string'
+    ? entry.playerName.trim()
+    : typeof entry.player_name === 'string'
+    ? entry.player_name.trim()
+    : '';
+  const rawTrueReturn = entry.isTrueReturn ?? entry.is_true_return ?? false;
+  const isTrueReturn = rawTrueReturn === true
+    || rawTrueReturn === 'true'
+    || rawTrueReturn === 1
+    || rawTrueReturn === '1';
+  return {
+    id: String(entry.id ?? `return-${Date.now()}-${Math.floor(Math.random() * 10000)}`),
+    playerName,
+    isTrueReturn,
+    createdAt: String(entry.createdAt ?? entry.created_at ?? new Date().toISOString())
+  };
+}
+
+function shouldIncludeEndingCreditName(name) {
+  const trimmed = typeof name === 'string' ? name.trim() : '';
+  return trimmed.length > 0 && !ENDING_CREDITS_EXCLUDED_NAMES.has(trimmed);
+}
+
+function renderEndingReturnHistory(entries = returnHistoryState.entries) {
+  const sortedEntries = cloneReturnHistoryEntries(entries)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const returnees = sortedEntries
+    .filter((entry) => !entry.isTrueReturn)
+    .map((entry) => entry.playerName)
+    .filter(shouldIncludeEndingCreditName);
+  const trueReturnees = sortedEntries
+    .filter((entry) => entry.isTrueReturn)
+    .map((entry) => entry.playerName)
+    .filter(shouldIncludeEndingCreditName);
+  if (endingReturneesList) {
+    endingReturneesList.textContent = returnees.length ? returnees.join('\n') : '未確認';
+  }
+  if (endingTrueReturneesList) {
+    endingTrueReturneesList.textContent = trueReturnees.length ? trueReturnees.join('\n') : '未確認';
+  }
+}
+
+async function loadReturnHistories(options = {}) {
+  const force = Boolean(options.force);
+  if (!force && returnHistoryState.loadingPromise) {
+    return returnHistoryState.loadingPromise;
+  }
+  if (!force && returnHistoryState.entries.length) {
+    return cloneReturnHistoryEntries(returnHistoryState.entries);
+  }
+
+  const loader = (async () => {
+    if (isSupabaseConfigured()) {
+      try {
+        const response = await fetchWithTimeout(
+          getSupabaseReturnHistoryRestUrl(`?select=id,player_name,is_true_return,created_at&order=created_at.desc&limit=${RETURN_HISTORY_LIMIT}`),
+          {
+            headers: getSupabaseHeaders(),
+            cache: 'no-store'
+          }
+        );
+        if (!response.ok) {
+          throw new Error(`supabase-return-load-${response.status}`);
+        }
+        const payload = await response.json();
+        const entries = (Array.isArray(payload) ? payload : [])
+          .map(normalizeReturnHistoryEntry)
+          .filter(Boolean)
+          .slice(0, RETURN_HISTORY_LIMIT);
+        returnHistoryState.backend = 'supabase';
+        returnHistoryState.entries = entries;
+        renderEndingReturnHistory(entries);
+        return cloneReturnHistoryEntries(entries);
+      } catch (error) {
+        console.warn('Failed to load Supabase return histories, falling back locally:', error);
+        returnHistoryState.backend = 'degraded';
+      }
+    }
+
+    let entries = [];
+    try {
+      const stored = window.localStorage.getItem(RETURN_HISTORY_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          entries = parsed.map(normalizeReturnHistoryEntry).filter(Boolean);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load local return histories:', error);
+    }
+
+    entries = entries
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, RETURN_HISTORY_LIMIT);
+    returnHistoryState.entries = entries;
+    renderEndingReturnHistory(entries);
+    return cloneReturnHistoryEntries(entries);
+  })();
+
+  returnHistoryState.loadingPromise = loader.finally(() => {
+    returnHistoryState.loadingPromise = null;
+  });
+  return returnHistoryState.loadingPromise;
+}
+
+async function saveReturnHistory(payload) {
+  const playerName = typeof payload?.playerName === 'string' ? payload.playerName.trim() : '';
+  const isTrueReturn = Boolean(payload?.isTrueReturn);
+
+  if (isSupabaseConfigured()) {
+    try {
+      const response = await fetchWithTimeout(
+        getSupabaseReturnHistoryRestUrl('?select=id,player_name,is_true_return,created_at'),
+        {
+          method: 'POST',
+          headers: getSupabaseHeaders('return=representation'),
+          body: JSON.stringify([
+            {
+              player_name: playerName || null,
+              is_true_return: isTrueReturn
+            }
+          ])
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`supabase-return-save-${response.status}`);
+      }
+      const payloadRows = await response.json();
+      const savedEntry = normalizeReturnHistoryEntry(Array.isArray(payloadRows) ? payloadRows[0] : null);
+      if (!savedEntry) {
+        throw new Error('supabase-return-save-empty');
+      }
+      returnHistoryState.backend = 'supabase';
+      returnHistoryState.entries = await loadReturnHistories({ force: true });
+      renderEndingReturnHistory(returnHistoryState.entries);
+      return savedEntry;
+    } catch (error) {
+      console.warn('Failed to save Supabase return history, falling back locally:', error);
+      returnHistoryState.backend = 'degraded';
+    }
+  } else {
+    returnHistoryState.backend = 'local';
+  }
+
+  let entries = [];
+  try {
+    const stored = window.localStorage.getItem(RETURN_HISTORY_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        entries = parsed.map(normalizeReturnHistoryEntry).filter(Boolean);
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to read local return history before save:', error);
+  }
+
+  const entry = {
+    id: `return-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+    playerName,
+    isTrueReturn,
+    createdAt: new Date().toISOString()
+  };
+  const nextEntries = [entry, ...entries]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, RETURN_HISTORY_LIMIT);
+  returnHistoryState.entries = nextEntries;
+  try {
+    window.localStorage.setItem(RETURN_HISTORY_STORAGE_KEY, JSON.stringify(nextEntries));
+  } catch (error) {
+    console.warn('Failed to save local return history:', error);
+  }
+  renderEndingReturnHistory(nextEntries);
+  return { ...entry };
+}
+
+async function recordReturnHistoryForEnding() {
+  try {
+    await saveReturnHistory({
+      playerName: catRouteState.hasWrittenNameInBook ? catRouteState.bookPlayerName : '',
+      isTrueReturn: catRouteState.reachedEarthWithCat
+    });
+    await loadReturnHistories({ force: true });
+  } catch (error) {
+    console.warn('Failed to record return history:', error);
+  }
 }
 
 function setBookStatusDefault() {
@@ -3206,10 +5171,10 @@ async function loadMessages(options = {}) {
         throw new Error(`supabase-load-${response.status}`);
       }
       const payload = await response.json();
-      const messages = (Array.isArray(payload) ? payload : [])
+      const messages = filterVisibleBookMessages((Array.isArray(payload) ? payload : [])
         .map(normalizeMessageEntry)
         .filter(Boolean)
-        .slice(0, BOOK_MESSAGE_LIMIT);
+      ).slice(0, BOOK_MESSAGE_LIMIT);
 
       bookUiState.backend = 'supabase';
       setBookStatusDefault();
@@ -3231,7 +5196,7 @@ async function loadMessages(options = {}) {
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length) {
-        messages = parsed.map(normalizeMessageEntry).filter(Boolean);
+        messages = filterVisibleBookMessages(parsed.map(normalizeMessageEntry).filter(Boolean));
       }
     }
   } catch (error) {
@@ -3296,7 +5261,7 @@ async function saveMessage(payload) {
     message: trimmedMessage,
     createdAt: new Date().toISOString()
   };
-  const nextMessages = [entry, ...messages].slice(0, BOOK_MESSAGE_LIMIT);
+  const nextMessages = filterVisibleBookMessages([entry, ...messages]).slice(0, BOOK_MESSAGE_LIMIT);
   bookUiState.lastMessages = nextMessages;
   try {
     window.localStorage.setItem(BOOK_MESSAGE_STORAGE_KEY, JSON.stringify(nextMessages));
@@ -3539,12 +5504,14 @@ function handleBlackBoxTrigger(contactPoint) {
   if (contactPoint) {
     blackBoxUiState.lastTriggerPoint.copy(contactPoint);
     blackBoxUiState.lastTriggerAngle = blackBoxUiState.routeAngle;
-    const groundedDirection = contactPoint.clone().normalize();
-    const groundedForward = state.forward.clone()
-      .addScaledVector(groundedDirection, -state.forward.dot(groundedDirection))
-      .normalize();
-    blackBoxUiState.mode = 'grounded';
-    placeGroundedBlackBox(groundedDirection, groundedForward);
+  }
+  refreshCatRouteAvailability();
+  if (catRouteState.catFollowing) {
+    return;
+  }
+  if (catRouteState.catRouteAvailable) {
+    startCatFollowing(contactPoint ?? blackBoxLandmark.position);
+    return;
   }
   if (blackBoxUiState.pendingTimer !== null) {
     window.clearTimeout(blackBoxUiState.pendingTimer);
@@ -3555,6 +5522,7 @@ function handleBlackBoxTrigger(contactPoint) {
 
 function handlePointerDown(e) {
   e.preventDefault();
+  primeEffectAudioFromGesture();
 
   if (e.target instanceof Element && e.target.closest('.ui-control')) {
     maybeEnableAppleTouchEffects();
@@ -3842,6 +5810,18 @@ captureClose?.addEventListener('click', (e) => {
   closeCaptureOverlay();
 });
 
+endingClose?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeEndingOverlay();
+});
+
+endingRestartTrigger?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  restartFlightFromEnding();
+});
+
 captureShare?.addEventListener('click', async (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -3950,6 +5930,9 @@ blackBoxOpen?.addEventListener('click', (e) => {
     blackBoxCaption.textContent = repeatEncounter ? 'うーん、やっぱりかわいい。' : 'かわいいのがいた。';
   }
   blackBoxUiState.openedOnce = true;
+  catRouteState.blackBoxOpened = true;
+  catRouteState.catFound = true;
+  refreshCatRouteAvailability();
   blackBoxUiState.revealCount += 1;
   setBlackBoxView('reveal');
 });
@@ -3995,10 +5978,11 @@ bookForm?.addEventListener('submit', async (e) => {
   }
 
   try {
-    await saveMessage({
+    const savedEntry = await saveMessage({
       name: bookNameInput?.value ?? '',
       message
     });
+    rememberBookPlayerState(bookNameInput?.value ?? '', savedEntry?.id ?? '');
     bookUiState.pageIndex = 0;
     renderBookReadPage(await loadMessages({ force: true }));
     setBookView('read');
@@ -4072,6 +6056,8 @@ refreshTrackControls();
 refreshLyricsToggle();
 refreshCaptureShareButton();
 setMenuPage(activeMenuPage);
+syncMusicUiVisibility();
+syncSpaceReturnAudioState();
 
 window.addEventListener('gesturestart', (e) => e.preventDefault());
 window.addEventListener('gesturechange', (e) => e.preventDefault());
@@ -4116,30 +6102,48 @@ window.addEventListener('keydown', (e) => {
     closeCaptureOverlay();
     closeBookOverlay();
     closeBlackBoxOverlay();
+    closeEndingOverlay();
     setSiteMenuOpen(false);
+  }
+  if (e.code === 'KeyC' && e.shiftKey) {
+    e.preventDefault();
+    setCatDebugPreviewEnabled(!catRouteState.debugPreviewActive);
+  }
+  if (e.code === 'KeyV' && e.shiftKey) {
+    e.preventDefault();
+    debugJumpToSanctuaryCheckpoint();
   }
   if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
     e.preventDefault();
+    primeEffectAudioFromGesture();
     ensureBgm();
   }
   if (e.code === 'Space') {
     input.accelKeyHeld = true;
     refreshAccelHeld();
   }
-  if (e.code === 'KeyW' || e.code === 'ArrowUp') input.keyUpHeld = true;
-  if (e.code === 'KeyS' || e.code === 'ArrowDown') input.keyDownHeld = true;
-  if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.keyLeftHeld = true;
-  if (e.code === 'KeyD' || e.code === 'ArrowRight') input.keyRightHeld = true;
+  if (e.code === 'KeyW') input.keyUpHeld = true;
+  if (e.code === 'KeyS') input.keyDownHeld = true;
+  if (e.code === 'KeyA') input.keyLeftHeld = true;
+  if (e.code === 'KeyD') input.keyRightHeld = true;
+  if (e.code === 'ArrowUp') input.arrowUpHeld = true;
+  if (e.code === 'ArrowDown') input.arrowDownHeld = true;
+  if (e.code === 'ArrowLeft') input.arrowLeftHeld = true;
+  if (e.code === 'ArrowRight') input.arrowRightHeld = true;
 });
 window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') {
     input.accelKeyHeld = false;
     refreshAccelHeld();
   }
-  if (e.code === 'KeyW' || e.code === 'ArrowUp') input.keyUpHeld = false;
-  if (e.code === 'KeyS' || e.code === 'ArrowDown') input.keyDownHeld = false;
-  if (e.code === 'KeyA' || e.code === 'ArrowLeft') input.keyLeftHeld = false;
-  if (e.code === 'KeyD' || e.code === 'ArrowRight') input.keyRightHeld = false;
+  if (e.code === 'KeyW') input.keyUpHeld = false;
+  if (e.code === 'KeyS') input.keyDownHeld = false;
+  if (e.code === 'KeyA') input.keyLeftHeld = false;
+  if (e.code === 'KeyD') input.keyRightHeld = false;
+  if (e.code === 'ArrowUp') input.arrowUpHeld = false;
+  if (e.code === 'ArrowDown') input.arrowDownHeld = false;
+  if (e.code === 'ArrowLeft') input.arrowLeftHeld = false;
+  if (e.code === 'ArrowRight') input.arrowRightHeld = false;
 });
 
 function spawnDustPuffs(position, up, forward) {
@@ -4305,18 +6309,30 @@ function updatePlayer(dt) {
     -applyDeadzone(input.stickOffset.y / STICK_LIMIT, P.STICK_DEADZONE) * P.STICK_SCALE
   );
   const keyTarget = tempKey.set(
-    (input.keyLeftHeld ? 1 : 0) - (input.keyRightHeld ? 1 : 0),
-    (input.keyUpHeld ? 1 : 0) - (input.keyDownHeld ? 1 : 0)
+    ((input.keyLeftHeld ? 1 : 0) - (input.keyRightHeld ? 1 : 0))
+      + (((input.arrowLeftHeld ? 1 : 0) - (input.arrowRightHeld ? 1 : 0)) * KEYBOARD_ARROW_STICK_SCALE_X),
+    ((input.keyUpHeld ? 1 : 0) - (input.keyDownHeld ? 1 : 0))
+      + (((input.arrowUpHeld ? 1 : 0) - (input.arrowDownHeld ? 1 : 0)) * KEYBOARD_ARROW_STICK_SCALE_Y)
   );
+  keyTarget.clampScalar(-1, 1);
+  const keyboardInputActive =
+    input.keyLeftHeld ||
+    input.keyRightHeld ||
+    input.keyUpHeld ||
+    input.keyDownHeld ||
+    input.arrowLeftHeld ||
+    input.arrowRightHeld ||
+    input.arrowUpHeld ||
+    input.arrowDownHeld;
   const stickBlend = 1 - Math.exp(-(input.stickId !== null ? P.STICK_RESPONSE : P.STICK_RETURN) * dt);
-  const keyBlend = 1 - Math.exp(-(((input.keyLeftHeld || input.keyRightHeld || input.keyUpHeld || input.keyDownHeld) ? P.STICK_RESPONSE : P.STICK_RETURN) * 0.8) * dt);
+  const keyBlend = 1 - Math.exp(-((keyboardInputActive ? P.STICK_RESPONSE : P.STICK_RETURN) * 0.8) * dt);
   input.stickSmooth.lerp(stickTarget, stickBlend);
   input.keySmooth.lerp(keyTarget, keyBlend);
   if (input.stickId === null) {
     input.stickSmooth.y = THREE.MathUtils.damp(input.stickSmooth.y, 0, P.STICK_VERTICAL_RELEASE, dt);
     if (Math.abs(input.stickSmooth.y) < 0.01) input.stickSmooth.y = 0;
   }
-  if (!(input.keyLeftHeld || input.keyRightHeld || input.keyUpHeld || input.keyDownHeld)) {
+  if (!keyboardInputActive) {
     input.keySmooth.x = THREE.MathUtils.damp(input.keySmooth.x, 0, P.STICK_RETURN, dt);
     input.keySmooth.y = THREE.MathUtils.damp(input.keySmooth.y, 0, P.STICK_VERTICAL_RELEASE, dt);
     if (Math.abs(input.keySmooth.x) < 0.01) input.keySmooth.x = 0;
@@ -4336,13 +6352,97 @@ function updatePlayer(dt) {
   input.turnY = 0;
 
   const up = state.pos.clone().normalize();
-  state.forward.applyAxisAngle(up, yawDelta).normalize();
-  state.forward.addScaledVector(up, -state.forward.dot(up)).normalize();
+  const currentAltitude = getAltitude(state.pos);
+  const wasSpaceFlightActive = returnRouteState.spaceFlightActive;
+  const wasSpaceParallelActive = returnRouteState.spaceParallelActive;
+  if (returnRouteState.phase !== RETURN_ROUTE_PHASES.SANCTUARY) {
+    returnRouteState.spaceUpDirection.set(0, 0, 0);
+    returnRouteState.spaceActivationCharge = 0;
+    returnRouteState.spaceTransition = 0;
+    returnRouteState.spaceCameraSnapPending = false;
+    returnRouteState.spaceParallelActive = false;
+    returnRouteState.spaceFlightActive = false;
+  } else {
+    if (!returnRouteState.spaceFlightActive) {
+      const sanctuaryClimb = currentAltitude - Math.max(0, returnRouteState.sanctuaryStartAltitude);
+      const reachedReturnAltitude =
+        currentAltitude >= SPACE_RETURN_MODE_ALTITUDE &&
+        sanctuaryClimb >= SPACE_RETURN_MODE_ALTITUDE * 0.9 &&
+        state.radialSpeed >= SPACE_RETURN_MIN_ASCENT_SPEED;
+      if (reachedReturnAltitude) {
+        returnRouteState.spaceActivationCharge = Math.min(
+          SPACE_RETURN_ACTIVATION_HOLD,
+          returnRouteState.spaceActivationCharge + dt
+        );
+      } else {
+        returnRouteState.spaceActivationCharge = Math.max(0, returnRouteState.spaceActivationCharge - dt * 2.4);
+      }
+      if (returnRouteState.spaceActivationCharge >= SPACE_RETURN_ACTIVATION_HOLD) {
+        returnRouteState.spaceFlightActive = true;
+        returnRouteState.spaceParallelActive = true;
+      }
+    }
+    if (!returnRouteState.spaceParallelActive) {
+      returnRouteState.spaceUpDirection.set(0, 0, 0);
+    }
+  }
+  returnRouteState.spaceTransition = THREE.MathUtils.damp(
+    returnRouteState.spaceTransition,
+    returnRouteState.spaceFlightActive ? 1 : 0,
+    returnRouteState.spaceFlightActive ? SPACE_TRANSITION_IN_RATE : SPACE_TRANSITION_OUT_RATE,
+    dt
+  );
+  if (returnRouteState.spaceFlightActive && !wasSpaceFlightActive) {
+    ensureSpaceParallelUpDirection();
+    alignSpaceForwardToReturnTarget(returnRouteState.spaceUpDirection);
+    returnRouteState.spaceCameraSnapPending = false;
+    state.cameraYawTarget = 0;
+    state.cameraPitchTarget = 0;
+    state.cameraYawOffset = 0;
+    state.cameraPitchOffset = 0;
+    state.cameraLift = 0;
+    state.bodyPitch = 0;
+    state.visualForward.copy(state.forward);
+  }
+  if (returnRouteState.spaceParallelActive && !wasSpaceParallelActive) {
+    ensureSpaceParallelUpDirection();
+    alignSpaceForwardToReturnTarget(returnRouteState.spaceUpDirection);
+    state.bodyPitch = 0;
+    state.visualForward.copy(state.forward);
+  }
+  const controlUp = returnRouteState.spaceParallelActive
+    ? returnRouteState.spaceUpDirection
+    : up;
+  state.forward.applyAxisAngle(controlUp, yawDelta).normalize();
+  state.forward.addScaledVector(controlUp, -state.forward.dot(controlUp)).normalize();
+  if (returnRouteState.spaceParallelActive && returnRouteState.beamDirection.lengthSq() > 0.0001 && state.forward.lengthSq() < 0.0001) {
+    projectVectorOnPlane(state.forward, returnRouteState.beamDirection, controlUp).normalize();
+  }
   if (state.forward.lengthSq() < 0.0001) {
-    state.forward.set(0, 0, 1).addScaledVector(up, -up.z).normalize();
+    projectVectorOnPlane(state.forward, spaceLocalForward, controlUp).normalize();
+  }
+  if (state.forward.lengthSq() < 0.0001) {
+    state.forward.crossVectors(
+      controlUp,
+      Math.abs(controlUp.dot(spaceLocalForward)) < 0.92 ? spaceLocalForward : WORLD_UP
+    ).normalize();
+  }
+  let earthGuideInfluence = 0;
+  if (returnRouteState.spaceParallelActive) {
+    getEarthReturnWorldPosition(earthWorldPosition);
+    earthGuideDirection.copy(earthWorldPosition).sub(state.pos);
+    projectVectorOnPlane(earthGuideProjected, earthGuideDirection, controlUp);
+    if (earthGuideProjected.lengthSq() > 0.0001) {
+      earthGuideProjected.normalize();
+      const inputStrength = THREE.MathUtils.clamp(Math.max(Math.abs(turnIntent), Math.abs(climbInput)), 0, 1);
+      earthGuideInfluence = 1 - Math.min(1, inputStrength * EARTH_GUIDE_INPUT_RELIEF);
+      const alignBlend = 1 - Math.exp(-EARTH_GUIDE_TURN_RATE * earthGuideInfluence * dt);
+      state.forward.lerp(earthGuideProjected, alignBlend).normalize();
+    }
   }
 
-  const right = new THREE.Vector3().crossVectors(up, state.forward).normalize();
+  const right = new THREE.Vector3();
+  right.crossVectors(controlUp, state.forward).normalize();
   if (right.lengthSq() < 0.0001) {
     right.set(1, 0, 0);
   }
@@ -4392,20 +6492,38 @@ function updatePlayer(dt) {
       state.radialSpeed += climbInput * P.STICK_DESCEND * dt;
       state.radialSpeed = THREE.MathUtils.lerp(state.radialSpeed, descendTarget, descendBlend);
     } else if (state.diveTimer <= 0) {
-      const altitude = getAltitude(state.pos);
-      const excessAltitude = Math.max(0, altitude - P.NEUTRAL_ALTITUDE);
-      const neutralTarget = excessAltitude > 0
-        ? -THREE.MathUtils.clamp(
-          P.NEUTRAL_DESCEND_MIN + excessAltitude * 0.12,
-          P.NEUTRAL_DESCEND_MIN,
-          P.NEUTRAL_DESCEND_MAX
-        )
-        : 0;
-      const neutralResponse = state.radialSpeed > neutralTarget
-        ? P.NEUTRAL_ASCENT_BRAKE
-        : P.NEUTRAL_RETURN;
-      const neutralBlend = 1 - Math.exp(-neutralResponse * dt);
-      state.radialSpeed = THREE.MathUtils.lerp(state.radialSpeed, neutralTarget, neutralBlend);
+      if (returnRouteState.spaceParallelActive) {
+        getBeamClosestPointForPosition(state.pos, beamClosestPointWorld);
+        const beamAltitude = beamRelativeWorld.copy(state.pos).sub(beamClosestPointWorld).dot(controlUp);
+        const altitudeOffset = Math.abs(beamAltitude) <= SPACE_PARALLEL_RETURN_DEADZONE
+          ? 0
+          : beamAltitude - Math.sign(beamAltitude) * SPACE_PARALLEL_RETURN_DEADZONE;
+        const neutralTarget = THREE.MathUtils.clamp(
+          -altitudeOffset * SPACE_PARALLEL_RETURN_RATE,
+          -SPACE_PARALLEL_RETURN_MAX,
+          SPACE_PARALLEL_RETURN_MAX
+        );
+        const neutralResponse = Math.abs(state.radialSpeed) > Math.abs(neutralTarget)
+          ? P.NEUTRAL_ASCENT_BRAKE
+          : P.NEUTRAL_RETURN;
+        const neutralBlend = 1 - Math.exp(-neutralResponse * dt);
+        state.radialSpeed = THREE.MathUtils.lerp(state.radialSpeed, neutralTarget, neutralBlend);
+      } else {
+        const altitude = getAltitude(state.pos);
+        const excessAltitude = Math.max(0, altitude - P.NEUTRAL_ALTITUDE);
+        const neutralTarget = excessAltitude > 0
+          ? -THREE.MathUtils.clamp(
+            P.NEUTRAL_DESCEND_MIN + excessAltitude * 0.12,
+            P.NEUTRAL_DESCEND_MIN,
+            P.NEUTRAL_DESCEND_MAX
+          )
+          : 0;
+        const neutralResponse = state.radialSpeed > neutralTarget
+          ? P.NEUTRAL_ASCENT_BRAKE
+          : P.NEUTRAL_RETURN;
+        const neutralBlend = 1 - Math.exp(-neutralResponse * dt);
+        state.radialSpeed = THREE.MathUtils.lerp(state.radialSpeed, neutralTarget, neutralBlend);
+      }
     }
   } else {
     state.radialSpeed = 0;
@@ -4415,43 +6533,60 @@ function updatePlayer(dt) {
   const maxAscentSpeed = cruiseSpeed * Math.tan(P.MAX_ASCENT_ANGLE);
   state.radialSpeed = Math.min(state.radialSpeed, maxAscentSpeed);
   const orbitRadius = state.pos.length();
-  const moveAngle = (cruiseSpeed * dt) / orbitRadius;
-  const nextUp = up.clone().applyAxisAngle(right, moveAngle).normalize();
+  let nextUp = up.clone();
+  let nextRadius = orbitRadius;
+  let surfaceRadius = getSurfaceRadius(nextUp) + PLAYER_CLEARANCE;
 
-  state.forward.applyAxisAngle(right, moveAngle).normalize();
-  state.forward.addScaledVector(nextUp, -state.forward.dot(nextUp)).normalize();
-
-  let nextRadius = orbitRadius + state.radialSpeed * dt;
-
-  const surfaceRadius = getSurfaceRadius(nextUp) + PLAYER_CLEARANCE;
-  let surfaceGap = nextRadius - surfaceRadius;
-  if (!state.onGround && surfaceGap < P.SOFT_GROUND_RANGE) {
-    const repel = THREE.MathUtils.clamp(1 - surfaceGap / P.SOFT_GROUND_RANGE, 0, 1);
-    const repelSq = repel * repel;
-    state.radialSpeed += repelSq * P.SOFT_GROUND_FORCE * dt;
-    if (state.radialSpeed < 0) {
-      state.radialSpeed = THREE.MathUtils.lerp(state.radialSpeed, 0, repelSq * P.SOFT_GROUND_DAMP * dt);
-    }
-    nextRadius = Math.max(nextRadius, surfaceRadius + P.SOFT_GROUND_MIN_ALT);
-    surfaceGap = nextRadius - surfaceRadius;
-  }
-
-  const canLand = !input.accelHeld
-    && Math.abs(climbInput) < 0.08
-    && cruiseSpeed < P.GROUND_SPEED + 0.45
-    && surfaceGap <= P.SOFT_GROUND_LAND_ALT;
-
-  if (canLand) {
-    nextRadius = surfaceRadius;
-    state.radialSpeed = 0;
-    state.onGround = true;
-    state.flaps = P.MAX_FLAPS;
-    state.diveEnergy = 0;
-  } else {
+  if (returnRouteState.spaceParallelActive) {
     state.onGround = false;
-  }
+    state.flaps = P.MAX_FLAPS;
+    state.pos.addScaledVector(state.forward, cruiseSpeed * dt);
+    state.pos.addScaledVector(controlUp, state.radialSpeed * dt);
+    if (earthGuideProjected.lengthSq() > 0.0001 && earthGuideInfluence > 0.0001) {
+      state.pos.addScaledVector(earthGuideProjected, EARTH_GUIDE_PULL_SPEED * earthGuideInfluence * dt);
+    }
+    nextUp = controlUp.clone();
+    nextRadius = state.pos.length();
+    surfaceRadius = nextRadius;
+  } else {
+    const moveAngle = (cruiseSpeed * dt) / orbitRadius;
+    nextUp = up.clone().applyAxisAngle(right, moveAngle).normalize();
 
-  state.pos.copy(nextUp).multiplyScalar(nextRadius);
+    state.forward.applyAxisAngle(right, moveAngle).normalize();
+    state.forward.addScaledVector(nextUp, -state.forward.dot(nextUp)).normalize();
+
+    nextRadius = orbitRadius + state.radialSpeed * dt;
+
+    surfaceRadius = getSurfaceRadius(nextUp) + PLAYER_CLEARANCE;
+    let surfaceGap = nextRadius - surfaceRadius;
+    if (!state.onGround && surfaceGap < P.SOFT_GROUND_RANGE) {
+      const repel = THREE.MathUtils.clamp(1 - surfaceGap / P.SOFT_GROUND_RANGE, 0, 1);
+      const repelSq = repel * repel;
+      state.radialSpeed += repelSq * P.SOFT_GROUND_FORCE * dt;
+      if (state.radialSpeed < 0) {
+        state.radialSpeed = THREE.MathUtils.lerp(state.radialSpeed, 0, repelSq * P.SOFT_GROUND_DAMP * dt);
+      }
+      nextRadius = Math.max(nextRadius, surfaceRadius + P.SOFT_GROUND_MIN_ALT);
+      surfaceGap = nextRadius - surfaceRadius;
+    }
+
+    const canLand = !input.accelHeld
+      && Math.abs(climbInput) < 0.08
+      && cruiseSpeed < P.GROUND_SPEED + 0.45
+      && surfaceGap <= P.SOFT_GROUND_LAND_ALT;
+
+    if (canLand) {
+      nextRadius = surfaceRadius;
+      state.radialSpeed = 0;
+      state.onGround = true;
+      state.flaps = P.MAX_FLAPS;
+      state.diveEnergy = 0;
+    } else {
+      state.onGround = false;
+    }
+
+    state.pos.copy(nextUp).multiplyScalar(nextRadius);
+  }
   const signedTurn = Math.atan2(
     new THREE.Vector3().crossVectors(prevForward, state.forward).dot(nextUp),
     THREE.MathUtils.clamp(prevForward.dot(state.forward), -1, 1)
@@ -4482,17 +6617,23 @@ function updatePlayer(dt) {
     state.screwForwardOffset = 0;
   }
 
-  const posePitchTarget = getSeagullPosePitchTarget(state.glideVisual, state.radialSpeed, cruiseSpeed, climbInput);
+  const posePitchTarget = returnRouteState.spaceParallelActive
+    ? 0
+    : getSeagullPosePitchTarget(state.glideVisual, state.radialSpeed, cruiseSpeed, climbInput);
   const poseNoseUp = Math.max(0, -posePitchTarget);
   const neutralBodyPitch = THREE.MathUtils.lerp(0, P.CRUISE_BODY_PITCH, state.glideVisual);
-  const bodyPitchTarget = THREE.MathUtils.clamp(
-    Math.atan2(state.radialSpeed, Math.max(cruiseSpeed, 1)) - descendInput * P.DESCEND_INPUT_PITCH + neutralBodyPitch,
-    -Math.PI * 0.5,
-    Math.max(0, P.MAX_BODY_PITCH - poseNoseUp)
-  );
+  const bodyPitchTarget = returnRouteState.spaceParallelActive
+    ? 0
+    : THREE.MathUtils.clamp(
+      Math.atan2(state.radialSpeed, Math.max(cruiseSpeed, 1)) - descendInput * P.DESCEND_INPUT_PITCH + neutralBodyPitch,
+      -Math.PI * 0.5,
+      Math.max(0, P.MAX_BODY_PITCH - poseNoseUp)
+    );
   const bodyPitchResponse = bodyPitchTarget < state.bodyPitch ? P.BODY_DESCEND_PITCH_RESPONSE : P.BODY_PITCH_RESPONSE;
   state.bodyPitch = THREE.MathUtils.damp(state.bodyPitch, bodyPitchTarget, bodyPitchResponse, dt);
-  const flightForward = state.forward.clone().applyAxisAngle(right, -state.bodyPitch).normalize();
+  const flightForward = returnRouteState.spaceParallelActive
+    ? state.forward.clone()
+    : state.forward.clone().applyAxisAngle(right, -state.bodyPitch).normalize();
   const lookQuat = createBasisQuaternion(flightForward, nextUp);
   const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), state.roll + state.screwSpinAngle);
   player.quaternion.copy(lookQuat).multiply(rollQuat);
@@ -4505,11 +6646,16 @@ function updatePlayer(dt) {
   const shadowDirection = screwVisualPos.clone().normalize();
   const shadowRadius = getSurfaceRadius(shadowDirection) + 0.06;
   const altitude = Math.max(0, nextRadius - surfaceRadius);
-  const shadowScale = THREE.MathUtils.clamp(1.1 - altitude * 0.16, 0.34, 1.08);
-  shadow.position.copy(shadowDirection).multiplyScalar(shadowRadius);
-  shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shadowDirection);
-  shadow.scale.set(shadowScale * 1.15, shadowScale * 0.8, 1);
-  shadow.material.opacity = THREE.MathUtils.clamp(0.24 - altitude * 0.055, 0.05, 0.22);
+  if (returnRouteState.spaceParallelActive) {
+    shadow.visible = false;
+  } else {
+    shadow.visible = true;
+    const shadowScale = THREE.MathUtils.clamp(1.1 - altitude * 0.16, 0.34, 1.08);
+    shadow.position.copy(shadowDirection).multiplyScalar(shadowRadius);
+    shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), shadowDirection);
+    shadow.scale.set(shadowScale * 1.15, shadowScale * 0.8, 1);
+    shadow.material.opacity = THREE.MathUtils.clamp(0.24 - altitude * 0.055, 0.05, 0.22);
+  }
 
   if (!state.wasOnGround && state.onGround) {
     spawnDustPuffs(state.pos, nextUp, state.forward);
@@ -4557,9 +6703,287 @@ function updateClouds(dt) {
   }
 }
 
+function updateDuskTowerCompass(dt) {
+  const rotor = duskTower.userData.rotor;
+  if (!rotor) return;
+
+  const lockToMonochromeTarget =
+    themeState.mode === 'monochrome' &&
+    returnRouteState.phase === RETURN_ROUTE_PHASES.CHALLENGE;
+
+  let targetDirection = null;
+  let targetAngleOffset = 0;
+
+  if (lockToMonochromeTarget) {
+    targetDirection = returnRouteState.targetDirection;
+  } else if (
+    returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY &&
+    blackBoxUiState.openedOnce &&
+    blackBoxUiState.mode === 'grounded'
+  ) {
+    targetDirection = blackBoxLandmark.position;
+    targetAngleOffset = Math.PI;
+  }
+
+  if (!targetDirection) {
+    rotor.rotation.y += dt * COMPASS_SPIN_RATE;
+    return;
+  }
+
+  compassTargetProjected.copy(targetDirection)
+    .normalize()
+    .addScaledVector(COMPASS_DIR, -targetDirection.clone().normalize().dot(COMPASS_DIR));
+  if (compassTargetProjected.lengthSq() < 0.0001) return;
+  compassTargetProjected.normalize();
+
+  compassTargetLocal.copy(compassTargetProjected).applyQuaternion(duskTower.quaternion.clone().invert());
+  compassTargetLocal.y = 0;
+  if (compassTargetLocal.lengthSq() < 0.0001) return;
+  compassTargetLocal.normalize();
+
+  const targetAngle = Math.atan2(compassTargetLocal.x, compassTargetLocal.z) + targetAngleOffset;
+  const delta = THREE.MathUtils.euclideanModulo(targetAngle - rotor.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+  rotor.rotation.y += delta * (1 - Math.exp(-COMPASS_SETTLE_RATE * dt));
+}
+
+function updateSanctuaryActivation(dt) {
+  if (returnRouteState.phase !== RETURN_ROUTE_PHASES.SANCTUARY) {
+    returnRouteState.sanctuaryActivationTime = 0;
+    sanctuaryLight.intensity = 1.55;
+    sanctuaryBeam.visible = false;
+    sanctuaryBeam.material.opacity = 0.0;
+    sanctuaryPulseMat.opacity = 0.72;
+    sanctuaryLaunchBeam.visible = false;
+    sanctuaryLaunchGlow.visible = false;
+    sanctuaryLaunchBeam.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
+    sanctuaryLaunchGlow.scale.set(SANCTUARY_BEAM_THICKNESS_SCALE, 0.02, SANCTUARY_BEAM_THICKNESS_SCALE);
+    sanctuaryLaunchMat.opacity = 0.0;
+    sanctuaryLaunchGlowMat.opacity = 0.0;
+    for (const marker of sanctuaryLaunchMarkers) {
+      marker.visible = false;
+      marker.material.opacity = 0.0;
+    }
+    return;
+  }
+
+  returnRouteState.sanctuaryActivationTime += dt;
+  const activationTime = Math.min(returnRouteState.sanctuaryActivationTime, SANCTUARY_ACTIVATION_DURATION);
+  const activation = THREE.MathUtils.smoothstep(
+    activationTime / SANCTUARY_ACTIVATION_DURATION,
+    0,
+    1
+  );
+  const beamProgress = THREE.MathUtils.smoothstep(
+    THREE.MathUtils.clamp((activationTime - SANCTUARY_ACTIVATION_DURATION * 0.28) / (SANCTUARY_ACTIVATION_DURATION * 0.72), 0, 1),
+    0,
+    1
+  );
+  sanctuaryLight.intensity = THREE.MathUtils.lerp(1.55, 4.2, activation);
+  sanctuaryBeam.visible = activation > 0.02;
+  sanctuaryBeam.material.opacity = THREE.MathUtils.lerp(0.0, 0.58, activation);
+  sanctuaryPulseMat.opacity = THREE.MathUtils.lerp(0.72, 0.98, activation);
+  sanctuaryLaunchBeam.visible = beamProgress > 0.001;
+  sanctuaryLaunchGlow.visible = beamProgress > 0.001;
+  sanctuaryLaunchBeam.scale.set(
+    SANCTUARY_BEAM_THICKNESS_SCALE,
+    THREE.MathUtils.lerp(0.02, 1.0, beamProgress),
+    SANCTUARY_BEAM_THICKNESS_SCALE
+  );
+  sanctuaryLaunchGlow.scale.set(
+    SANCTUARY_BEAM_THICKNESS_SCALE,
+    THREE.MathUtils.lerp(0.02, 1.0, beamProgress),
+    SANCTUARY_BEAM_THICKNESS_SCALE
+  );
+  sanctuaryLaunchMat.opacity = THREE.MathUtils.lerp(0.0, 0.88, beamProgress);
+  sanctuaryLaunchGlowMat.opacity = THREE.MathUtils.lerp(0.0, 0.3, beamProgress);
+  const markerScroll = (returnRouteState.sanctuaryActivationTime * 0.19) % 1;
+  const markerSpan = SANCTUARY_BEAM_HEIGHT - 180;
+  for (const marker of sanctuaryLaunchMarkers) {
+    const cycle = (marker.userData.offset + markerScroll) % 1;
+    const pulse = 0.72 + Math.sin((cycle + beamProgress) * Math.PI * 2) * 0.18;
+    marker.visible = beamProgress > 0.06;
+    marker.position.y = 90 + cycle * markerSpan;
+    marker.scale.setScalar(THREE.MathUtils.lerp(0.86, 1.14, cycle) * SANCTUARY_BEAM_THICKNESS_SCALE);
+    marker.material.opacity = marker.visible
+      ? THREE.MathUtils.lerp(0.0, 0.46, beamProgress) * pulse
+      : 0.0;
+  }
+}
+
+function updateSpaceEnvironment() {
+  const spaceBlend = returnRouteState.spaceTransition;
+  const targetFar = THREE.MathUtils.lerp(DEFAULT_CAMERA_FAR, SPACE_CAMERA_FAR, spaceBlend);
+  if (Math.abs(camera.far - targetFar) > 0.1) {
+    camera.far = targetFar;
+    camera.updateProjectionMatrix();
+  }
+  renderer.setClearColor(blendedClearColor.copy(defaultClearColor).lerp(spaceClearColor, spaceBlend), 1);
+  if (scene.fog) {
+    scene.fog.near = THREE.MathUtils.lerp(DEFAULT_FOG_NEAR, SPACE_FOG_NEAR, spaceBlend);
+    scene.fog.far = THREE.MathUtils.lerp(DEFAULT_FOG_FAR, SPACE_FOG_FAR, spaceBlend);
+  }
+  sky.visible = spaceBlend < 0.92;
+  atmosphere.visible = spaceBlend < 0.88;
+  sun.visible = spaceBlend < 0.8;
+  if (spaceBlend < 0.92) {
+    const targetSkyScale = 1;
+    if (Math.abs(sky.scale.x - targetSkyScale) > 0.001) {
+      sky.scale.setScalar(targetSkyScale);
+    }
+  }
+}
+
+function updateSpaceStars(dt) {
+  const useStars = returnRouteState.spaceTransition > 0.02 && returnRouteState.beamDirection.lengthSq() > 0.0001;
+  spaceStars.visible = useStars;
+  spaceAsteroidField.visible = useStars;
+  if (!useStars) return;
+  const transitionOpacity = THREE.MathUtils.smoothstep(returnRouteState.spaceTransition, 0.12, 0.72);
+  spaceStars.material.opacity = 0.9 * transitionOpacity;
+
+  spaceStars.position.copy(camera.position);
+  spaceStars.quaternion.setFromUnitVectors(spaceLocalForward, returnRouteState.beamDirection);
+  spaceAsteroidField.position.copy(camera.position);
+  spaceAsteroidField.quaternion.setFromUnitVectors(spaceLocalForward, returnRouteState.beamDirection);
+
+  const positions = spaceStarsGeometry.attributes.position.array;
+  const scrollSpeed = Math.max(
+    110,
+    (state.currentSpeed + Math.max(0, state.radialSpeed) + 20) * SPACE_STAR_SPEED_MULTIPLIER
+  );
+  for (let i = 0; i < SPACE_STAR_COUNT; i++) {
+    const i3 = i * 3;
+    positions[i3 + 2] -= scrollSpeed * spaceStarDrift[i] * dt;
+    if (positions[i3 + 2] < -SPACE_STAR_DEPTH * 0.5) {
+      resetSpaceStar(i, SPACE_STAR_DEPTH * 0.5);
+    }
+  }
+  spaceStarsGeometry.attributes.position.needsUpdate = true;
+
+  const asteroidScrollSpeed = scrollSpeed * 0.68;
+  for (const asteroid of spaceAsteroids) {
+    asteroid.visible = true;
+    asteroid.material.opacity = asteroid.userData.opacity * transitionOpacity;
+    asteroid.position.z -= asteroidScrollSpeed * asteroid.userData.drift * dt;
+    asteroid.rotation.x += asteroid.userData.spin.x * dt;
+    asteroid.rotation.y += asteroid.userData.spin.y * dt;
+    asteroid.rotation.z += asteroid.userData.spin.z * dt;
+    if (asteroid.position.z < -SPACE_ASTEROID_DEPTH * 0.34) {
+      resetSpaceAsteroid(asteroid, SPACE_ASTEROID_DEPTH * 0.5 + Math.random() * 220);
+    }
+  }
+}
+
+function updateEarthReturn() {
+  const earthActive = returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY
+    && returnRouteState.beamDirection.lengthSq() > 0.0001
+    && !endingUiState.completed;
+  if (!earthActive) {
+    earthReturn.earth.visible = false;
+    earthReturn.glow.visible = false;
+    return;
+  }
+
+  getEarthReturnWorldPosition(earthWorldPosition);
+  earthReturn.earth.position.copy(earthWorldPosition);
+  earthReturn.glow.position.copy(earthWorldPosition);
+
+  const approachDistance = state.pos.distanceTo(earthWorldPosition);
+  if (returnRouteState.earthApproachStartDistance <= 0) {
+    returnRouteState.earthApproachStartDistance = Math.max(EARTH_APPROACH_START_DISTANCE, approachDistance);
+  } else {
+    returnRouteState.earthApproachStartDistance = Math.max(
+      returnRouteState.earthApproachStartDistance,
+      approachDistance
+    );
+  }
+  const approachStartDistance = Math.max(
+    EARTH_APPROACH_END_DISTANCE + 1,
+    returnRouteState.earthApproachStartDistance
+  );
+  const approachProgress = THREE.MathUtils.smoothstep(
+    THREE.MathUtils.clamp(
+      1 - (approachDistance - EARTH_APPROACH_END_DISTANCE) /
+      Math.max(1, approachStartDistance - EARTH_APPROACH_END_DISTANCE),
+      0,
+      1
+    ),
+    0,
+    1
+  );
+  const altitude = Math.max(0, getAltitude(state.pos));
+  const silenceGate = THREE.MathUtils.smoothstep(
+    altitude,
+    SPACE_RETURN_MODE_ALTITUDE + 250,
+    SPACE_RETURN_MODE_ALTITUDE + 360
+  );
+  const reveal = returnRouteState.spaceFlightActive
+    ? silenceGate * THREE.MathUtils.smoothstep(approachProgress, 0.05, 0.2)
+    : 0;
+
+  earthReturn.earth.visible = reveal > 0.001;
+  earthReturn.glow.visible = reveal > 0.001;
+  earthReturn.earth.material.opacity = reveal;
+  earthReturn.glow.material.opacity = THREE.MathUtils.lerp(0.04, 0.24, reveal) * (0.68 + approachProgress * 0.28);
+  earthReturn.earth.scale.setScalar(THREE.MathUtils.lerp(EARTH_RETURN_SIZE * 0.34, EARTH_RETURN_SIZE * 1.62, approachProgress));
+  earthReturn.glow.scale.setScalar(THREE.MathUtils.lerp(EARTH_RETURN_GLOW_SIZE * 0.28, EARTH_RETURN_GLOW_SIZE * 1.38, approachProgress));
+
+  if (approachDistance <= EARTH_CONTACT_DISTANCE) {
+    triggerEarthEnding();
+  }
+}
+
+function updateEndingSequence(dt) {
+  if (endingUiState.whiteoutActive) {
+    endingUiState.whiteoutTime += dt;
+    if (endingUiState.trueEnding && endingUiState.whiteoutTime >= ENDING_WHITEOUT_DURATION) {
+      endingUiState.trueMessageActive = true;
+      endingUiState.trueMessageTime += dt;
+      syncEndingPresentation();
+      if (endingUiState.trueMessageTime < ENDING_TRUE_MESSAGE_DURATION) {
+        return;
+      }
+      endingUiState.trueMessageActive = false;
+    }
+    if (endingUiState.whiteoutTime >= ENDING_WHITEOUT_DURATION) {
+      endingUiState.whiteoutActive = false;
+      endingUiState.transitionTime = 0;
+      if (endingRise) {
+        endingRise.style.animation = 'none';
+        endingRise.offsetHeight;
+        endingRise.style.animation = '';
+      }
+      setEndingOverlayTransitioning(true);
+    }
+    return;
+  }
+
+  if (endingUiState.transitionActive) {
+    endingUiState.transitionTime += dt;
+    if (endingUiState.transitionTime >= ENDING_BLACK_RISE_DURATION) {
+      endingUiState.transitionTime = 0;
+      endingWhiteout?.classList.remove('is-active');
+      setEndingOverlayTransitioning(false);
+      setEndingOverlayOpen(true);
+    }
+    return;
+  }
+
+  if (!endingUiState.open) return;
+  endingUiState.rollTime = Math.min(ENDING_ROLL_DURATION, endingUiState.rollTime + dt);
+  layoutEndingRoll(false);
+  syncEndingPresentation();
+  if (endingOverlay) {
+    endingOverlay.style.background = '#000';
+  }
+  if (endingRollViewport) {
+    endingRollViewport.style.background = '#000';
+  }
+}
+
 function updateCamera(dt) {
-  const up = state.pos.clone().normalize();
-  const targetLift = THREE.MathUtils.clamp(state.visualForward.dot(up), -0.5, 0.5);
+  const groundUp = state.visualUp.clone().normalize();
+  const targetLift = THREE.MathUtils.clamp(state.visualForward.dot(groundUp), -0.5, 0.5);
   const cameraPitchResponse = targetLift < state.cameraLift
     ? P.CAMERA_DESCEND_PITCH_SMOOTH
     : P.CAMERA_PITCH_SMOOTH;
@@ -4568,26 +6992,57 @@ function updateCamera(dt) {
   const lookResponse = input.lookDragging ? P.CAMERA_LOOK_RESPONSE : P.CAMERA_LOOK_RETURN;
   state.cameraYawOffset = THREE.MathUtils.damp(state.cameraYawOffset, state.cameraYawTarget, lookResponse, dt);
   state.cameraPitchOffset = THREE.MathUtils.damp(state.cameraPitchOffset, state.cameraPitchTarget, lookResponse, dt);
-  const cameraForward = state.forward.clone().addScaledVector(up, state.cameraLift).normalize();
+  const cameraForward = state.forward.clone().addScaledVector(groundUp, state.cameraLift).normalize();
   const speed = state.currentSpeed;
   const dist = P.CAMERA_DIST + speed * P.CAMERA_DIST_SPEED;
-  const target = state.pos.clone().addScaledVector(up, P.CAMERA_HEIGHT);
-  const orbitOffset = cameraForward.clone().multiplyScalar(-dist).addScaledVector(up, 1.6);
+  const groundTarget = state.pos.clone().addScaledVector(groundUp, P.CAMERA_HEIGHT);
+  const orbitOffset = cameraForward.clone().multiplyScalar(-dist).addScaledVector(groundUp, 1.6);
   if (Math.abs(state.cameraYawOffset) > 0.0001) {
-    orbitOffset.applyAxisAngle(up, -state.cameraYawOffset);
+    orbitOffset.applyAxisAngle(groundUp, -state.cameraYawOffset);
   }
   if (Math.abs(state.cameraPitchOffset) > 0.0001) {
-    const orbitRight = new THREE.Vector3().crossVectors(orbitOffset, up).normalize();
+    const orbitRight = new THREE.Vector3().crossVectors(orbitOffset, groundUp).normalize();
     if (orbitRight.lengthSq() > 0.0001) {
       orbitOffset.applyAxisAngle(orbitRight, -state.cameraPitchOffset);
     }
   }
-  const desired = target.clone().add(orbitOffset);
-  const smooth = 1 - Math.pow(1 - P.CAMERA_SMOOTH, dt * 60);
+  const groundDesired = groundTarget.clone().add(orbitOffset);
+  const speedFactor = THREE.MathUtils.clamp((speed - P.MIN_FWD_SPEED) / Math.max(P.GLIDE_SPEED - P.MIN_FWD_SPEED + P.BOOST_ENERGY, 1), 0, 1);
+  const groundFov = P.BASE_FOV + speedFactor * P.SPEED_FOV;
+
+  let desired = groundDesired.clone();
+  let target = groundTarget.clone();
+  let up = groundUp.clone();
+  let targetFov = groundFov;
+  const spaceBlend = returnRouteState.spaceTransition;
+
+  if (spaceBlend > 0.001 && returnRouteState.spaceUpDirection.lengthSq() > 0.0001) {
+    const spaceUp = returnRouteState.spaceUpDirection.clone().normalize();
+    const spaceForward = state.visualForward.clone().normalize();
+    if (returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY && !endingUiState.completed) {
+      getEarthReturnWorldPosition(earthWorldPosition);
+      earthGuideDirection.copy(earthWorldPosition).sub(state.pos);
+      if (earthGuideDirection.lengthSq() > 0.0001) {
+        earthGuideDirection.normalize();
+        spaceForward.lerp(earthGuideDirection, 0.82).normalize();
+      }
+    }
+    const spaceTarget = state.pos.clone()
+      .addScaledVector(spaceUp, SPACE_CAMERA_HEIGHT)
+      .addScaledVector(spaceForward, SPACE_CAMERA_LOOK_AHEAD);
+    const spaceDesired = state.pos.clone()
+      .addScaledVector(spaceUp, SPACE_CAMERA_HEIGHT + SPACE_CAMERA_LIFT)
+      .addScaledVector(spaceForward, -SPACE_CAMERA_TRAIL);
+    desired.lerp(spaceDesired, spaceBlend);
+    target.lerp(spaceTarget, spaceBlend);
+    up.lerp(spaceUp, spaceBlend).normalize();
+    targetFov = THREE.MathUtils.lerp(groundFov, P.BASE_FOV, spaceBlend);
+  }
+
+  const smoothBase = THREE.MathUtils.lerp(P.CAMERA_SMOOTH, SPACE_CAMERA_SMOOTH, spaceBlend);
+  const smooth = 1 - Math.pow(1 - smoothBase, dt * 60);
   camera.position.lerp(desired, smooth);
   camera.up.lerp(up, smooth).normalize();
-  const speedFactor = THREE.MathUtils.clamp((speed - P.MIN_FWD_SPEED) / Math.max(P.GLIDE_SPEED - P.MIN_FWD_SPEED + P.BOOST_ENERGY, 1), 0, 1);
-  const targetFov = P.BASE_FOV + speedFactor * P.SPEED_FOV;
   const nextFov = THREE.MathUtils.lerp(camera.fov, targetFov, smooth);
   if (Math.abs(nextFov - camera.fov) > 0.01) {
     camera.fov = nextFov;
@@ -4600,7 +7055,7 @@ function updateCamera(dt) {
 
 function updateTrackVisualizer() {
   if (!visualizerBars.length) return;
-  if (bgm.paused) {
+  if (!isBgmEffectivelyPlaying()) {
     for (const bar of visualizerBars) {
       bar.style.transform = 'scaleY(0.22)';
       bar.style.opacity = '0.42';
@@ -4644,14 +7099,24 @@ function updateLyricsLayout() {
 
 function updateLyricsUi() {
   if (!lyricsPanel || !lyricsCurrent || !lyricsFullPanel || !lyricsFullText) return;
+  if (shouldHideMusicUi()) {
+    lyricsPanel.classList.remove('is-visible', 'is-idle');
+    lyricsPanel.setAttribute('aria-hidden', 'true');
+    lyricsFullPanel.classList.remove('is-visible');
+    lyricsFullPanel.setAttribute('aria-hidden', 'true');
+    lyricsVisible = false;
+    lyricsFullVisible = false;
+    return;
+  }
 
   const track = playlist[currentTrackIndex];
   const lyrics = track?.lyrics ?? [];
   const fullLyrics = normalizeFullLyricsText(track?.fullLyrics ?? '');
   const hasTimedLyrics = lyrics.length > 0;
   const hasFullLyrics = fullLyrics.length > 0;
-  const shouldShowTimed = lyricsEnabled && hasTimedLyrics && !bgm.paused;
-  const shouldShowFull = lyricsEnabled && !hasTimedLyrics && hasFullLyrics && !bgm.paused;
+  const bgmPlaying = isBgmEffectivelyPlaying();
+  const shouldShowTimed = lyricsEnabled && hasTimedLyrics && bgmPlaying;
+  const shouldShowFull = lyricsEnabled && !hasTimedLyrics && hasFullLyrics && bgmPlaying;
 
   if (!shouldShowTimed) {
     if (lyricsVisible) {
@@ -4728,6 +7193,8 @@ window.addEventListener('resize', () => {
   if (bookUiState.open && bookUiState.currentView === 'read') {
     renderBookReadPage(bookUiState.lastMessages);
   }
+  layoutEndingRoll(false);
+  syncEndingPresentation();
 });
 
 function snapCameraOnce() {
@@ -4744,7 +7211,22 @@ function snapCameraOnce() {
 
 snapCameraOnce();
 updateLyricsLayout();
+applyDayNightProgression();
 applyWorldTheme();
+purgeExcludedBookMessagesFromStorage();
+loadBookPlayerState();
+renderEndingReturnHistory();
+loadReturnHistories().catch((error) => {
+  console.warn('Failed to prime return histories:', error);
+});
+if (DEBUG_CAT_PREVIEW) {
+  setCatDebugPreviewEnabled(true);
+}
+if (DEBUG_SANCTUARY_START) {
+  debugJumpToSanctuaryCheckpoint();
+}
+syncEndingPresentation();
+layoutEndingRoll(true);
 
 const clock = new THREE.Clock();
 function tick() {
@@ -4752,28 +7234,56 @@ function tick() {
   const previousPos = state.pos.clone();
   updateColorCycle();
   updateThemeSystem(dt);
-  const gameplayPaused = captureUiState.open || bookUiState.open || blackBoxUiState.open;
+  const gameplayPaused =
+    captureUiState.open ||
+    bookUiState.open ||
+    blackBoxUiState.open ||
+    endingUiState.open ||
+    endingUiState.transitionActive ||
+    endingUiState.whiteoutActive;
   if (!gameplayPaused) {
     updatePlayer(dt);
     checkThemeTriggerCollision(previousPos, state.pos);
     updateBlackBox(dt);
     updateClouds(dt);
+    updateDuskTowerCompass(dt);
+    updateSanctuaryActivation(dt);
+    updateSpaceEnvironment();
     updateCamera(dt);
+    updateSpaceStars(dt);
+    updateEarthReturn();
   } else {
     blackBoxLandmark.updateMatrixWorld(true);
+    updateSanctuaryActivation(dt);
+    updateSpaceEnvironment();
+    updateDuskTowerCompass(dt);
+    updateSpaceStars(0);
+    updateEarthReturn();
   }
+  updateCatCompanion(dt);
+  updateCatRouteBubble(dt);
+  updateEndingSequence(dt);
   updateInvertedSkyWash();
   updateThemeFlash(dt);
   updateThemeDuck(dt);
   updateTrackVisualizer();
   updateLyricsLayout();
   updateLyricsUi();
+  syncMusicUiVisibility();
+  syncSpaceReturnAudioState();
   renderer.render(scene, camera);
 
   const info = document.getElementById('info');
   if (info) {
     const altitude = Math.max(0, getAltitude(state.pos));
-    info.textContent = `speed ${state.currentSpeed.toFixed(1)}  alt ${altitude.toFixed(1)}`;
+    const routeMode = returnRouteState.spaceFlightActive ? 'space' : returnRouteState.phase;
+    let earthInfo = '';
+    if (returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY && !endingUiState.completed) {
+      getEarthReturnWorldPosition(earthWorldPosition);
+      earthInfo = `  earth ${state.pos.distanceTo(earthWorldPosition).toFixed(0)}`;
+    }
+    const catInfo = catRouteState.debugPreviewActive ? '  cat preview' : '';
+    info.textContent = `speed ${state.currentSpeed.toFixed(1)}  alt ${altitude.toFixed(1)}  mode ${routeMode}${earthInfo}${catInfo}`;
   }
 
   requestAnimationFrame(tick);

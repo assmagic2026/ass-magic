@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>ASS MAGIC | Official Site</title>
-  <link rel="stylesheet" href="style.css">
-  <script type="module" src="main.js"></script>
+  <link rel="stylesheet" href="style.css?v=20260327-spacegate1">
+  <script type="module" src="main.js?v=20260327-spacegate1"></script>
 </head>
 <body>
   <audio id="bgm-audio" preload="auto" playsinline webkit-playsinline crossorigin="anonymous" style="display:none"></audio>
@@ -157,6 +157,56 @@
         <button id="capture-share" class="ui-control" type="button">共有</button>
       </div>
     </div>
+  </div>
+  <div id="ending-whiteout" aria-hidden="true">
+    <div id="ending-true-message">ありがとうニャー</div>
+  </div>
+  <div id="ending-overlay" aria-hidden="true">
+    <div id="ending-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="Ending">
+      <div id="ending-rise" aria-hidden="true"></div>
+      <div id="ending-roll-viewport" aria-hidden="true">
+        <div id="ending-roll-track">
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">制作</div>
+            <div class="ending-roll-name">ASS MAGIC</div>
+          </div>
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">音楽</div>
+            <div class="ending-roll-name">ASS MAGIC</div>
+          </div>
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">アートディレクション</div>
+            <div class="ending-roll-name">ASS MAGIC</div>
+          </div>
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">クリエイティブディレクション</div>
+            <div class="ending-roll-name">ASS MAGIC</div>
+          </div>
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">出演</div>
+            <div class="ending-roll-name">絹枝</div>
+          </div>
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">Special Thanks</div>
+            <div class="ending-roll-name">皆様</div>
+          </div>
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">帰還成功者</div>
+            <div id="ending-returnees-list" class="ending-roll-list">未確認</div>
+          </div>
+          <div class="ending-roll-credit">
+            <div class="ending-roll-role">真の帰還成功者</div>
+            <div id="ending-true-returnees-list" class="ending-roll-list">未確認</div>
+          </div>
+          <div class="ending-roll-credit ending-roll-credit-last"></div>
+        </div>
+      </div>
+      <button id="ending-restart-trigger" class="ui-control" type="button" aria-label="最初の飛行画面に戻る">END</button>
+      <button id="ending-close" class="ui-control" type="button">閉じる</button>
+    </div>
+  </div>
+  <div id="cat-route-bubble" aria-hidden="true">
+    <div id="cat-route-bubble-text">お前も帰りたいか？</div>
   </div>
   <div id="book-overlay" aria-hidden="true">
     <div id="book-backdrop" class="ui-control"></div>
