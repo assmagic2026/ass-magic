@@ -2,6 +2,17 @@ import * as THREE from './three.module.js';
 import { playlist as playlistData } from './playlist.js';
 import { supabaseConfig } from './supabase-config.js';
 
+function isRuntimeMobilePerfMode() {
+  const coarsePointer = typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches;
+  return coarsePointer || Math.min(window.innerWidth, window.innerHeight) <= 900;
+}
+
+function getRuntimePixelRatio() {
+  const pixelRatioCap = isRuntimeMobilePerfMode() ? 1 : 1.5;
+  return Math.min(window.devicePixelRatio || 1, pixelRatioCap);
+}
+
 const canvas = document.getElementById('c');
 const DEFAULT_CAMERA_FAR = 800;
 const SPACE_CAMERA_FAR = 14000;
@@ -16,9 +27,9 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: 'low-power',
   preserveDrawingBuffer: true
 });
-const RUNTIME_PIXEL_RATIO = Math.min(window.devicePixelRatio || 1, 1.5);
+const MOBILE_RENDER_PERF_MODE = isRuntimeMobilePerfMode();
 const CAPTURE_PIXEL_RATIO = Math.min(Math.max(window.devicePixelRatio || 1, 2), 2.5);
-renderer.setPixelRatio(RUNTIME_PIXEL_RATIO);
+renderer.setPixelRatio(getRuntimePixelRatio());
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x0a0d12, 1);
 
@@ -703,7 +714,7 @@ const SANCTUARY_RING_TRIGGER_HEIGHT = 10;
 const SANCTUARY_RING_TRIGGER_RADIUS = 56;
 const SANCTUARY_ACTIVATION_DURATION = 1.6;
 const SANCTUARY_BEAM_HEIGHT = 6400;
-const SANCTUARY_BEAM_MARKER_COUNT = 18;
+const SANCTUARY_BEAM_MARKER_COUNT = MOBILE_RENDER_PERF_MODE ? 8 : 18;
 const SANCTUARY_BEAM_THICKNESS_SCALE = 0.1;
 const SPACE_RETURN_MODE_ALTITUDE = 220;
 const SPACE_RETURN_ACTIVATION_HOLD = 0.32;
@@ -733,11 +744,11 @@ const ENDING_WHITEOUT_DURATION = 1.05;
 const ENDING_BLACK_RISE_DURATION = 0.65;
 const ENDING_TRUE_MESSAGE_DURATION = 2.2;
 const ENDING_ROLL_DURATION = 46;
-const SPACE_STAR_COUNT = 88;
+const SPACE_STAR_COUNT = MOBILE_RENDER_PERF_MODE ? 52 : 88;
 const SPACE_STAR_RADIUS = 240;
 const SPACE_STAR_DEPTH = 1500;
 const SPACE_STAR_SPEED_MULTIPLIER = 2.4;
-const SPACE_ASTEROID_COUNT = 5;
+const SPACE_ASTEROID_COUNT = MOBILE_RENDER_PERF_MODE ? 3 : 5;
 const SPACE_ASTEROID_RADIUS = 260;
 const SPACE_ASTEROID_DEPTH = 1800;
 const COMPASS_SPIN_RATE = 1.35;
@@ -7419,6 +7430,7 @@ window.addEventListener('resize', () => {
   const h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  renderer.setPixelRatio(getRuntimePixelRatio());
   renderer.setSize(w, h);
   lastLyricsPanelY = null;
   lastLyricsFullTop = null;
