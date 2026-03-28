@@ -143,6 +143,10 @@ const rendererPerfState = {
   sampleTime: 0,
   stableTime: 0
 };
+const spaceEnvironmentPerfState = {
+  initialized: false,
+  lastBlend: -1
+};
 let visualizerIdleState = null;
 let lastInfoText = '';
 const monochromeClockAudio = new Audio();
@@ -1772,10 +1776,13 @@ function registerThemeTriggerFromObject(object, radiusScale = 0.82, minRadius = 
   if (themeBoundsBox.isEmpty()) return;
   themeBoundsBox.getBoundingSphere(themeBoundsSphere);
   if (!Number.isFinite(themeBoundsSphere.radius) || themeBoundsSphere.radius <= 0) return;
+  const dynamic = !!extra.dynamic;
   const localCenter = object.worldToLocal(themeBoundsSphere.center.clone());
   themeTriggerZones.push({
     object,
     localCenter,
+    worldCenter: themeBoundsSphere.center.clone(),
+    dynamic,
     radius: Math.max(minRadius, themeBoundsSphere.radius * radiusScale),
     onTrigger: typeof extra.onTrigger === 'function' ? extra.onTrigger : null,
     canTrigger: typeof extra.canTrigger === 'function' ? extra.canTrigger : null,
@@ -1790,6 +1797,14 @@ function registerThemeTriggersFromChildren(group, radiusScale = 0.82, minRadius 
     if (!child.visible) continue;
     registerThemeTriggerFromObject(child, radiusScale, minRadius, extra);
   }
+}
+
+function copyThemeZoneCenter(target, zone) {
+  if (!zone.dynamic) {
+    return target.copy(zone.worldCenter);
+  }
+  zone.object.updateMatrixWorld(true);
+  return target.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
 }
 
 function getSegmentSphereHit(start, end, center, radius) {
@@ -2732,9 +2747,9 @@ scene.add(cloudVeils);
 scene.add(nightFog);
 scene.add(nightMist);
 registerThemeTriggersFromChildren(nightWorld, 0.78, 2.0);
-registerThemeTriggersFromChildren(clouds, 0.8, 2.2);
-registerThemeTriggersFromChildren(cloudVeils, 0.84, 2.4);
-registerThemeTriggersFromChildren(nightFog, 0.84, 2.2);
+registerThemeTriggersFromChildren(clouds, 0.8, 2.2, { dynamic: !FREEZE_CLOUD_DRIFT_FOR_TEST });
+registerThemeTriggersFromChildren(cloudVeils, 0.84, 2.4, { dynamic: !FREEZE_CLOUD_DRIFT_FOR_TEST });
+registerThemeTriggersFromChildren(nightFog, 0.84, 2.2, { dynamic: !FREEZE_CLOUD_DRIFT_FOR_TEST });
 
 const player = new THREE.Group();
 const bodyMat = new THREE.MeshLambertMaterial({ color: 0xf5f9ff, emissive: 0x0b1018, emissiveIntensity: 0.02 });
@@ -3242,6 +3257,7 @@ registerThemeTriggerFromObject(giantBook, 0.72, 7.4, {
 placeBlackBoxLandmark();
 scene.add(blackBoxLandmark);
 registerThemeTriggerFromObject(blackBoxLandmark, 4.7, 14.4, {
+  dynamic: true,
   tag: 'black-box',
   onTrigger: (contactPoint) => handleBlackBoxTrigger(contactPoint)
 });
@@ -3805,8 +3821,7 @@ function forceViewportReset() {
 
 function isInsideThemeTrigger(point) {
   for (const zone of themeTriggerZones) {
-    zone.object.updateMatrixWorld(true);
-    themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
+    copyThemeZoneCenter(themeZoneCenter, zone);
     const limit = zone.radius + PLAYER_THEME_HIT_RADIUS;
     if (point.distanceToSquared(themeZoneCenter) <= limit * limit) {
       return true;
@@ -3818,8 +3833,7 @@ function isInsideThemeTrigger(point) {
 function isInsideThemeTriggerTag(point, tag) {
   for (const zone of themeTriggerZones) {
     if (zone.tag !== tag) continue;
-    zone.object.updateMatrixWorld(true);
-    themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
+    copyThemeZoneCenter(themeZoneCenter, zone);
     const limit = zone.radius + PLAYER_THEME_HIT_RADIUS;
     if (point.distanceToSquared(themeZoneCenter) <= limit * limit) {
       return true;
@@ -4273,8 +4287,7 @@ function checkThemeTriggerCollision(start, end) {
 
   for (const zone of themeTriggerZones) {
     if (zone.canTrigger && !zone.canTrigger()) continue;
-    zone.object.updateMatrixWorld(true);
-    themeZoneCenter.copy(zone.localCenter).applyMatrix4(zone.object.matrixWorld);
+    copyThemeZoneCenter(themeZoneCenter, zone);
     const t = getSegmentSphereHit(start, end, themeZoneCenter, zone.radius + PLAYER_THEME_HIT_RADIUS);
     if (t !== null && t < bestT) {
       bestT = t;
@@ -7174,6 +7187,14 @@ function updateSanctuaryActivation(dt) {
 
 function updateSpaceEnvironment() {
   const spaceBlend = returnRouteState.spaceTransition;
+  if (
+    spaceEnvironmentPerfState.initialized &&
+    Math.abs(spaceBlend - spaceEnvironmentPerfState.lastBlend) < 0.0005
+  ) {
+    return;
+  }
+  spaceEnvironmentPerfState.initialized = true;
+  spaceEnvironmentPerfState.lastBlend = spaceBlend;
   const targetFar = THREE.MathUtils.lerp(DEFAULT_CAMERA_FAR, SPACE_CAMERA_FAR, spaceBlend);
   if (Math.abs(camera.far - targetFar) > 0.1) {
     camera.far = targetFar;
