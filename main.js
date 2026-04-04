@@ -464,10 +464,90 @@ function syncTrackUi() {
     trackArt.src = encodeURI(track.art);
     trackArt.alt = `${track.title} jacket`;
   }
+  refreshMusicSelectorUi();
 }
 
 function setRecordSpinning(isPlaying) {
   trackCard?.classList.toggle('is-spinning', isPlaying);
+}
+
+function ensureMusicSelectorList() {
+  if (!musicSelectorList || musicSelectorList.childElementCount > 0) return;
+  for (let i = 0; i < playlist.length; i++) {
+    const track = playlist[i];
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'music-selector-item ui-control';
+    button.dataset.trackIndex = `${i}`;
+
+    const main = document.createElement('div');
+    main.className = 'music-selector-item-main';
+
+    const art = document.createElement('img');
+    art.className = 'music-selector-item-art';
+    art.loading = 'lazy';
+    art.decoding = 'async';
+    art.src = encodeURI(track.art);
+    art.alt = `${track.title} jacket`;
+
+    const title = document.createElement('div');
+    title.className = 'music-selector-item-title';
+    title.textContent = track.title;
+
+    const meta = document.createElement('div');
+    meta.className = 'music-selector-item-meta';
+    meta.textContent = `TRACK ${String(i + 1).padStart(2, '0')}`;
+
+    const state = document.createElement('div');
+    state.className = 'music-selector-item-state';
+    state.textContent = 'PLAY';
+
+    main.append(title, meta);
+    button.append(art, main, state);
+    musicSelectorList.append(button);
+  }
+}
+
+function refreshMusicSelectorUi() {
+  const track = playlist[currentTrackIndex];
+  if (musicSelectorNowPlaying && track) {
+    musicSelectorNowPlaying.replaceChildren();
+    const art = document.createElement('img');
+    art.className = 'music-selector-now-playing-art';
+    art.loading = 'lazy';
+    art.decoding = 'async';
+    art.src = encodeURI(track.art);
+    art.alt = `${track.title} jacket`;
+
+    const copy = document.createElement('div');
+    copy.className = 'music-selector-now-playing-copy';
+
+    const label = document.createElement('div');
+    label.className = 'music-selector-now-playing-label';
+    label.textContent = '再生中';
+
+    const meta = document.createElement('div');
+    meta.className = 'music-selector-now-playing-meta';
+    meta.textContent = `TRACK ${String(currentTrackIndex + 1).padStart(2, '0')}`;
+
+    const title = document.createElement('div');
+    title.className = 'music-selector-now-playing-title';
+    title.textContent = track.title;
+
+    copy.append(label, title, meta);
+    musicSelectorNowPlaying.append(art, copy);
+  }
+  if (!musicSelectorList) return;
+  const isPlaying = isBgmEffectivelyPlaying();
+  for (const element of musicSelectorList.querySelectorAll('.music-selector-item')) {
+    const index = Number(element.dataset.trackIndex ?? '-1');
+    const active = index === currentTrackIndex;
+    element.classList.toggle('is-current', active);
+    const stateLabel = element.querySelector('.music-selector-item-state');
+    if (stateLabel) {
+      stateLabel.textContent = active ? (isPlaying ? 'NOW PLAYING' : 'READY') : 'PLAY';
+    }
+  }
 }
 
 function refreshTrackControls() {
@@ -805,10 +885,15 @@ const NIGHT_AXIS_A = new THREE.Vector3()
   .normalize();
 const NIGHT_AXIS_B = new THREE.Vector3().crossVectors(NIGHT_CENTER, NIGHT_AXIS_A).normalize();
 const ROUTE_AXIS = new THREE.Vector3(1, 0, 0);
+const USE_GIANT_RECORD_PLAYER = true;
 const DAY_BLOCKS_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, 0.42)
   .addScaledVector(NIGHT_AXIS_B, -0.16)
   .normalize();
+const GIANT_RECORD_PLAYER_ALTITUDE = 0.45;
+const GIANT_RECORD_PLAYER_TRIGGER_RADIUS = 18.5;
+const GIANT_RECORD_PLAYER_REARM_EXIT_EXTRA_RADIUS = 1.6;
+const GIANT_RECORD_PLAYER_SPIN_RATE = 1.55;
 const GIANT_BOOK_ALTITUDE = 0.04;
 const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, -1.4)
@@ -1340,6 +1425,225 @@ function createBlackBoxLandmark() {
   const shell = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.9, 1.9), cubeMat);
   const core = new THREE.Mesh(new THREE.BoxGeometry(1.46, 1.46, 1.46), innerMat);
   group.add(shell, core);
+  return group;
+}
+
+function createDayBlocksLandmark(dayBlocksMat) {
+  const dayBlocks = new THREE.Group();
+  const dayBlockGeo = new THREE.BoxGeometry(2.8, 11.5, 5.2);
+  const dayBlockRows = 4;
+  const dayBlockCols = 5;
+  const dayBlockSpacingX = 5.9;
+  const dayBlockSpacingZ = 8.6;
+  for (let row = 0; row < dayBlockRows; row++) {
+    for (let col = 0; col < dayBlockCols; col++) {
+      const block = new THREE.Mesh(dayBlockGeo, dayBlocksMat);
+      block.position.set(
+        (col - (dayBlockCols - 1) * 0.5) * dayBlockSpacingX,
+        5.75,
+        (row - (dayBlockRows - 1) * 0.5) * dayBlockSpacingZ
+      );
+      dayBlocks.add(block);
+    }
+  }
+  const dayBlocksBase = new THREE.Mesh(
+    new THREE.BoxGeometry(34, 0.8, 42),
+    new THREE.MeshLambertMaterial({ color: 0x9cc6ff, flatShading: true, transparent: true, opacity: 0.35 })
+  );
+  dayBlocksBase.position.y = 0.2;
+  dayBlocks.add(dayBlocksBase);
+  return dayBlocks;
+}
+
+function createGiantRecordPlayerLandmark() {
+  const group = new THREE.Group();
+  const plinthMat = new THREE.MeshLambertMaterial({
+    color: 0xc79a67,
+    emissive: 0x2a1709,
+    emissiveIntensity: 0.16,
+    flatShading: true
+  });
+  const metalMat = new THREE.MeshLambertMaterial({
+    color: 0xd5dde8,
+    emissive: 0x1a2330,
+    emissiveIntensity: 0.1,
+    flatShading: true
+  });
+  const vinylMat = new THREE.MeshLambertMaterial({
+    color: 0x121212,
+    emissive: 0x040404,
+    emissiveIntensity: 0.12,
+    flatShading: true
+  });
+  const labelMat = new THREE.MeshBasicMaterial({
+    color: 0xf0dfab,
+    toneMapped: false
+  });
+  const accentMat = new THREE.MeshBasicMaterial({
+    color: 0xffd286,
+    toneMapped: false
+  });
+  const grooveMat = new THREE.MeshBasicMaterial({
+    color: 0x1f1f1f,
+    toneMapped: false
+  });
+  const grooveHighlightMat = new THREE.MeshBasicMaterial({
+    color: 0x3a3a3a,
+    toneMapped: false
+  });
+  const cartridgeMat = new THREE.MeshLambertMaterial({
+    color: 0xf2efe8,
+    emissive: 0x3a3124,
+    emissiveIntensity: 0.08,
+    flatShading: true
+  });
+
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(44, 4.2, 34), plinthMat);
+  plinth.position.y = 2.1;
+  group.add(plinth);
+
+  const platter = new THREE.Group();
+  platter.position.set(-6.2, 4.5, -1.2);
+
+  const platterBase = new THREE.Mesh(new THREE.CylinderGeometry(13.2, 13.6, 1.8, 32), metalMat);
+  platterBase.position.y = -0.25;
+  platter.add(platterBase);
+
+  const platterTop = new THREE.Mesh(new THREE.CylinderGeometry(12.7, 12.7, 0.8, 36), metalMat);
+  platterTop.position.y = 0.85;
+  platter.add(platterTop);
+
+  const platterLip = new THREE.Mesh(new THREE.TorusGeometry(12.55, 0.22, 8, 56), accentMat);
+  platterLip.rotation.x = Math.PI * 0.5;
+  platterLip.position.y = 1.25;
+  platter.add(platterLip);
+  group.add(platter);
+
+  const recordDisc = new THREE.Group();
+  recordDisc.position.set(-6.2, 5.92, -1.2);
+
+  const recordBody = new THREE.Mesh(new THREE.CylinderGeometry(11.16, 11.16, 0.34, 48), vinylMat);
+  recordDisc.add(recordBody);
+
+  const recordTop = new THREE.Mesh(new THREE.CylinderGeometry(10.94, 10.94, 0.18, 48), vinylMat);
+  recordTop.position.y = 0.15;
+  recordDisc.add(recordTop);
+
+  const recordEdgeHighlight = new THREE.Mesh(new THREE.TorusGeometry(11.02, 0.06, 5, 60), grooveHighlightMat);
+  recordEdgeHighlight.rotation.x = Math.PI * 0.5;
+  recordEdgeHighlight.position.y = 0.17;
+  recordDisc.add(recordEdgeHighlight);
+
+  const label = new THREE.Mesh(new THREE.CylinderGeometry(3.06, 3.06, 0.22, 24), labelMat);
+  label.position.y = 0.19;
+  recordDisc.add(label);
+
+  const labelInner = new THREE.Mesh(new THREE.CylinderGeometry(1.16, 1.16, 0.24, 20), accentMat);
+  labelInner.position.y = 0.22;
+  recordDisc.add(labelInner);
+
+  const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 1.8, 10), accentMat);
+  spindle.position.y = 0.96;
+  recordDisc.add(spindle);
+  group.add(recordDisc);
+
+  const recordGroove = new THREE.Group();
+  recordGroove.position.set(0, 0.22, 0);
+  for (let i = 0; i < 5; i++) {
+    const groove = new THREE.Mesh(
+      new THREE.TorusGeometry(4.8 + i * 1.18, 0.065 + i * 0.006, 4, 54),
+      i === 4 ? grooveHighlightMat : grooveMat
+    );
+    groove.rotation.x = Math.PI * 0.5;
+    groove.position.y = i * 0.005;
+    recordGroove.add(groove);
+  }
+  recordDisc.add(recordGroove);
+
+  const armBase = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.5, 2.9, 16), metalMat);
+  armBase.position.set(12.8, 5.35, 5.7);
+  group.add(armBase);
+
+  const armPivot = new THREE.Mesh(new THREE.CylinderGeometry(0.64, 0.88, 2.2, 14), metalMat);
+  armPivot.position.set(12.8, 6.7, 5.7);
+  group.add(armPivot);
+
+  const armRig = new THREE.Group();
+  armRig.position.set(12.8, 7.1, 5.7);
+  armRig.rotation.y = -0.24;
+  group.add(armRig);
+
+  const rearStub = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.46, 0.46), metalMat);
+  rearStub.position.set(1.65, 0, 0.05);
+  armRig.add(rearStub);
+
+  const counterWeight = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.92, 1.7, 14), plinthMat);
+  counterWeight.rotation.z = Math.PI * 0.5;
+  counterWeight.position.set(3.15, 0, 0.05);
+  armRig.add(counterWeight);
+
+  const mainArm = new THREE.Group();
+  mainArm.position.set(-7.15, 0.14, -0.62);
+  mainArm.rotation.y = 0.1;
+  armRig.add(mainArm);
+
+  const mainArmBeam = new THREE.Mesh(new THREE.BoxGeometry(15.2, 0.3, 0.3), metalMat);
+  mainArmBeam.position.set(0, 0, 0);
+  mainArm.add(mainArmBeam);
+
+  const headShellStem = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.2, 0.22), metalMat);
+  headShellStem.position.set(-6.55, -0.02, 0);
+  headShellStem.rotation.y = -0.03;
+  mainArm.add(headShellStem);
+
+  const headShell = new THREE.Mesh(new THREE.BoxGeometry(2.34, 0.22, 1.02), metalMat);
+  headShell.position.set(-8.28, -0.05, 0);
+  headShell.rotation.y = -0.08;
+  mainArm.add(headShell);
+
+  const cartridgeMount = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.18, 0.28), metalMat);
+  cartridgeMount.position.set(-9.28, -0.24, 0);
+  cartridgeMount.rotation.y = -0.08;
+  mainArm.add(cartridgeMount);
+
+  const cartridge = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.72, 0.86), cartridgeMat);
+  cartridge.position.set(-9.56, -0.56, 0);
+  cartridge.rotation.y = -0.08;
+  mainArm.add(cartridge);
+
+  const stylus = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.82, 0.08), accentMat);
+  stylus.position.set(-9.88, -1.02, 0);
+  stylus.rotation.y = -0.08;
+  stylus.rotation.z = 0.1;
+  mainArm.add(stylus);
+
+  const armRest = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 2.1, 10), metalMat);
+  armRest.position.set(-0.58, -0.28, 1.22);
+  armRig.add(armRest);
+
+  const armClip = new THREE.Mesh(new THREE.TorusGeometry(0.54, 0.07, 5, 18), accentMat);
+  armClip.rotation.x = Math.PI * 0.5;
+  armClip.position.set(-0.58, 0.55, 1.22);
+  armRig.add(armClip);
+
+  const controlPlate = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.46, 6.4), metalMat);
+  controlPlate.position.set(11.8, 4.55, -9.6);
+  group.add(controlPlate);
+
+  for (let i = 0; i < 3; i++) {
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.86, 0.86, 0.64, 14), accentMat);
+    knob.position.set(8.4 + i * 2.5, 5.1, -9.8);
+    group.add(knob);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.26, 1.3, 12), metalMat);
+    foot.position.set(i < 2 ? -15.5 : 15.5, 0.65, i % 2 === 0 ? -11.4 : 11.4);
+    group.add(foot);
+  }
+
+  group.userData.recordDisc = recordDisc;
+  group.userData.recordGroove = recordGroove;
   return group;
 }
 
@@ -2627,33 +2931,19 @@ const dayBlocksMat = new THREE.MeshLambertMaterial({
 });
 registerMaterialCycle(dayBlocksMat, true, 0.18, 0.05, 0.04);
 
-const dayBlocks = new THREE.Group();
-const dayBlockGeo = new THREE.BoxGeometry(2.8, 11.5, 5.2);
-const dayBlockRows = 4;
-const dayBlockCols = 5;
-const dayBlockSpacingX = 5.9;
-const dayBlockSpacingZ = 8.6;
-for (let row = 0; row < dayBlockRows; row++) {
-  for (let col = 0; col < dayBlockCols; col++) {
-    const block = new THREE.Mesh(dayBlockGeo, dayBlocksMat);
-    block.position.set(
-      (col - (dayBlockCols - 1) * 0.5) * dayBlockSpacingX,
-      5.75,
-      (row - (dayBlockRows - 1) * 0.5) * dayBlockSpacingZ
-    );
-    dayBlocks.add(block);
-  }
-}
-const dayBlocksBase = new THREE.Mesh(
-  new THREE.BoxGeometry(34, 0.8, 42),
-  new THREE.MeshLambertMaterial({ color: 0x9cc6ff, flatShading: true, transparent: true, opacity: 0.35 })
-);
-dayBlocksBase.position.y = 0.2;
-dayBlocks.add(dayBlocksBase);
 const dayBlockAxes = getSurfaceAxes(DAY_BLOCKS_DIR);
-placeDirectedOnSphere(dayBlocks, DAY_BLOCKS_DIR, dayBlockAxes.axisB, 0.45, 0);
-scene.add(dayBlocks);
-registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
+const dayBlocks = USE_GIANT_RECORD_PLAYER ? null : createDayBlocksLandmark(dayBlocksMat);
+const giantRecordPlayer = USE_GIANT_RECORD_PLAYER ? createGiantRecordPlayerLandmark() : null;
+const giantRecordPlayerDisc = giantRecordPlayer?.userData.recordDisc ?? null;
+if (dayBlocks) {
+  placeDirectedOnSphere(dayBlocks, DAY_BLOCKS_DIR, dayBlockAxes.axisB, 0.45, 0);
+  scene.add(dayBlocks);
+  registerThemeTriggerFromObject(dayBlocks, 0.9, 6.8);
+}
+if (giantRecordPlayer) {
+  placeDirectedOnSphere(giantRecordPlayer, DAY_BLOCKS_DIR, dayBlockAxes.axisB, GIANT_RECORD_PLAYER_ALTITUDE, 0);
+  scene.add(giantRecordPlayer);
+}
 
 // Visual Upgrade Phase 1 landmark hierarchy removed.
 
@@ -3170,6 +3460,10 @@ const returnRouteState = {
   spaceCameraSnapPending: false,
   spaceParallelActive: false,
   spaceFlightActive: false
+};
+const musicSelectorState = {
+  open: false,
+  rearmRequired: false
 };
 const bookUiState = {
   open: false,
@@ -3820,6 +4114,12 @@ const blackBoxViewReveal = document.getElementById('black-box-view-reveal');
 const blackBoxCatImage = document.getElementById('black-box-cat-image');
 const blackBoxCaption = document.getElementById('black-box-caption');
 const blackBoxDownload = document.getElementById('black-box-download');
+const musicSelectorOverlay = document.getElementById('music-selector-overlay');
+const musicSelectorBackdrop = document.getElementById('music-selector-backdrop');
+const musicSelectorPanel = document.getElementById('music-selector-panel');
+const musicSelectorClose = document.getElementById('music-selector-close');
+const musicSelectorNowPlaying = document.getElementById('music-selector-now-playing');
+const musicSelectorList = document.getElementById('music-selector-list');
 const cameraShutter = document.getElementById('camera-shutter');
 const captureOverlay = document.getElementById('capture-overlay');
 const captureBackdrop = document.getElementById('capture-backdrop');
@@ -4442,6 +4742,27 @@ function checkThemeTriggerCollision(start, end) {
   if (monochromeHit) {
     handleMonochromeSphereTrigger(monochromeHit, monochromeHit.point);
     return;
+  }
+
+  if (
+    giantRecordPlayer &&
+    returnRouteState.phase !== RETURN_ROUTE_PHASES.CHALLENGE &&
+    themeState.mode !== 'monochrome' &&
+    !returnRouteState.spaceFlightActive &&
+    !endingUiState.open &&
+    !endingUiState.transitionActive &&
+    !endingUiState.whiteoutActive
+  ) {
+    const musicSelectorHit = getSegmentSphereHit(
+      start,
+      end,
+      giantRecordPlayer.position,
+      GIANT_RECORD_PLAYER_TRIGGER_RADIUS + PLAYER_THEME_HIT_RADIUS
+    );
+    if (musicSelectorHit !== null) {
+      handleMusicSelectorTrigger();
+      return;
+    }
   }
 
   const blackBoxInteractionHit = getGroundedBlackBoxInteractionHit(start, end);
@@ -6030,6 +6351,30 @@ function setBlackBoxOverlayOpen(isOpen) {
   }
 }
 
+function setMusicSelectorOverlayOpen(isOpen) {
+  musicSelectorState.open = isOpen;
+  musicSelectorOverlay?.classList.toggle('is-open', isOpen);
+  musicSelectorOverlay?.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (isOpen) {
+    accelPointers.clear();
+    refreshAccelHeld();
+    input.leftId = null;
+    input.rightId = null;
+    resetCameraLook(true);
+    input.stickId = null;
+    input.stickOffset.x = 0;
+    input.stickOffset.y = 0;
+    input.turnX = 0;
+    input.turnY = 0;
+    if (stickHandle) {
+      stickHandle.style.transform = 'translate(-50%, -50%)';
+    }
+    setSiteMenuOpen(false);
+  } else if (document.activeElement instanceof HTMLElement) {
+    document.activeElement.blur();
+  }
+}
+
 async function openBookOverlay() {
   bookUiState.pageIndex = 0;
   setBookStatusDefault();
@@ -6075,6 +6420,31 @@ function closeBlackBoxOverlay() {
   setBlackBoxOverlayOpen(false);
 }
 
+function openMusicSelectorOverlay() {
+  if (!USE_GIANT_RECORD_PLAYER) return;
+  closeBookOverlay();
+  closeBlackBoxOverlay();
+  ensureMusicSelectorList();
+  refreshMusicSelectorUi();
+  setMusicSelectorOverlayOpen(true);
+}
+
+function closeMusicSelectorOverlay() {
+  musicSelectorState.rearmRequired = isInsideMusicSelectorInteractionZone(state.pos);
+  setMusicSelectorOverlayOpen(false);
+}
+
+function activateMusicSelectorTrack(index) {
+  if (!Number.isFinite(index) || index < 0 || index >= playlist.length) return;
+  runTrackControlAction(() => {
+    if (index === currentTrackIndex) {
+      playCurrentTrack();
+    } else {
+      loadTrack(index, true);
+    }
+  });
+}
+
 function handleBookTrigger() {
   if (bookUiState.open) return;
   if (bookUiState.rearmRequired) {
@@ -6117,6 +6487,20 @@ function handleBlackBoxTrigger(contactPoint) {
     blackBoxUiState.pendingTimer = null;
   }
   openBlackBoxOverlay();
+}
+
+function isInsideMusicSelectorInteractionZone(position, extraRadius = 0) {
+  if (!giantRecordPlayer) return false;
+  const limit = GIANT_RECORD_PLAYER_TRIGGER_RADIUS + PLAYER_THEME_HIT_RADIUS + extraRadius;
+  return position.distanceToSquared(giantRecordPlayer.position) <= limit * limit;
+}
+
+function handleMusicSelectorTrigger() {
+  if (musicSelectorState.open) return;
+  if (musicSelectorState.rearmRequired) {
+    return;
+  }
+  openMusicSelectorOverlay();
 }
 
 function isInsideBookInteractionZone(position, extraRadius = 0) {
@@ -6480,7 +6864,11 @@ for (const control of [
   blackBoxClose,
   blackBoxOpen,
   blackBoxIgnore,
-  blackBoxDownload
+  blackBoxDownload,
+  musicSelectorBackdrop,
+  musicSelectorPanel,
+  musicSelectorClose,
+  musicSelectorList
 ]) {
   if (!control) continue;
   control.addEventListener('pointerdown', (e) => {
@@ -6573,6 +6961,46 @@ blackBoxIgnore?.addEventListener('click', (e) => {
   e.stopPropagation();
   resumeBlackBoxOrbit();
   closeBlackBoxOverlay();
+});
+
+musicSelectorBackdrop?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeMusicSelectorOverlay();
+});
+musicSelectorBackdrop?.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeMusicSelectorOverlay();
+});
+
+musicSelectorClose?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeMusicSelectorOverlay();
+});
+musicSelectorClose?.addEventListener('pointerup', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  closeMusicSelectorOverlay();
+});
+
+musicSelectorList?.addEventListener('pointerup', (e) => {
+  const button = e.target instanceof Element ? e.target.closest('.music-selector-item') : null;
+  if (!button) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const index = Number(button.dataset.trackIndex ?? '-1');
+  activateMusicSelectorTrack(index);
+});
+
+musicSelectorList?.addEventListener('click', (e) => {
+  const button = e.target instanceof Element ? e.target.closest('.music-selector-item') : null;
+  if (!button) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const index = Number(button.dataset.trackIndex ?? '-1');
+  activateMusicSelectorTrack(index);
 });
 
 for (const button of bookViewButtons) {
@@ -6696,7 +7124,7 @@ window.addEventListener('gestureend', () => forceViewportReset());
 window.addEventListener('dblclick', (e) => e.preventDefault());
 window.addEventListener('touchmove', (e) => {
   const isEditable = e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement;
-  const allowScroll = isEditable || (e.target instanceof Element && e.target.closest('#book-panel, #site-menu-pages'));
+  const allowScroll = isEditable || (e.target instanceof Element && e.target.closest('#book-panel, #site-menu-pages, #music-selector-panel, #music-selector-list'));
   if (!allowScroll && e.cancelable) e.preventDefault();
 }, { passive: false });
 
@@ -6733,6 +7161,7 @@ window.addEventListener('keydown', (e) => {
     closeCaptureOverlay();
     closeBookOverlay();
     closeBlackBoxOverlay();
+    closeMusicSelectorOverlay();
     closeEndingOverlay();
     setSiteMenuOpen(false);
   }
@@ -6986,6 +7415,11 @@ function updatePlayer(dt) {
   const currentAltitude = getAltitude(state.pos);
   if (compassAssistState.cooldown > 0) {
     compassAssistState.cooldown = Math.max(0, compassAssistState.cooldown - dt);
+  }
+  if (musicSelectorState.rearmRequired) {
+    if (!isInsideMusicSelectorInteractionZone(state.pos, GIANT_RECORD_PLAYER_REARM_EXIT_EXTRA_RADIUS)) {
+      musicSelectorState.rearmRequired = false;
+    }
   }
   if (compassAssistState.rearmRequired) {
     const rearmDistanceSq = (COMPASS_ASSIST_REARM_EXIT_RADIUS + PLAYER_THEME_HIT_RADIUS) ** 2;
@@ -7917,6 +8351,7 @@ function tick() {
     captureUiState.open ||
     bookUiState.open ||
     blackBoxUiState.open ||
+    musicSelectorState.open ||
     endingUiState.open ||
     endingUiState.transitionActive ||
     endingUiState.whiteoutActive;
@@ -7924,6 +8359,9 @@ function tick() {
     updatePlayer(dt);
     checkThemeTriggerCollision(previousFramePlayerPos, state.pos);
     updateBlackBox(dt);
+    if (giantRecordPlayerDisc && isBgmEffectivelyPlaying()) {
+      giantRecordPlayerDisc.rotation.y += dt * GIANT_RECORD_PLAYER_SPIN_RATE;
+    }
     updateClouds(dt);
     updateDuskTowerCompass(dt);
     updateSanctuaryActivation(dt);

@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>ASS MAGIC | Official Site</title>
-  <link rel="stylesheet" href="style.css?v=20260328-blackboxclose1">
-  <script type="module" src="main.js?v=20260328-endingbgm1"></script>
+  <link rel="stylesheet" href="style.css?v=20260404-recordplayer1">
+  <script type="module" src="main.js?v=20260404-recordplayer1"></script>
 </head>
 <body>
   <audio id="bgm-audio" preload="auto" playsinline webkit-playsinline crossorigin="anonymous" style="display:none"></audio>
@@ -234,6 +234,18 @@
         <div id="black-box-reveal-actions">
           <a id="black-box-download" class="ui-control" href="./blackbox.jpg" download="blackbox.jpg">保存する</a>
         </div>
+      </div>
+    </div>
+  </div>
+  <div id="music-selector-overlay" aria-hidden="true">
+    <div id="music-selector-backdrop" class="ui-control"></div>
+    <div id="music-selector-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="曲を選ぶ">
+      <div id="music-selector-head">
+        <button id="music-selector-close" class="ui-control" type="button" aria-label="Close music selector">Close</button>
+      </div>
+      <div id="music-selector-browser">
+        <div id="music-selector-now-playing"></div>
+        <div id="music-selector-list" class="ui-control" aria-label="楽曲リスト"></div>
       </div>
     </div>
   </div>
