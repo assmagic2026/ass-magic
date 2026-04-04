@@ -894,6 +894,7 @@ const GIANT_RECORD_PLAYER_ALTITUDE = 0.45;
 const GIANT_RECORD_PLAYER_TRIGGER_RADIUS = 18.5;
 const GIANT_RECORD_PLAYER_REARM_EXIT_EXTRA_RADIUS = 1.6;
 const GIANT_RECORD_PLAYER_SPIN_RATE = 1.55;
+const MENU_CLICK_THROUGH_GUARD_MS = 420;
 const GIANT_BOOK_ALTITUDE = 0.04;
 const GIANT_BOOK_DIR = SUN_DIRECTION.clone()
   .addScaledVector(NIGHT_AXIS_A, -1.4)
@@ -3465,6 +3466,7 @@ const musicSelectorState = {
   open: false,
   rearmRequired: false
 };
+let menuClickThroughGuardUntil = 0;
 const bookUiState = {
   open: false,
   pendingTimer: null,
@@ -6429,7 +6431,12 @@ function openMusicSelectorOverlay() {
   setMusicSelectorOverlayOpen(true);
 }
 
+function suppressMenuClickThrough() {
+  menuClickThroughGuardUntil = performance.now() + MENU_CLICK_THROUGH_GUARD_MS;
+}
+
 function closeMusicSelectorOverlay() {
+  suppressMenuClickThrough();
   musicSelectorState.rearmRequired = isInsideMusicSelectorInteractionZone(state.pos);
   setMusicSelectorOverlayOpen(false);
 }
@@ -6825,6 +6832,9 @@ captureShare?.addEventListener('click', async (e) => {
 menuToggle?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  if (performance.now() < menuClickThroughGuardUntil) {
+    return;
+  }
   setSiteMenuOpen(!siteMenu?.classList.contains('is-open'));
 });
 
