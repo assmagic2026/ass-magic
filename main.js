@@ -7907,11 +7907,11 @@ function updatePlayer(dt) {
     spawnDustPuffs(state.pos, nextUp, state.forward);
   }
   state.wasOnGround = state.onGround;
-  state.visualUp.copy(nextUp);
+  state.visualUp.copy(state.loopSpinActive ? updatePlayerLoopBodyUpScratch : nextUp);
   state.visualForward.copy(flightForward);
 
-  updatePlayerVisuals(dt, nextUp, flightForward, cruiseSpeed, turnIntent, climbInput);
-  updateSpeedEffects(dt, nextUp, flightForward, cruiseSpeed);
+  updatePlayerVisuals(dt, state.visualUp, flightForward, cruiseSpeed, turnIntent, climbInput);
+  updateSpeedEffects(dt, state.visualUp, flightForward, cruiseSpeed);
 }
 
 function updateClouds(dt) {
