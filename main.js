@@ -6562,13 +6562,10 @@ function handlePointerDown(e) {
   refreshAccelHeld();
   registerBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
-  if (e.clientY < window.innerHeight * 0.5 && input.lookId === null) {
-    input.lookId = e.pointerId;
+  if (e.clientY < window.innerHeight * 0.5) {
+    state.cameraLookMode = CAMERA_LOOK_MODES.CHASE;
+    input.lookId = null;
     input.lookDragging = false;
-    input.lookLast.x = e.clientX;
-    input.lookLast.y = e.clientY;
-    input.lookStart.x = e.clientX;
-    input.lookStart.y = e.clientY;
     return;
   }
 
