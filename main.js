@@ -1109,10 +1109,12 @@ const P = {
   CAMERA_PITCH_SMOOTH: 3.4,
   CAMERA_DESCEND_PITCH_SMOOTH: 0.85,
   CAMERA_LOOK_DRAG_START: 16,
-  CAMERA_LOOK_YAW_SENS: 0.0048,
-  CAMERA_LOOK_PITCH_SENS: 0.0032,
-  CAMERA_LOOK_MAX_YAW: 2.96,
-  CAMERA_LOOK_MAX_PITCH: 0.68,
+  CAMERA_LOOK_SIDE_SWITCH: 34,
+  CAMERA_LOOK_SIDE_RELEASE: 12,
+  CAMERA_LOOK_FOV_SENS: 0.22,
+  CAMERA_LOOK_MAX_YAW: Math.PI * 0.58,
+  CAMERA_LOOK_MAX_WIDE_FOV: 54,
+  CAMERA_LOOK_MAX_TELE_FOV: 30,
   CAMERA_LOOK_RESPONSE: 10.5,
   CAMERA_LOOK_RETURN: 4.4,
   BASE_FOV: 70,
@@ -2005,7 +2007,6 @@ const updateCameraGroundUpScratch = new THREE.Vector3();
 const updateCameraForwardScratch = new THREE.Vector3();
 const updateCameraGroundTargetScratch = new THREE.Vector3();
 const updateCameraOrbitOffsetScratch = new THREE.Vector3();
-const updateCameraOrbitRightScratch = new THREE.Vector3();
 const updateCameraGroundDesiredScratch = new THREE.Vector3();
 const updateCameraDesiredScratch = new THREE.Vector3();
 const updateCameraTargetScratch = new THREE.Vector3();
@@ -3411,9 +3412,9 @@ const state = {
   visualForward: new THREE.Vector3(0, 0, 1),
   cameraLift: 0,
   cameraYawOffset: 0,
-  cameraPitchOffset: 0,
   cameraYawTarget: 0,
-  cameraPitchTarget: 0,
+  cameraLensOffset: 0,
+  cameraLensTarget: 0,
   currentSpeed: 40,
   speedLock: 40,
   holdAccel: 0,
@@ -4645,9 +4646,9 @@ function debugJumpToSanctuaryCheckpoint() {
   state.screwSpinAngle = 0;
   state.screwForwardOffset = 0;
   state.cameraYawTarget = 0;
-  state.cameraPitchTarget = 0;
+  state.cameraLensTarget = 0;
   state.cameraYawOffset = 0;
-  state.cameraPitchOffset = 0;
+  state.cameraLensOffset = 0;
   state.cameraLift = 0;
 
   activateSanctuary(sanctuary.position.clone());
@@ -4948,11 +4949,17 @@ function resetCameraLook(forceImmediate = false) {
   input.lookId = null;
   input.lookDragging = false;
   state.cameraYawTarget = 0;
-  state.cameraPitchTarget = 0;
+  state.cameraLensTarget = 0;
   if (forceImmediate) {
     state.cameraYawOffset = 0;
-    state.cameraPitchOffset = 0;
+    state.cameraLensOffset = 0;
   }
+}
+
+function releaseCameraLook() {
+  input.lookId = null;
+  input.lookDragging = false;
+  state.cameraLensTarget = 0;
 }
 
 function triggerScrewSpin() {
@@ -6567,8 +6574,8 @@ function handlePointerMove(e) {
   invalidateBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
   if (e.pointerId === input.lookId) {
-    const dx = e.clientX - input.lookLast.x;
     const dy = e.clientY - input.lookLast.y;
+    const totalDx = e.clientX - input.lookStart.x;
     const dragDistance = Math.hypot(e.clientX - input.lookStart.x, e.clientY - input.lookStart.y);
     if (!input.lookDragging && dragDistance > P.CAMERA_LOOK_DRAG_START) {
       input.lookDragging = true;
@@ -6576,15 +6583,15 @@ function handlePointerMove(e) {
       refreshAccelHeld();
     }
     if (input.lookDragging) {
-      state.cameraYawTarget = THREE.MathUtils.clamp(
-        state.cameraYawTarget - dx * P.CAMERA_LOOK_YAW_SENS,
-        -P.CAMERA_LOOK_MAX_YAW,
-        P.CAMERA_LOOK_MAX_YAW
-      );
-      state.cameraPitchTarget = THREE.MathUtils.clamp(
-        state.cameraPitchTarget - dy * P.CAMERA_LOOK_PITCH_SENS,
-        -P.CAMERA_LOOK_MAX_PITCH,
-        P.CAMERA_LOOK_MAX_PITCH
+      if (Math.abs(totalDx) >= P.CAMERA_LOOK_SIDE_SWITCH) {
+        state.cameraYawTarget = Math.sign(totalDx) * P.CAMERA_LOOK_MAX_YAW;
+      } else if (Math.abs(totalDx) <= P.CAMERA_LOOK_SIDE_RELEASE) {
+        state.cameraYawTarget = 0;
+      }
+      state.cameraLensTarget = THREE.MathUtils.clamp(
+        state.cameraLensTarget - dy * P.CAMERA_LOOK_FOV_SENS,
+        -P.CAMERA_LOOK_MAX_TELE_FOV,
+        P.CAMERA_LOOK_MAX_WIDE_FOV
       );
     }
     input.lookLast.x = e.clientX;
@@ -6623,7 +6630,7 @@ function handlePointerUp(e) {
   refreshAccelHeld();
 
   if (e.pointerId === input.lookId) {
-    resetCameraLook();
+    releaseCameraLook();
   }
 
   if (e.pointerId === input.leftId) {
@@ -7488,9 +7495,9 @@ function updatePlayer(dt) {
     alignSpaceForwardToReturnTarget(returnRouteState.spaceUpDirection);
     returnRouteState.spaceCameraSnapPending = false;
     state.cameraYawTarget = 0;
-    state.cameraPitchTarget = 0;
+    state.cameraLensTarget = 0;
     state.cameraYawOffset = 0;
-    state.cameraPitchOffset = 0;
+    state.cameraLensOffset = 0;
     state.cameraLift = 0;
     state.bodyPitch = 0;
     state.visualForward.copy(state.forward);
@@ -8112,7 +8119,7 @@ function updateCamera(dt) {
   state.cameraLift = THREE.MathUtils.lerp(state.cameraLift, targetLift, forwardBlend);
   const lookResponse = input.lookDragging ? P.CAMERA_LOOK_RESPONSE : P.CAMERA_LOOK_RETURN;
   state.cameraYawOffset = THREE.MathUtils.damp(state.cameraYawOffset, state.cameraYawTarget, lookResponse, dt);
-  state.cameraPitchOffset = THREE.MathUtils.damp(state.cameraPitchOffset, state.cameraPitchTarget, lookResponse, dt);
+  state.cameraLensOffset = THREE.MathUtils.damp(state.cameraLensOffset, state.cameraLensTarget, lookResponse, dt);
   const cameraForward = updateCameraForwardScratch.copy(state.forward).addScaledVector(groundUp, state.cameraLift).normalize();
   const speed = state.currentSpeed;
   const dist = P.CAMERA_DIST + speed * P.CAMERA_DIST_SPEED;
@@ -8121,15 +8128,9 @@ function updateCamera(dt) {
   if (Math.abs(state.cameraYawOffset) > 0.0001) {
     orbitOffset.applyAxisAngle(groundUp, -state.cameraYawOffset);
   }
-  if (Math.abs(state.cameraPitchOffset) > 0.0001) {
-    const orbitRight = updateCameraOrbitRightScratch.crossVectors(orbitOffset, groundUp).normalize();
-    if (orbitRight.lengthSq() > 0.0001) {
-      orbitOffset.applyAxisAngle(orbitRight, -state.cameraPitchOffset);
-    }
-  }
   const groundDesired = updateCameraGroundDesiredScratch.copy(groundTarget).add(orbitOffset);
   const speedFactor = THREE.MathUtils.clamp((speed - P.MIN_FWD_SPEED) / Math.max(P.GLIDE_SPEED - P.MIN_FWD_SPEED + P.BOOST_ENERGY, 1), 0, 1);
-  const groundFov = P.BASE_FOV + speedFactor * P.SPEED_FOV;
+  const groundFov = P.BASE_FOV + speedFactor * P.SPEED_FOV + state.cameraLensOffset;
 
   const desired = updateCameraDesiredScratch.copy(groundDesired);
   const target = updateCameraTargetScratch.copy(groundTarget);
@@ -8157,14 +8158,15 @@ function updateCamera(dt) {
     desired.lerp(spaceDesired, spaceBlend);
     target.lerp(spaceTarget, spaceBlend);
     up.lerp(spaceUp, spaceBlend).normalize();
-    targetFov = THREE.MathUtils.lerp(groundFov, P.BASE_FOV, spaceBlend);
+    targetFov = THREE.MathUtils.lerp(groundFov, P.BASE_FOV + state.cameraLensOffset * 0.6, spaceBlend);
   }
 
   const smoothBase = THREE.MathUtils.lerp(P.CAMERA_SMOOTH, SPACE_CAMERA_SMOOTH, spaceBlend);
   const smooth = 1 - Math.pow(1 - smoothBase, dt * 60);
   camera.position.lerp(desired, smooth);
   camera.up.lerp(up, smooth).normalize();
-  const nextFov = THREE.MathUtils.lerp(camera.fov, targetFov, smooth);
+  const clampedTargetFov = THREE.MathUtils.clamp(targetFov, 30, 138);
+  const nextFov = THREE.MathUtils.lerp(camera.fov, clampedTargetFov, smooth);
   if (Math.abs(nextFov - camera.fov) > 0.01) {
     camera.fov = nextFov;
     camera.updateProjectionMatrix();
