@@ -1129,7 +1129,7 @@ const P = {
   BOOST_FOV: 3.5,
   LOOP_SWIPE_TRIGGER: 58,
   LOOP_SWIPE_HORIZONTAL_TOLERANCE: 52,
-  LOOP_DURATION: 1.22,
+  LOOP_DURATION: 2.05,
   MAX_BANK: 0.9,
   BANK_FROM_TURN: 3.4,
   ROLL_RESPONSE: 4.8,
@@ -2009,8 +2009,10 @@ const updatePlayerCrossScratch = new THREE.Vector3();
 const updatePlayerFlightForwardScratch = new THREE.Vector3();
 const updatePlayerVisualPosScratch = new THREE.Vector3();
 const updatePlayerShadowDirectionScratch = new THREE.Vector3();
+const updatePlayerLoopCenterScratch = new THREE.Vector3();
+const updatePlayerLoopForwardScratch = new THREE.Vector3();
+const updatePlayerLoopBodyUpScratch = new THREE.Vector3();
 const updatePlayerLookQuatScratch = new THREE.Quaternion();
-const updatePlayerLoopQuatScratch = new THREE.Quaternion();
 const updatePlayerRollQuatScratch = new THREE.Quaternion();
 const updateSpeedEffectsRightScratch = new THREE.Vector3();
 const updateSpeedEffectsForwardQuatScratch = new THREE.Quaternion();
@@ -2031,7 +2033,6 @@ const updateCameraSpaceDesiredScratch = new THREE.Vector3();
 const cloudDriftAxisScratch = new THREE.Vector3();
 const compassTargetDirectionScratch = new THREE.Vector3();
 const compassAssistTargetScratch = new THREE.Vector3();
-const RIGHT_AXIS = new THREE.Vector3(1, 0, 0);
 const duskTowerInverseQuatScratch = new THREE.Quaternion();
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
 let maxStaticThemeTriggerRadius = 0;
@@ -3417,6 +3418,13 @@ const seagullState = {
   posePitch: 0
 };
 
+const verticalLoopState = {
+  startPos: new THREE.Vector3(),
+  startForward: new THREE.Vector3(),
+  startUp: new THREE.Vector3(),
+  radius: 0
+};
+
 const startUp = new THREE.Vector3(0, 1, 0);
 const startRadius = getSurfaceRadius(startUp) + PLAYER_CLEARANCE;
 const state = {
@@ -4662,6 +4670,7 @@ function debugJumpToSanctuaryCheckpoint() {
   state.loopSpinActive = false;
   state.loopSpinTime = 0;
   state.loopSpinAngle = 0;
+  verticalLoopState.radius = 0;
   state.screwSpinActive = false;
   state.screwSpinTime = 0;
   state.screwSpinAngle = 0;
@@ -4986,12 +4995,37 @@ function releaseCameraLook() {
 }
 
 function triggerVerticalLoop() {
-  if (state.loopSpinActive || returnRouteState.spaceFlightActive || endingUiState.open || endingUiState.transitionActive || endingUiState.whiteoutActive) {
+  if (
+    state.loopSpinActive ||
+    state.screwSpinActive ||
+    returnRouteState.spaceFlightActive ||
+    endingUiState.open ||
+    endingUiState.transitionActive ||
+    endingUiState.whiteoutActive
+  ) {
     return;
   }
+  verticalLoopState.startPos.copy(state.pos);
+  verticalLoopState.startUp.copy(state.pos).normalize();
+  projectVectorOnPlane(verticalLoopState.startForward, state.forward, verticalLoopState.startUp);
+  if (verticalLoopState.startForward.lengthSq() < 0.0001) {
+    verticalLoopState.startForward.copy(state.forward).normalize();
+  }
+  if (verticalLoopState.startForward.lengthSq() < 0.0001) {
+    verticalLoopState.startForward.set(0, 0, 1);
+  }
+  verticalLoopState.radius = THREE.MathUtils.clamp(
+    (Math.max(state.currentSpeed, P.MIN_FWD_SPEED) * P.LOOP_DURATION) / (Math.PI * 2),
+    5.5,
+    12.5
+  );
   state.loopSpinActive = true;
   state.loopSpinTime = 0;
   state.loopSpinAngle = 0;
+  state.onGround = false;
+  state.radialSpeed = 0;
+  state.bodyPitch = 0;
+  state.roll = 0;
 }
 
 function triggerScrewSpin() {
@@ -7538,6 +7572,7 @@ function updatePlayer(dt) {
     state.loopSpinActive = false;
     state.loopSpinTime = 0;
     state.loopSpinAngle = 0;
+    verticalLoopState.radius = 0;
     state.visualForward.copy(state.forward);
   }
   if (returnRouteState.spaceParallelActive && !wasSpaceParallelActive) {
@@ -7750,27 +7785,52 @@ function updatePlayer(dt) {
 
     state.pos.copy(nextUp).multiplyScalar(nextRadius);
   }
-  const signedTurn = Math.atan2(
-    updatePlayerCrossScratch.crossVectors(prevForward, state.forward).dot(nextUp),
-    THREE.MathUtils.clamp(prevForward.dot(state.forward), -1, 1)
-  );
-  const bankTarget = THREE.MathUtils.clamp(
-    -(signedTurn / Math.max(dt, 0.001)) * P.BANK_FROM_TURN,
-    -P.MAX_BANK,
-    P.MAX_BANK
-  );
-  state.roll = THREE.MathUtils.damp(state.roll, bankTarget, P.ROLL_RESPONSE, dt);
   if (state.loopSpinActive) {
     state.loopSpinTime += dt;
     const loopProgress = THREE.MathUtils.clamp(state.loopSpinTime / P.LOOP_DURATION, 0, 1);
-    state.loopSpinAngle = Math.PI * 2 * easeInOutQuint(loopProgress);
+    state.loopSpinAngle = Math.PI * 2 * easeInOutCubic(loopProgress);
+    const loopSin = Math.sin(state.loopSpinAngle);
+    const loopCos = Math.cos(state.loopSpinAngle);
+    updatePlayerLoopCenterScratch.copy(verticalLoopState.startPos)
+      .addScaledVector(verticalLoopState.startUp, verticalLoopState.radius);
+    state.pos.copy(updatePlayerLoopCenterScratch)
+      .addScaledVector(verticalLoopState.startUp, -loopCos * verticalLoopState.radius)
+      .addScaledVector(verticalLoopState.startForward, loopSin * verticalLoopState.radius);
+    updatePlayerLoopForwardScratch.copy(verticalLoopState.startForward)
+      .multiplyScalar(loopCos)
+      .addScaledVector(verticalLoopState.startUp, loopSin)
+      .normalize();
+    state.forward.copy(updatePlayerLoopForwardScratch);
+    nextUp.copy(state.pos).normalize();
+    nextRadius = state.pos.length();
+    surfaceRadius = getSurfaceRadius(nextUp) + PLAYER_CLEARANCE;
+    state.onGround = false;
+    state.radialSpeed = 0;
+    state.bodyPitch = 0;
+    state.roll = 0;
     if (loopProgress >= 1) {
       state.loopSpinActive = false;
       state.loopSpinTime = 0;
       state.loopSpinAngle = 0;
+      verticalLoopState.radius = 0;
+      state.pos.copy(verticalLoopState.startPos);
+      state.forward.copy(verticalLoopState.startForward);
+      nextUp.copy(state.pos).normalize();
+      nextRadius = state.pos.length();
+      surfaceRadius = getSurfaceRadius(nextUp) + PLAYER_CLEARANCE;
     }
   } else {
     state.loopSpinAngle = 0;
+    const signedTurn = Math.atan2(
+      updatePlayerCrossScratch.crossVectors(prevForward, state.forward).dot(nextUp),
+      THREE.MathUtils.clamp(prevForward.dot(state.forward), -1, 1)
+    );
+    const bankTarget = THREE.MathUtils.clamp(
+      -(signedTurn / Math.max(dt, 0.001)) * P.BANK_FROM_TURN,
+      -P.MAX_BANK,
+      P.MAX_BANK
+    );
+    state.roll = THREE.MathUtils.damp(state.roll, bankTarget, P.ROLL_RESPONSE, dt);
   }
   if (state.screwSpinActive) {
     state.screwSpinTime += dt;
@@ -7792,30 +7852,36 @@ function updatePlayer(dt) {
     state.screwForwardOffset = 0;
   }
 
-  const posePitchTarget = returnRouteState.spaceParallelActive
-    ? 0
-    : getSeagullPosePitchTarget(state.glideVisual, state.radialSpeed, cruiseSpeed, climbInput);
-  const poseNoseUp = Math.max(0, -posePitchTarget);
-  const neutralBodyPitch = THREE.MathUtils.lerp(0, P.CRUISE_BODY_PITCH, state.glideVisual);
-  const bodyPitchTarget = returnRouteState.spaceParallelActive
-    ? 0
-    : THREE.MathUtils.clamp(
-      Math.atan2(state.radialSpeed, Math.max(cruiseSpeed, 1)) - descendInput * P.DESCEND_INPUT_PITCH + neutralBodyPitch,
-      -Math.PI * 0.5,
-      Math.max(0, P.MAX_BODY_PITCH - poseNoseUp)
-    );
-  const bodyPitchResponse = bodyPitchTarget < state.bodyPitch ? P.BODY_DESCEND_PITCH_RESPONSE : P.BODY_PITCH_RESPONSE;
-  state.bodyPitch = THREE.MathUtils.damp(state.bodyPitch, bodyPitchTarget, bodyPitchResponse, dt);
   const flightForward = updatePlayerFlightForwardScratch.copy(state.forward);
-  if (!returnRouteState.spaceParallelActive) {
-    flightForward.applyAxisAngle(right, -state.bodyPitch).normalize();
+  if (state.loopSpinActive) {
+    updatePlayerLoopBodyUpScratch.copy(verticalLoopState.startUp)
+      .multiplyScalar(Math.cos(state.loopSpinAngle))
+      .addScaledVector(verticalLoopState.startForward, -Math.sin(state.loopSpinAngle))
+      .normalize();
+    writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, updatePlayerLoopBodyUpScratch);
+  } else {
+    const posePitchTarget = returnRouteState.spaceParallelActive
+      ? 0
+      : getSeagullPosePitchTarget(state.glideVisual, state.radialSpeed, cruiseSpeed, climbInput);
+    const poseNoseUp = Math.max(0, -posePitchTarget);
+    const neutralBodyPitch = THREE.MathUtils.lerp(0, P.CRUISE_BODY_PITCH, state.glideVisual);
+    const bodyPitchTarget = returnRouteState.spaceParallelActive
+      ? 0
+      : THREE.MathUtils.clamp(
+        Math.atan2(state.radialSpeed, Math.max(cruiseSpeed, 1)) - descendInput * P.DESCEND_INPUT_PITCH + neutralBodyPitch,
+        -Math.PI * 0.5,
+        Math.max(0, P.MAX_BODY_PITCH - poseNoseUp)
+      );
+    const bodyPitchResponse = bodyPitchTarget < state.bodyPitch ? P.BODY_DESCEND_PITCH_RESPONSE : P.BODY_PITCH_RESPONSE;
+    state.bodyPitch = THREE.MathUtils.damp(state.bodyPitch, bodyPitchTarget, bodyPitchResponse, dt);
+    if (!returnRouteState.spaceParallelActive) {
+      flightForward.applyAxisAngle(right, -state.bodyPitch).normalize();
+    }
+    writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, nextUp);
   }
-  writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, nextUp);
-  updatePlayerLoopQuatScratch.setFromAxisAngle(RIGHT_AXIS, state.loopSpinAngle);
   updatePlayerRollQuatScratch.setFromAxisAngle(FORWARD_AXIS, state.roll + state.screwSpinAngle);
   player.quaternion
     .copy(updatePlayerLookQuatScratch)
-    .multiply(updatePlayerLoopQuatScratch)
     .multiply(updatePlayerRollQuatScratch);
 
   bobPhase += dt * 0.7;
