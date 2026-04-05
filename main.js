@@ -1129,9 +1129,9 @@ const P = {
   BOOST_FOV: 3.5,
   LOOP_SWIPE_TRIGGER: 58,
   LOOP_SWIPE_HORIZONTAL_TOLERANCE: 52,
-  LOOP_DURATION: 3.2,
-  LOOP_SPEED_SCALE: 0.6,
-  LOOP_RECOVERY_DURATION: 0.62,
+  LOOP_DURATION: 5.4,
+  LOOP_SPEED_SCALE: 0.35,
+  LOOP_RECOVERY_DURATION: 1.8,
   MAX_BANK: 0.9,
   BANK_FROM_TURN: 3.4,
   ROLL_RESPONSE: 4.8,
@@ -7891,7 +7891,7 @@ function updatePlayer(dt) {
         0,
         1
       );
-      const recoveryBlend = easeOutCubic(recoveryProgress);
+      const recoveryBlend = easeInOutCubic(recoveryProgress);
       updatePlayerRecoveryForwardScratch.copy(verticalLoopState.recoveryForward)
         .lerp(flightForward, recoveryBlend)
         .normalize();
