@@ -1127,6 +1127,9 @@ const P = {
   BASE_FOV: 70,
   SPEED_FOV: 7,
   BOOST_FOV: 3.5,
+  LOOP_SWIPE_TRIGGER: 58,
+  LOOP_SWIPE_HORIZONTAL_TOLERANCE: 52,
+  LOOP_DURATION: 1.22,
   MAX_BANK: 0.9,
   BANK_FROM_TURN: 3.4,
   ROLL_RESPONSE: 4.8,
@@ -2007,6 +2010,7 @@ const updatePlayerFlightForwardScratch = new THREE.Vector3();
 const updatePlayerVisualPosScratch = new THREE.Vector3();
 const updatePlayerShadowDirectionScratch = new THREE.Vector3();
 const updatePlayerLookQuatScratch = new THREE.Quaternion();
+const updatePlayerLoopQuatScratch = new THREE.Quaternion();
 const updatePlayerRollQuatScratch = new THREE.Quaternion();
 const updateSpeedEffectsRightScratch = new THREE.Vector3();
 const updateSpeedEffectsForwardQuatScratch = new THREE.Quaternion();
@@ -2027,6 +2031,7 @@ const updateCameraSpaceDesiredScratch = new THREE.Vector3();
 const cloudDriftAxisScratch = new THREE.Vector3();
 const compassTargetDirectionScratch = new THREE.Vector3();
 const compassAssistTargetScratch = new THREE.Vector3();
+const RIGHT_AXIS = new THREE.Vector3(1, 0, 0);
 const duskTowerInverseQuatScratch = new THREE.Quaternion();
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
 let maxStaticThemeTriggerRadius = 0;
@@ -3431,6 +3436,9 @@ const state = {
   radialSpeed: 0,
   bodyPitch: 0,
   roll: 0,
+  loopSpinActive: false,
+  loopSpinTime: 0,
+  loopSpinAngle: 0,
   screwSpinActive: false,
   screwSpinTime: 0,
   screwSpinAngle: 0,
@@ -4651,6 +4659,9 @@ function debugJumpToSanctuaryCheckpoint() {
   state.flaps = P.MAX_FLAPS;
   state.bodyPitch = 0;
   state.roll = 0;
+  state.loopSpinActive = false;
+  state.loopSpinTime = 0;
+  state.loopSpinAngle = 0;
   state.screwSpinActive = false;
   state.screwSpinTime = 0;
   state.screwSpinAngle = 0;
@@ -4972,6 +4983,15 @@ function releaseCameraLook() {
   input.lookId = null;
   input.lookDragging = false;
   state.cameraLensTarget = 0;
+}
+
+function triggerVerticalLoop() {
+  if (state.loopSpinActive || returnRouteState.spaceFlightActive || endingUiState.open || endingUiState.transitionActive || endingUiState.whiteoutActive) {
+    return;
+  }
+  state.loopSpinActive = true;
+  state.loopSpinTime = 0;
+  state.loopSpinAngle = 0;
 }
 
 function triggerScrewSpin() {
@@ -6563,9 +6583,14 @@ function handlePointerDown(e) {
   registerBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
   if (e.clientY < window.innerHeight * 0.5) {
-    state.cameraLookMode = CAMERA_LOOK_MODES.CHASE;
-    input.lookId = null;
-    input.lookDragging = false;
+    if (input.lookId === null) {
+      input.lookId = e.pointerId;
+      input.lookDragging = false;
+      input.lookLast.x = e.clientX;
+      input.lookLast.y = e.clientY;
+      input.lookStart.x = e.clientX;
+      input.lookStart.y = e.clientY;
+    }
     return;
   }
 
@@ -6591,21 +6616,17 @@ function handlePointerMove(e) {
       accelPointers.delete(e.pointerId);
       refreshAccelHeld();
     }
-    if (input.lookDragging) {
-      if (
-        Math.abs(totalDx) <= P.CAMERA_LOOK_SIDE_RELEASE &&
-        Math.abs(totalDy) <= P.CAMERA_LOOK_SIDE_RELEASE
-      ) {
-        state.cameraLookMode = CAMERA_LOOK_MODES.CHASE;
-      } else if (Math.abs(totalDy) > Math.abs(totalDx) && Math.abs(totalDy) >= P.CAMERA_LOOK_SIDE_SWITCH) {
-        state.cameraLookMode = totalDy < 0
-          ? CAMERA_LOOK_MODES.FP_FORWARD
-          : CAMERA_LOOK_MODES.FRONT_LOOKBACK;
-      } else if (Math.abs(totalDx) >= P.CAMERA_LOOK_SIDE_SWITCH) {
-        state.cameraLookMode = totalDx < 0
-          ? CAMERA_LOOK_MODES.FP_LEFT
-          : CAMERA_LOOK_MODES.FP_RIGHT;
-      }
+    if (
+      input.lookDragging &&
+      totalDy <= -P.LOOP_SWIPE_TRIGGER &&
+      Math.abs(totalDx) <= P.LOOP_SWIPE_HORIZONTAL_TOLERANCE
+    ) {
+      invalidateBackgroundTapCandidate(e.pointerId, e.clientX + P.TAP_MOVE_TOLERANCE * 2, e.clientY);
+      accelPointers.delete(e.pointerId);
+      refreshAccelHeld();
+      releaseCameraLook();
+      triggerVerticalLoop();
+      return;
     }
     input.lookLast.x = e.clientX;
     input.lookLast.y = e.clientY;
@@ -7514,6 +7535,9 @@ function updatePlayer(dt) {
     state.cameraLensOffset = 0;
     state.cameraLift = 0;
     state.bodyPitch = 0;
+    state.loopSpinActive = false;
+    state.loopSpinTime = 0;
+    state.loopSpinAngle = 0;
     state.visualForward.copy(state.forward);
   }
   if (returnRouteState.spaceParallelActive && !wasSpaceParallelActive) {
@@ -7736,6 +7760,18 @@ function updatePlayer(dt) {
     P.MAX_BANK
   );
   state.roll = THREE.MathUtils.damp(state.roll, bankTarget, P.ROLL_RESPONSE, dt);
+  if (state.loopSpinActive) {
+    state.loopSpinTime += dt;
+    const loopProgress = THREE.MathUtils.clamp(state.loopSpinTime / P.LOOP_DURATION, 0, 1);
+    state.loopSpinAngle = Math.PI * 2 * easeInOutQuint(loopProgress);
+    if (loopProgress >= 1) {
+      state.loopSpinActive = false;
+      state.loopSpinTime = 0;
+      state.loopSpinAngle = 0;
+    }
+  } else {
+    state.loopSpinAngle = 0;
+  }
   if (state.screwSpinActive) {
     state.screwSpinTime += dt;
     const screwProgress = THREE.MathUtils.clamp(state.screwSpinTime / P.SCREW_DURATION, 0, 1);
@@ -7775,8 +7811,12 @@ function updatePlayer(dt) {
     flightForward.applyAxisAngle(right, -state.bodyPitch).normalize();
   }
   writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, nextUp);
+  updatePlayerLoopQuatScratch.setFromAxisAngle(RIGHT_AXIS, state.loopSpinAngle);
   updatePlayerRollQuatScratch.setFromAxisAngle(FORWARD_AXIS, state.roll + state.screwSpinAngle);
-  player.quaternion.copy(updatePlayerLookQuatScratch).multiply(updatePlayerRollQuatScratch);
+  player.quaternion
+    .copy(updatePlayerLookQuatScratch)
+    .multiply(updatePlayerLoopQuatScratch)
+    .multiply(updatePlayerRollQuatScratch);
 
   bobPhase += dt * 0.7;
   const bob = Math.sin(bobPhase) * 0.22 + Math.sin(bobPhase * 0.37 + 1.1) * 0.08;
