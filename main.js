@@ -1129,7 +1129,9 @@ const P = {
   BOOST_FOV: 3.5,
   LOOP_SWIPE_TRIGGER: 58,
   LOOP_SWIPE_HORIZONTAL_TOLERANCE: 52,
-  LOOP_DURATION: 2.05,
+  LOOP_DURATION: 3.2,
+  LOOP_SPEED_SCALE: 0.6,
+  LOOP_RECOVERY_DURATION: 0.62,
   MAX_BANK: 0.9,
   BANK_FROM_TURN: 3.4,
   ROLL_RESPONSE: 4.8,
@@ -2012,6 +2014,8 @@ const updatePlayerShadowDirectionScratch = new THREE.Vector3();
 const updatePlayerLoopCenterScratch = new THREE.Vector3();
 const updatePlayerLoopForwardScratch = new THREE.Vector3();
 const updatePlayerLoopBodyUpScratch = new THREE.Vector3();
+const updatePlayerRecoveryForwardScratch = new THREE.Vector3();
+const updatePlayerRecoveryUpScratch = new THREE.Vector3();
 const updatePlayerLookQuatScratch = new THREE.Quaternion();
 const updatePlayerRollQuatScratch = new THREE.Quaternion();
 const updateSpeedEffectsRightScratch = new THREE.Vector3();
@@ -3422,7 +3426,10 @@ const verticalLoopState = {
   startPos: new THREE.Vector3(),
   startForward: new THREE.Vector3(),
   startUp: new THREE.Vector3(),
-  radius: 0
+  radius: 0,
+  recoveryForward: new THREE.Vector3(),
+  recoveryUp: new THREE.Vector3(),
+  recoveryTime: 0
 };
 
 const startUp = new THREE.Vector3(0, 1, 0);
@@ -4671,6 +4678,7 @@ function debugJumpToSanctuaryCheckpoint() {
   state.loopSpinTime = 0;
   state.loopSpinAngle = 0;
   verticalLoopState.radius = 0;
+  verticalLoopState.recoveryTime = 0;
   state.screwSpinActive = false;
   state.screwSpinTime = 0;
   state.screwSpinAngle = 0;
@@ -5015,10 +5023,11 @@ function triggerVerticalLoop() {
     verticalLoopState.startForward.set(0, 0, 1);
   }
   verticalLoopState.radius = THREE.MathUtils.clamp(
-    (Math.max(state.currentSpeed, P.MIN_FWD_SPEED) * P.LOOP_DURATION) / (Math.PI * 2),
+    (Math.max(state.currentSpeed, P.MIN_FWD_SPEED) * P.LOOP_SPEED_SCALE * P.LOOP_DURATION) / (Math.PI * 2),
     5.5,
     12.5
   );
+  verticalLoopState.recoveryTime = 0;
   state.loopSpinActive = true;
   state.loopSpinTime = 0;
   state.loopSpinAngle = 0;
@@ -7573,6 +7582,7 @@ function updatePlayer(dt) {
     state.loopSpinTime = 0;
     state.loopSpinAngle = 0;
     verticalLoopState.radius = 0;
+    verticalLoopState.recoveryTime = 0;
     state.visualForward.copy(state.forward);
   }
   if (returnRouteState.spaceParallelActive && !wasSpaceParallelActive) {
@@ -7813,11 +7823,9 @@ function updatePlayer(dt) {
       state.loopSpinTime = 0;
       state.loopSpinAngle = 0;
       verticalLoopState.radius = 0;
-      state.pos.copy(verticalLoopState.startPos);
-      state.forward.copy(verticalLoopState.startForward);
-      nextUp.copy(state.pos).normalize();
-      nextRadius = state.pos.length();
-      surfaceRadius = getSurfaceRadius(nextUp) + PLAYER_CLEARANCE;
+      verticalLoopState.recoveryForward.copy(updatePlayerLoopForwardScratch);
+      verticalLoopState.recoveryUp.copy(updatePlayerLoopBodyUpScratch);
+      verticalLoopState.recoveryTime = P.LOOP_RECOVERY_DURATION;
     }
   } else {
     state.loopSpinAngle = 0;
@@ -7877,7 +7885,25 @@ function updatePlayer(dt) {
     if (!returnRouteState.spaceParallelActive) {
       flightForward.applyAxisAngle(right, -state.bodyPitch).normalize();
     }
-    writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, nextUp);
+    if (verticalLoopState.recoveryTime > 0) {
+      const recoveryProgress = 1 - THREE.MathUtils.clamp(
+        verticalLoopState.recoveryTime / P.LOOP_RECOVERY_DURATION,
+        0,
+        1
+      );
+      const recoveryBlend = easeOutCubic(recoveryProgress);
+      updatePlayerRecoveryForwardScratch.copy(verticalLoopState.recoveryForward)
+        .lerp(flightForward, recoveryBlend)
+        .normalize();
+      updatePlayerRecoveryUpScratch.copy(verticalLoopState.recoveryUp)
+        .lerp(nextUp, recoveryBlend)
+        .normalize();
+      flightForward.copy(updatePlayerRecoveryForwardScratch);
+      writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, updatePlayerRecoveryUpScratch);
+      verticalLoopState.recoveryTime = Math.max(0, verticalLoopState.recoveryTime - dt);
+    } else {
+      writeBasisQuaternion(updatePlayerLookQuatScratch, flightForward, nextUp);
+    }
   }
   updatePlayerRollQuatScratch.setFromAxisAngle(FORWARD_AXIS, state.roll + state.screwSpinAngle);
   player.quaternion
@@ -7907,7 +7933,11 @@ function updatePlayer(dt) {
     spawnDustPuffs(state.pos, nextUp, state.forward);
   }
   state.wasOnGround = state.onGround;
-  state.visualUp.copy(state.loopSpinActive ? updatePlayerLoopBodyUpScratch : nextUp);
+  state.visualUp.copy(
+    state.loopSpinActive
+      ? updatePlayerLoopBodyUpScratch
+      : (verticalLoopState.recoveryTime > 0 ? updatePlayerRecoveryUpScratch : nextUp)
+  );
   state.visualForward.copy(flightForward);
 
   updatePlayerVisuals(dt, state.visualUp, flightForward, cruiseSpeed, turnIntent, climbInput);
