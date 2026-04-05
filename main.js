@@ -977,6 +977,13 @@ const COMPASS_ASSIST_DURATION = 0.92;
 const COMPASS_ASSIST_COOLDOWN = 2.4;
 const COMPASS_ASSIST_TURN_RATE = 9.4;
 const COMPASS_ASSIST_INPUT_RELIEF = 0.9;
+const CAMERA_LOOK_MODES = Object.freeze({
+  CHASE: 'chase',
+  FP_LEFT: 'fp-left',
+  FP_RIGHT: 'fp-right',
+  FP_FORWARD: 'fp-forward',
+  FRONT_LOOKBACK: 'front-lookback'
+});
 const RETURN_ROUTE_PHASES = Object.freeze({
   IDLE: 'idle',
   CHALLENGE: 'challenge',
@@ -2005,6 +2012,8 @@ const updateSpeedEffectsRightScratch = new THREE.Vector3();
 const updateSpeedEffectsForwardQuatScratch = new THREE.Quaternion();
 const updateCameraGroundUpScratch = new THREE.Vector3();
 const updateCameraForwardScratch = new THREE.Vector3();
+const updateCameraRightScratch = new THREE.Vector3();
+const updateCameraHeadBaseScratch = new THREE.Vector3();
 const updateCameraGroundTargetScratch = new THREE.Vector3();
 const updateCameraOrbitOffsetScratch = new THREE.Vector3();
 const updateCameraGroundDesiredScratch = new THREE.Vector3();
@@ -3411,6 +3420,7 @@ const state = {
   visualUp: startUp.clone(),
   visualForward: new THREE.Vector3(0, 0, 1),
   cameraLift: 0,
+  cameraLookMode: CAMERA_LOOK_MODES.CHASE,
   cameraYawOffset: 0,
   cameraYawTarget: 0,
   cameraLensOffset: 0,
@@ -4645,6 +4655,7 @@ function debugJumpToSanctuaryCheckpoint() {
   state.screwSpinTime = 0;
   state.screwSpinAngle = 0;
   state.screwForwardOffset = 0;
+  state.cameraLookMode = CAMERA_LOOK_MODES.CHASE;
   state.cameraYawTarget = 0;
   state.cameraLensTarget = 0;
   state.cameraYawOffset = 0;
@@ -4948,6 +4959,7 @@ function refreshAccelHeld() {
 function resetCameraLook(forceImmediate = false) {
   input.lookId = null;
   input.lookDragging = false;
+  state.cameraLookMode = CAMERA_LOOK_MODES.CHASE;
   state.cameraYawTarget = 0;
   state.cameraLensTarget = 0;
   if (forceImmediate) {
@@ -6574,8 +6586,8 @@ function handlePointerMove(e) {
   invalidateBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
   if (e.pointerId === input.lookId) {
-    const dy = e.clientY - input.lookLast.y;
     const totalDx = e.clientX - input.lookStart.x;
+    const totalDy = e.clientY - input.lookStart.y;
     const dragDistance = Math.hypot(e.clientX - input.lookStart.x, e.clientY - input.lookStart.y);
     if (!input.lookDragging && dragDistance > P.CAMERA_LOOK_DRAG_START) {
       input.lookDragging = true;
@@ -6583,16 +6595,20 @@ function handlePointerMove(e) {
       refreshAccelHeld();
     }
     if (input.lookDragging) {
-      if (Math.abs(totalDx) >= P.CAMERA_LOOK_SIDE_SWITCH) {
-        state.cameraYawTarget = Math.sign(totalDx) * P.CAMERA_LOOK_MAX_YAW;
-      } else if (Math.abs(totalDx) <= P.CAMERA_LOOK_SIDE_RELEASE) {
-        state.cameraYawTarget = 0;
+      if (
+        Math.abs(totalDx) <= P.CAMERA_LOOK_SIDE_RELEASE &&
+        Math.abs(totalDy) <= P.CAMERA_LOOK_SIDE_RELEASE
+      ) {
+        state.cameraLookMode = CAMERA_LOOK_MODES.CHASE;
+      } else if (Math.abs(totalDy) > Math.abs(totalDx) && Math.abs(totalDy) >= P.CAMERA_LOOK_SIDE_SWITCH) {
+        state.cameraLookMode = totalDy < 0
+          ? CAMERA_LOOK_MODES.FP_FORWARD
+          : CAMERA_LOOK_MODES.FRONT_LOOKBACK;
+      } else if (Math.abs(totalDx) >= P.CAMERA_LOOK_SIDE_SWITCH) {
+        state.cameraLookMode = totalDx < 0
+          ? CAMERA_LOOK_MODES.FP_LEFT
+          : CAMERA_LOOK_MODES.FP_RIGHT;
       }
-      state.cameraLensTarget = THREE.MathUtils.clamp(
-        state.cameraLensTarget - dy * P.CAMERA_LOOK_FOV_SENS,
-        -P.CAMERA_LOOK_MAX_TELE_FOV,
-        P.CAMERA_LOOK_MAX_WIDE_FOV
-      );
     }
     input.lookLast.x = e.clientX;
     input.lookLast.y = e.clientY;
@@ -7494,6 +7510,7 @@ function updatePlayer(dt) {
     ensureSpaceParallelUpDirection();
     alignSpaceForwardToReturnTarget(returnRouteState.spaceUpDirection);
     returnRouteState.spaceCameraSnapPending = false;
+    state.cameraLookMode = CAMERA_LOOK_MODES.CHASE;
     state.cameraYawTarget = 0;
     state.cameraLensTarget = 0;
     state.cameraYawOffset = 0;
@@ -8119,8 +8136,9 @@ function updateCamera(dt) {
   state.cameraLift = THREE.MathUtils.lerp(state.cameraLift, targetLift, forwardBlend);
   const lookResponse = input.lookDragging ? P.CAMERA_LOOK_RESPONSE : P.CAMERA_LOOK_RETURN;
   state.cameraYawOffset = THREE.MathUtils.damp(state.cameraYawOffset, state.cameraYawTarget, lookResponse, dt);
-  state.cameraLensOffset = THREE.MathUtils.damp(state.cameraLensOffset, state.cameraLensTarget, lookResponse, dt);
+  state.cameraLensOffset = THREE.MathUtils.damp(state.cameraLensOffset, 0, lookResponse, dt);
   const cameraForward = updateCameraForwardScratch.copy(state.forward).addScaledVector(groundUp, state.cameraLift).normalize();
+  const cameraRight = updateCameraRightScratch.crossVectors(groundUp, cameraForward).normalize();
   const speed = state.currentSpeed;
   const dist = P.CAMERA_DIST + speed * P.CAMERA_DIST_SPEED;
   const groundTarget = updateCameraGroundTargetScratch.copy(state.pos).addScaledVector(groundUp, P.CAMERA_HEIGHT);
@@ -8137,8 +8155,40 @@ function updateCamera(dt) {
   const up = updateCameraUpScratch.copy(groundUp);
   let targetFov = groundFov;
   const spaceBlend = returnRouteState.spaceTransition;
+  const groundLookMode = spaceBlend > 0.001 ? CAMERA_LOOK_MODES.CHASE : state.cameraLookMode;
+  const useFirstPersonLook =
+    groundLookMode === CAMERA_LOOK_MODES.FP_LEFT ||
+    groundLookMode === CAMERA_LOOK_MODES.FP_RIGHT ||
+    groundLookMode === CAMERA_LOOK_MODES.FP_FORWARD;
+  player.visible = !useFirstPersonLook;
 
-  if (spaceBlend > 0.001 && returnRouteState.spaceUpDirection.lengthSq() > 0.0001) {
+  if (groundLookMode !== CAMERA_LOOK_MODES.CHASE) {
+    const headBase = updateCameraHeadBaseScratch.copy(player.position)
+      .addScaledVector(groundUp, 0.42)
+      .addScaledVector(cameraForward, 0.2);
+
+    if (groundLookMode === CAMERA_LOOK_MODES.FP_LEFT) {
+      desired.copy(headBase);
+      target.copy(headBase).addScaledVector(cameraRight, -24);
+      targetFov = 70;
+    } else if (groundLookMode === CAMERA_LOOK_MODES.FP_RIGHT) {
+      desired.copy(headBase);
+      target.copy(headBase).addScaledVector(cameraRight, 24);
+      targetFov = 70;
+    } else if (groundLookMode === CAMERA_LOOK_MODES.FP_FORWARD) {
+      desired.copy(headBase);
+      target.copy(headBase).addScaledVector(cameraForward, 28);
+      targetFov = 70;
+    } else if (groundLookMode === CAMERA_LOOK_MODES.FRONT_LOOKBACK) {
+      desired.copy(player.position)
+        .addScaledVector(cameraForward, 8.8)
+        .addScaledVector(groundUp, 2.3);
+      target.copy(player.position)
+        .addScaledVector(groundUp, 0.55)
+        .addScaledVector(cameraForward, -0.2);
+      targetFov = 86;
+    }
+  } else if (spaceBlend > 0.001 && returnRouteState.spaceUpDirection.lengthSq() > 0.0001) {
     const spaceUp = updateCameraSpaceUpScratch.copy(returnRouteState.spaceUpDirection).normalize();
     const spaceForward = updateCameraSpaceForwardScratch.copy(state.visualForward).normalize();
     if (returnRouteState.phase === RETURN_ROUTE_PHASES.SANCTUARY && !endingUiState.completed) {
