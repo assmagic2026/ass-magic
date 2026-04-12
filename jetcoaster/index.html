@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>ノリコと手描きジェットコースター</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <main class="app-main">
+        <section id="screen-title" class="screen active">
+          <div class="hero-card">
+            <p class="eyebrow">DRAW YOUR RIDE</p>
+            <h1>ノリコと<br />手描きジェットコースター</h1>
+            <p class="hero-copy">
+              横から1本、上から1本。<br />
+              自分で描いたコースにそのまま乗り込みます。
+            </p>
+            <button id="start-button" class="primary-button">
+              はじめる
+            </button>
+          </div>
+        </section>
+
+        <section id="screen-input" class="screen">
+          <div class="panel">
+            <div class="panel-head">
+              <p id="input-step-badge" class="screen-badge">STEP 1</p>
+              <h2 id="input-title">横から見た高さを描く</h2>
+              <p id="input-instructions" class="panel-copy"></p>
+            </div>
+
+            <div class="canvas-card">
+              <div class="canvas-marker start">START</div>
+              <div class="canvas-marker goal">GOAL</div>
+              <canvas id="input-canvas"></canvas>
+            </div>
+
+            <p id="input-status" class="status-text">
+              STARTからGOALまで、左から右へつなげてください。
+            </p>
+
+            <div id="preview-block" class="preview-block hidden">
+              <div class="preview-head">
+                <span>3Dプレビュー</span>
+                <span id="preview-status">2本目を描くと立体になります</span>
+              </div>
+              <canvas id="preview-canvas"></canvas>
+            </div>
+
+            <div class="button-row">
+              <button id="input-reset-button" class="secondary-button">
+                描き直し
+              </button>
+              <button id="input-next-button" class="primary-button" disabled>
+                次へ
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-ride" class="screen">
+          <div class="ride-stage">
+            <canvas id="ride-canvas"></canvas>
+
+            <div class="ride-ui">
+              <div class="ride-chip">
+                <span>速度</span>
+                <strong id="speed-readout">0 km/h</strong>
+              </div>
+              <div class="ride-chip">
+                <span>恐怖</span>
+                <strong id="fear-readout">平常</strong>
+              </div>
+            </div>
+
+            <div class="ride-message" id="ride-message">出発準備中...</div>
+
+            <div class="noriko-wipe">
+              <div class="noriko-label">ノリコさん</div>
+              <canvas id="noriko-canvas"></canvas>
+            </div>
+          </div>
+        </section>
+
+        <section id="screen-result" class="screen">
+          <div class="panel result-panel">
+            <p class="screen-badge">RESULT</p>
+            <h2>コース診断</h2>
+
+            <div class="score-total">
+              <span>TOTAL SCORE</span>
+              <strong id="total-score">000</strong>
+            </div>
+
+            <div class="result-grid">
+              <article class="result-card thrill">
+                <h3>スリル</h3>
+                <strong id="thrill-score">0</strong>
+                <p id="thrill-caption">速度と落差を集計します。</p>
+              </article>
+
+              <article class="result-card smooth">
+                <h3>なめらかさ</h3>
+                <strong id="smooth-score">0</strong>
+                <p id="smooth-caption">ガタつきが少ないほど高得点です。</p>
+              </article>
+
+              <article class="result-card noriko">
+                <h3>ノリコさん崩壊度</h3>
+                <strong id="noriko-score">0</strong>
+                <p id="noriko-caption">変顔の持続時間で伸びます。</p>
+              </article>
+            </div>
+
+            <p id="result-summary" class="result-summary">
+              コースを走るとコメントが出ます。
+            </p>
+
+            <div class="button-row result-buttons">
+              <button id="reride-button" class="secondary-button">
+                同じコースを再走する
+              </button>
+              <button id="restart-button" class="primary-button">
+                もう一度作る
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./main.js"></script>
+  </body>
+</html>
