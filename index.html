@@ -4,8 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>ASS MAGIC | Official Site</title>
-  <link rel="stylesheet" href="style.css?v=20260404-verticalloop4">
-  <script type="module" src="main.js?v=20260404-verticalloop4"></script>
+  <link rel="stylesheet" href="style.css?v=20260412-blackboxcat2">
+  <script type="module" src="main.js?v=20260412-blackboxcat2"></script>
 </head>
 <body>
   <audio id="bgm-audio" preload="auto" playsinline webkit-playsinline crossorigin="anonymous" style="display:none"></audio>
@@ -229,10 +229,16 @@
         </div>
       </div>
       <div id="black-box-view-reveal" class="black-box-view">
-        <img id="black-box-cat-image" src="./blackbox.jpg" alt="箱の中にいた猫">
+        <img id="black-box-cat-image" src="./blackbox-cat.jpg" alt="箱の中にいた猫">
         <div id="black-box-caption">かわいいのがいた。</div>
         <div id="black-box-reveal-actions">
-          <a id="black-box-download" class="ui-control" href="./blackbox.jpg" download="blackbox.jpg">保存する</a>
+          <a id="black-box-download" class="ui-control" href="./blackbox-cat.jpg" download="blackbox-cat.jpg">保存する</a>
+        </div>
+      </div>
+      <div id="black-box-view-cat-route" class="black-box-view">
+        <div id="black-box-cat-route-copy">
+          <p class="black-box-dialog-line">あなた「お前も帰りたいか？」</p>
+          <p class="black-box-dialog-line">猫「ニャー。」</p>
         </div>
       </div>
     </div>
@@ -246,6 +252,37 @@
       <div id="music-selector-browser">
         <div id="music-selector-now-playing"></div>
         <div id="music-selector-list" class="ui-control" aria-label="楽曲リスト"></div>
+      </div>
+    </div>
+  </div>
+  <div id="promo-shot-panel" class="promo-ui" aria-hidden="true">
+    <div id="promo-shot-label">PROMO SHOT</div>
+    <div id="promo-shot-actions">
+      <button id="promo-shot-flight" class="promo-shot-btn ui-control is-active" type="button">飛行</button>
+      <button id="promo-shot-mono" class="promo-shot-btn ui-control" type="button">球体</button>
+      <button id="promo-shot-beam" class="promo-shot-btn ui-control" type="button">ビーム</button>
+    </div>
+  </div>
+  <button id="camera-capture" class="ui-control promo-ui" type="button" aria-label="Capture promo shot">
+    <span class="camera-icon" aria-hidden="true">
+      <span class="camera-body"></span>
+      <span class="camera-lens"></span>
+    </span>
+  </button>
+  <div id="capture-overlay" aria-hidden="true">
+    <div id="capture-backdrop" class="ui-control"></div>
+    <div id="capture-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="Capture preview">
+      <div id="capture-head">
+        <div id="capture-kicker">ASS MAGIC</div>
+        <div id="capture-title">Flight Capture</div>
+        <button id="capture-close" class="ui-control" type="button" aria-label="Close capture">Close</button>
+      </div>
+      <div id="capture-image-wrap">
+        <img id="capture-image" alt="Captured flight scene">
+      </div>
+      <div id="capture-actions">
+        <a id="capture-save" class="ui-control" href="#" download>Save</a>
+        <button id="capture-share" class="ui-control" type="button">Share</button>
       </div>
     </div>
   </div>

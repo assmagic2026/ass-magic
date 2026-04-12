@@ -51,6 +51,58 @@ html, body {
   visibility: hidden !important;
   pointer-events: none !important;
 }
+.is-capture-clean .promo-ui {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+#promo-shot-panel {
+  position: fixed;
+  left: 16px;
+  bottom: 22px;
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: linear-gradient(180deg, rgba(8, 12, 18, 0.82), rgba(8, 12, 18, 0.68));
+  box-shadow:
+    0 12px 28px rgba(0,0,0,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+body.is-promo-mode #promo-shot-panel {
+  display: flex;
+  pointer-events: auto;
+}
+#promo-shot-label {
+  font: 600 11px/1 'Futura Medium', 'Futura', 'Century Gothic', sans-serif;
+  letter-spacing: 0.22em;
+  color: rgba(240, 246, 255, 0.84);
+}
+#promo-shot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.promo-shot-btn {
+  min-width: 74px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: rgba(246, 250, 255, 0.96);
+  font: 600 13px/1 'Futura Medium', 'Futura', 'Century Gothic', sans-serif;
+  letter-spacing: 0.08em;
+}
+.promo-shot-btn.is-active {
+  background: rgba(255,255,255,0.92);
+  color: rgba(10, 16, 25, 0.96);
+}
 #camera-shutter {
   position: fixed;
   inset: 0;
@@ -341,6 +393,7 @@ html, body {
   bottom: 42px;
   transform: translateX(-50%);
   z-index: 20;
+  display: none;
   width: 58px;
   height: 58px;
   padding: 0;
@@ -354,6 +407,9 @@ html, body {
   pointer-events: auto;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+body.is-promo-mode #camera-capture {
+  display: block;
 }
 #camera-capture:disabled {
   opacity: 0.5;
@@ -930,6 +986,24 @@ html, body {
 }
 .black-box-view.is-active {
   display: flex;
+}
+#black-box-view-cat-route {
+  min-height: 220px;
+  justify-content: center;
+}
+#black-box-cat-route-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 4px 12px;
+}
+.black-box-dialog-line {
+  margin: 0;
+  font-family: 'Hiragino Mincho ProN', 'Yu Mincho', 'Noto Serif JP', serif;
+  font-size: 21px;
+  line-height: 1.9;
+  letter-spacing: 0.05em;
+  color: rgba(248, 250, 255, 0.94);
 }
 #black-box-cat-image {
   width: 100%;
@@ -1756,6 +1830,12 @@ html, body {
     width: 62px;
     height: 62px;
   }
+  #promo-shot-panel {
+    left: 12px;
+    right: 12px;
+    bottom: 100px;
+    width: auto;
+  }
   .menu-icon span {
     left: 11px;
     right: 11px;
@@ -1872,6 +1952,9 @@ html, body {
   }
   .black-box-main-title {
     font-size: 20px;
+  }
+  .black-box-dialog-line {
+    font-size: 18px;
   }
   #black-box-close,
   #black-box-open,

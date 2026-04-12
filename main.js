@@ -34,6 +34,10 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 const runtimeUrlParams = new URLSearchParams(window.location.search);
 const DEBUG_CAT_PREVIEW = runtimeUrlParams.get('catdebug') === '1';
 const DEBUG_SANCTUARY_START = runtimeUrlParams.get('sanctuarydebug') === '1';
+const PROMO_CAPTURE_MODE = runtimeUrlParams.get('promo') === '1';
+const PROMO_CAPTURE_WIDTH = 1920;
+const PROMO_CAPTURE_HEIGHT = 1080;
+const PROMO_CAPTURE_PIXEL_RATIO = 1;
 
 function parseLyricTimestamp(value) {
   if (typeof value === 'number') return value;
@@ -153,6 +157,11 @@ const spaceEnvironmentPerfState = {
 };
 let visualizerIdleState = null;
 let lastInfoText = '';
+const captureSizeScratch = new THREE.Vector2();
+const promoPresetPositionScratch = new THREE.Vector3();
+const promoPresetForwardScratch = new THREE.Vector3();
+const promoPresetRightScratch = new THREE.Vector3();
+const promoPresetUpScratch = new THREE.Vector3();
 const monochromeClockAudio = new Audio();
 monochromeClockAudio.src = encodeURI('./振り子時計（エコー入り）.mp3');
 monochromeClockAudio.preload = 'auto';
@@ -990,18 +999,11 @@ const RETURN_ROUTE_PHASES = Object.freeze({
   INVERTED: 'inverted',
   SANCTUARY: 'sanctuary'
 });
-const BLACK_BOX_IMAGE_SET = [
-  {
-    src: './blackbox.jpg',
-    download: 'blackbox.jpg',
-    caption: 'かわいいのがいた。'
-  },
-  {
-    src: './blackbox2.jpg',
-    download: 'blackbox2.jpg',
-    caption: 'うーん、やっぱりかわいい。'
-  }
-];
+const BLACK_BOX_REVEAL_IMAGE = Object.freeze({
+  src: './blackbox-cat.jpg',
+  download: 'blackbox-cat.jpg',
+  caption: 'かわいいのがいた。'
+});
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_PLAYER_STATE_STORAGE_KEY = 'ass-magic-book-player-v1';
 const BOOK_MESSAGE_LIMIT = 12;
@@ -3547,6 +3549,7 @@ const blackBoxUiState = {
   open: false,
   pendingTimer: null,
   currentView: 'intro',
+  pendingCatFollow: false,
   mode: 'orbit',
   routeReady: false,
   routeAngle: 0,
@@ -3569,6 +3572,9 @@ const captureUiState = {
   blob: null,
   fileName: '',
   shutterTimer: null
+};
+const promoUiState = {
+  currentPreset: 'flight'
 };
 const endingUiState = {
   whiteoutActive: false,
@@ -3698,9 +3704,9 @@ function resumeBlackBoxOrbit() {
   placeBlackBoxOrbit();
 }
 
-function setBlackBoxRevealImage(index) {
-  const reveal = BLACK_BOX_IMAGE_SET[Math.min(index, BLACK_BOX_IMAGE_SET.length - 1)] ?? BLACK_BOX_IMAGE_SET[0];
-  blackBoxUiState.currentImageIndex = Math.min(index, BLACK_BOX_IMAGE_SET.length - 1);
+function setBlackBoxRevealImage() {
+  const reveal = BLACK_BOX_REVEAL_IMAGE;
+  blackBoxUiState.currentImageIndex = 0;
   if (blackBoxCatImage) {
     blackBoxCatImage.src = reveal.src;
     blackBoxCatImage.alt = reveal.caption;
@@ -3973,13 +3979,20 @@ function startCatRouteBubble() {
   setCatRouteBubbleVisible(true);
 }
 
-function startCatFollowing(contactPoint = null) {
+function startCatFollowing(contactPoint = null, options = {}) {
+  const { showBubble = true } = options;
   catRouteState.catFollowing = true;
   catRouteState.debugPreviewActive = false;
   catRouteState.reachedEarthWithCat = false;
   refreshCatRouteAvailability();
   ensureCatCompanionRearVisual();
-  startCatRouteBubble();
+  if (showBubble) {
+    startCatRouteBubble();
+  } else {
+    catRouteState.bubbleActive = false;
+    catRouteState.bubbleTime = 0;
+    setCatRouteBubbleVisible(false);
+  }
   setCatPreviewMode('follow');
 
   const sourcePoint = contactPoint && contactPoint.lengthSq() > 0.0001
@@ -4147,6 +4160,7 @@ const blackBoxIgnore = document.getElementById('black-box-ignore');
 const blackBoxBack = document.getElementById('black-box-back');
 const blackBoxViewIntro = document.getElementById('black-box-view-intro');
 const blackBoxViewReveal = document.getElementById('black-box-view-reveal');
+const blackBoxViewCatRoute = document.getElementById('black-box-view-cat-route');
 const blackBoxCatImage = document.getElementById('black-box-cat-image');
 const blackBoxCaption = document.getElementById('black-box-caption');
 const blackBoxDownload = document.getElementById('black-box-download');
@@ -4164,6 +4178,10 @@ const captureImage = document.getElementById('capture-image');
 const captureClose = document.getElementById('capture-close');
 const captureSave = document.getElementById('capture-save');
 const captureShare = document.getElementById('capture-share');
+const promoShotPanel = document.getElementById('promo-shot-panel');
+const promoShotFlight = document.getElementById('promo-shot-flight');
+const promoShotMono = document.getElementById('promo-shot-mono');
+const promoShotBeam = document.getElementById('promo-shot-beam');
 const endingWhiteout = document.getElementById('ending-whiteout');
 const endingTrueMessage = document.getElementById('ending-true-message');
 const endingOverlay = document.getElementById('ending-overlay');
@@ -5456,7 +5474,10 @@ function buildCaptureFileName() {
   const now = new Date();
   const date = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
   const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-  return `ass-magic-flight-record-${date}-${time}.png`;
+  const prefix = PROMO_CAPTURE_MODE
+    ? `ass-magic-promo-${promoUiState.currentPreset}`
+    : 'ass-magic-flight-record';
+  return `${prefix}-${date}-${time}.png`;
 }
 
 function triggerCameraShutter() {
@@ -5640,12 +5661,25 @@ async function captureFlightRecord() {
   triggerCameraShutter();
   document.body.classList.add('is-capture-clean');
   const previousPixelRatio = renderer.getPixelRatio();
+  renderer.getSize(captureSizeScratch);
+  const previousWidth = captureSizeScratch.x;
+  const previousHeight = captureSizeScratch.y;
+  const previousAspect = camera.aspect;
+  const targetWidth = PROMO_CAPTURE_MODE ? PROMO_CAPTURE_WIDTH : window.innerWidth;
+  const targetHeight = PROMO_CAPTURE_MODE ? PROMO_CAPTURE_HEIGHT : window.innerHeight;
+  const targetPixelRatio = PROMO_CAPTURE_MODE ? PROMO_CAPTURE_PIXEL_RATIO : CAPTURE_PIXEL_RATIO;
 
   try {
     await waitForPaintFrame();
-    if (CAPTURE_PIXEL_RATIO > previousPixelRatio + 0.01) {
-      renderer.setPixelRatio(CAPTURE_PIXEL_RATIO);
-      renderer.setSize(window.innerWidth, window.innerHeight, false);
+    if (
+      Math.abs(targetPixelRatio - previousPixelRatio) > 0.01 ||
+      previousWidth !== targetWidth ||
+      previousHeight !== targetHeight
+    ) {
+      renderer.setPixelRatio(targetPixelRatio);
+      renderer.setSize(targetWidth, targetHeight, false);
+      camera.aspect = targetWidth / targetHeight;
+      camera.updateProjectionMatrix();
       await waitForPaintFrame();
     }
     renderer.render(scene, camera);
@@ -5671,13 +5705,166 @@ async function captureFlightRecord() {
     document.body.classList.remove('is-capture-clean');
     console.error('Failed to capture flight record:', error);
   } finally {
-    if (renderer.getPixelRatio() !== previousPixelRatio) {
+    if (
+      renderer.getPixelRatio() !== previousPixelRatio ||
+      previousWidth !== window.innerWidth ||
+      previousHeight !== window.innerHeight ||
+      Math.abs(camera.aspect - previousAspect) > 0.0001
+    ) {
       renderer.setPixelRatio(previousPixelRatio);
       renderer.setSize(window.innerWidth, window.innerHeight, false);
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
     }
     captureUiState.busy = false;
     if (cameraCapture) cameraCapture.disabled = false;
   }
+}
+
+function setPromoModeActive(isActive) {
+  document.body.classList.toggle('is-promo-mode', Boolean(isActive));
+  promoShotPanel?.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+}
+
+function applyPromoPresetState(position, forward) {
+  state.pos.copy(position);
+  state.forward.copy(forward).normalize();
+  state.visualForward.copy(state.forward);
+  state.visualUp.copy(state.pos).normalize();
+  state.currentSpeed = 40;
+  state.speedLock = 40;
+  state.holdAccel = 0;
+  state.radialSpeed = 0;
+  state.bodyPitch = 0;
+  state.roll = 0;
+  state.loopSpinActive = false;
+  state.loopSpinTime = 0;
+  state.loopSpinAngle = 0;
+  state.screwSpinActive = false;
+  state.screwSpinTime = 0;
+  state.screwSpinAngle = 0;
+  state.screwForwardOffset = 0;
+  state.glideVisual = 0.2;
+  state.boostFlash = 0;
+  state.onGround = false;
+  state.wasOnGround = false;
+  input.turnX = 0;
+  input.turnY = 0;
+  input.stickOffset.x = 0;
+  input.stickOffset.y = 0;
+  input.stickSmooth.set(0, 0);
+  input.keySmooth.set(0, 0);
+  resetCameraLook(true);
+  snapCameraOnce();
+}
+
+function resetPromoSceneBase() {
+  closeCaptureOverlay();
+  closeBookOverlay();
+  closeBlackBoxOverlay();
+  closeEndingOverlay();
+  setSiteMenuOpen(false);
+  setMusicSelectorOverlayOpen(false);
+  themeState.mode = 'normal';
+  themeState.cooldown = 0;
+  themeState.flashActive = false;
+  themeState.flashTime = 0;
+  themeState.armed = true;
+  themeState.clearRequired = false;
+  themeState.startupGrace = 0;
+  returnRouteState.phase = RETURN_ROUTE_PHASES.IDLE;
+  returnRouteState.originTag = null;
+  returnRouteState.targetTag = 'night-monochrome-sphere';
+  returnRouteState.targetDirection.copy(NIGHT_CENTER);
+  returnRouteState.sanctuaryActivationTime = 0;
+  returnRouteState.sanctuaryStartAltitude = 0;
+  returnRouteState.earthApproachStartDistance = 0;
+  returnRouteState.spaceUpDirection.set(0, 0, 0);
+  returnRouteState.spaceActivationCharge = 0;
+  returnRouteState.spaceTransition = 0;
+  returnRouteState.spaceCameraSnapPending = false;
+  returnRouteState.spaceParallelActive = false;
+  returnRouteState.spaceFlightActive = false;
+  endingUiState.completed = false;
+  endingUiState.open = false;
+  endingUiState.transitionActive = false;
+  endingUiState.whiteoutActive = false;
+  endingUiState.trueEnding = false;
+  clearCompassAssist();
+  stopEffectAudio(monochromeClockAudio, true);
+  stopEffectAudio(earthArrivalAudio, true);
+  stopEffectAudio(endingRollAudio, true);
+  stopEffectAudio(spaceReturnAudio, true);
+  applyDayNightProgression();
+  applyWorldTheme();
+  syncMonochromeEffectState();
+  syncSpaceReturnAudioState();
+}
+
+function applyPromoPreset(preset) {
+  promoUiState.currentPreset = preset;
+  promoShotFlight?.classList.toggle('is-active', preset === 'flight');
+  promoShotMono?.classList.toggle('is-active', preset === 'mono');
+  promoShotBeam?.classList.toggle('is-active', preset === 'beam');
+
+  if (preset === 'beam') {
+    debugJumpToSanctuaryCheckpoint();
+    activateSanctuary(sanctuary.position);
+    returnRouteState.sanctuaryActivationTime = SANCTUARY_ACTIVATION_DURATION * 0.88;
+    const sanctuaryUp = promoPresetUpScratch.copy(sanctuary.position).normalize();
+    const sanctuaryForward = promoPresetForwardScratch.set(0, 0, 1).applyQuaternion(sanctuary.quaternion).normalize();
+    const sanctuaryRight = promoPresetRightScratch.crossVectors(sanctuaryForward, sanctuaryUp).normalize();
+    const direction = promoPresetPositionScratch.copy(sanctuaryUp)
+      .addScaledVector(sanctuaryForward, -0.42)
+      .addScaledVector(sanctuaryRight, 0.32)
+      .normalize();
+    const position = direction.multiplyScalar(getSurfaceRadius(direction) + PLAYER_CLEARANCE + 18);
+    const lookTarget = sanctuary.position;
+    const lookForward = promoPresetForwardScratch.copy(lookTarget)
+      .sub(position)
+      .addScaledVector(direction, -lookTarget.clone().sub(position).dot(direction));
+    if (lookForward.lengthSq() > 0.0001) {
+      lookForward.normalize();
+    } else {
+      lookForward.copy(sanctuaryRight).negate();
+    }
+    applyPromoPresetState(position, lookForward);
+    return;
+  }
+
+  resetPromoSceneBase();
+
+  if (preset === 'mono') {
+    themeState.mode = 'monochrome';
+    returnRouteState.phase = RETURN_ROUTE_PHASES.CHALLENGE;
+    returnRouteState.originTag = 'day';
+    returnRouteState.targetTag = 'night-monochrome-sphere';
+    returnRouteState.targetDirection.copy(NIGHT_CENTER);
+    const direction = promoPresetPositionScratch.copy(SUN_DIRECTION)
+      .addScaledVector(NIGHT_AXIS_A, 0.2)
+      .addScaledVector(NIGHT_AXIS_B, -0.08)
+      .normalize();
+    const position = direction.multiplyScalar(getSurfaceRadius(direction) + PLAYER_CLEARANCE + 22);
+    const monoTarget = dayMonochromeSphere.position;
+    const lookForward = promoPresetForwardScratch.copy(monoTarget)
+      .sub(position)
+      .addScaledVector(direction, -monoTarget.clone().sub(position).dot(direction))
+      .normalize();
+    applyWorldTheme();
+    syncMonochromeEffectState();
+    applyPromoPresetState(position, lookForward);
+    return;
+  }
+
+  const direction = promoPresetPositionScratch.copy(SUN_DIRECTION)
+    .addScaledVector(NIGHT_AXIS_A, 0.18)
+    .addScaledVector(NIGHT_AXIS_B, -0.22)
+    .normalize();
+  const position = direction.multiplyScalar(getSurfaceRadius(direction) + PLAYER_CLEARANCE + 26);
+  const lookForward = promoPresetForwardScratch.copy(DAY_BLOCKS_DIR)
+    .addScaledVector(direction, -DAY_BLOCKS_DIR.dot(direction))
+    .normalize();
+  applyPromoPresetState(position, lookForward);
 }
 
 function cloneMessages(messages) {
@@ -6409,6 +6596,7 @@ function setBlackBoxView(nextView) {
   blackBoxUiState.currentView = nextView;
   blackBoxViewIntro?.classList.toggle('is-active', nextView === 'intro');
   blackBoxViewReveal?.classList.toggle('is-active', nextView === 'reveal');
+  blackBoxViewCatRoute?.classList.toggle('is-active', nextView === 'cat-route');
 }
 
 function setBlackBoxOverlayOpen(isOpen) {
@@ -6429,7 +6617,7 @@ function setBlackBoxOverlayOpen(isOpen) {
     if (stickHandle) {
       stickHandle.style.transform = 'translate(-50%, -50%)';
     }
-    setSiteMenuOpen(false);
+	    setSiteMenuOpen(false);
   } else if (document.activeElement instanceof HTMLElement) {
     document.activeElement.blur();
   }
@@ -6478,16 +6666,18 @@ function closeBookOverlay() {
   setBookOverlayOpen(false);
 }
 
-function openBlackBoxOverlay() {
+function openBlackBoxOverlay(nextView = 'intro') {
   stopEndingRollAudioPlayback();
   setEndingOverlayTransitioning(false);
   setEndingOverlayOpen(false);
   endingUiState.rollTime = 0;
   closeBookOverlay();
-  setBlackBoxView('intro');
+  blackBoxUiState.pendingCatFollow = nextView === 'cat-route';
+  setBlackBoxView(nextView);
   if (blackBoxTitle) {
-    blackBoxTitle.style.visibility = blackBoxUiState.openedOnce ? 'hidden' : 'visible';
-    blackBoxTitle.setAttribute('aria-hidden', blackBoxUiState.openedOnce ? 'true' : 'false');
+    const shouldHideTitle = blackBoxUiState.openedOnce || nextView === 'cat-route';
+    blackBoxTitle.style.visibility = shouldHideTitle ? 'hidden' : 'visible';
+    blackBoxTitle.setAttribute('aria-hidden', shouldHideTitle ? 'true' : 'false');
   }
   if (blackBoxOpen) {
     blackBoxOpen.textContent = blackBoxUiState.openedOnce ? 'また開けちゃう' : '開けてみる';
@@ -6500,8 +6690,13 @@ function closeBlackBoxOverlay() {
     window.clearTimeout(blackBoxUiState.pendingTimer);
     blackBoxUiState.pendingTimer = null;
   }
+  const shouldStartCatFollowing = blackBoxUiState.pendingCatFollow && !catRouteState.catFollowing;
+  blackBoxUiState.pendingCatFollow = false;
   blackBoxUiState.rearmRequired = isInsideBlackBoxInteractionZone(state.pos);
   setBlackBoxOverlayOpen(false);
+  if (shouldStartCatFollowing) {
+    startCatFollowing(blackBoxLandmark.position, { showBubble: false });
+  }
 }
 
 function openMusicSelectorOverlay() {
@@ -6568,14 +6763,14 @@ function handleBlackBoxTrigger(contactPoint) {
     return;
   }
   if (catRouteState.catRouteAvailable) {
-    startCatFollowing(contactPoint ?? blackBoxLandmark.position);
+    openBlackBoxOverlay('cat-route');
     return;
   }
   if (blackBoxUiState.pendingTimer !== null) {
     window.clearTimeout(blackBoxUiState.pendingTimer);
     blackBoxUiState.pendingTimer = null;
   }
-  openBlackBoxOverlay();
+  openBlackBoxOverlay('intro');
 }
 
 function isInsideMusicSelectorInteractionZone(position, extraRadius = 0) {
@@ -6879,6 +7074,24 @@ cameraCapture?.addEventListener('pointerdown', async (e) => {
   await captureFlightRecord();
 });
 
+promoShotFlight?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  applyPromoPreset('flight');
+});
+
+promoShotMono?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  applyPromoPreset('mono');
+});
+
+promoShotBeam?.addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  applyPromoPreset('beam');
+});
+
 captureBackdrop?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -7034,14 +7247,7 @@ blackBoxOpen?.addEventListener('click', (e) => {
       : blackBoxLandmark.position;
     placeGroundedBlackBox(groundedSource, getBlackBoxForwardFromAngle(blackBoxUiState.lastTriggerAngle));
   }
-  const repeatEncounter = blackBoxUiState.openedOnce;
-  const nextImageIndex = repeatEncounter
-    ? (blackBoxUiState.revealCount % BLACK_BOX_IMAGE_SET.length)
-    : 0;
-  setBlackBoxRevealImage(nextImageIndex);
-  if (blackBoxCaption) {
-    blackBoxCaption.textContent = repeatEncounter ? 'うーん、やっぱりかわいい。' : 'かわいいのがいた。';
-  }
+  setBlackBoxRevealImage();
   blackBoxUiState.openedOnce = true;
   catRouteState.blackBoxOpened = true;
   catRouteState.catFound = true;
@@ -7211,6 +7417,7 @@ refreshCaptureShareButton();
 setMenuPage(activeMenuPage);
 syncMusicUiVisibility();
 syncSpaceReturnAudioState();
+setPromoModeActive(PROMO_CAPTURE_MODE);
 
 window.addEventListener('gesturestart', (e) => e.preventDefault());
 window.addEventListener('gesturechange', (e) => e.preventDefault());
@@ -8532,6 +8739,9 @@ if (DEBUG_CAT_PREVIEW) {
 }
 if (DEBUG_SANCTUARY_START) {
   debugJumpToSanctuaryCheckpoint();
+}
+if (PROMO_CAPTURE_MODE) {
+  applyPromoPreset('flight');
 }
 syncEndingPresentation();
 layoutEndingRoll(true);
