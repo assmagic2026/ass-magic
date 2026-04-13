@@ -196,6 +196,7 @@
     startMarker: document.querySelector(".canvas-marker.start"),
     goalMarker: document.querySelector(".canvas-marker.goal"),
     inputStatus: document.getElementById("input-status"),
+    twistHelp: document.getElementById("twist-help"),
     inputResetButton: document.getElementById("input-reset-button"),
     inputNextButton: document.getElementById("input-next-button"),
     previewBlock: document.getElementById("preview-block"),
@@ -235,13 +236,15 @@
     rideFrame: 0,
     scenery: null,
     skyTexture: null,
-    groundPlane: null
+    groundPlane: null,
+    twistTurns: 0
   };
 
   const inputCtx = els.inputCanvas.getContext("2d");
   const previewCtx = els.previewCanvas.getContext("2d");
   const rideCtx = els.rideCanvas.getContext("2d");
   const norikoCtx = els.norikoCanvas.getContext("2d");
+  const twistOptions = Array.from(document.querySelectorAll("[data-twist-turns]"));
 
   function createEmptyInputState() {
     return {
@@ -253,6 +256,7 @@
 
   function init() {
     bindEvents();
+    updateTwistControls();
     startNewCourse();
   }
 
@@ -262,6 +266,11 @@
     els.inputNextButton.addEventListener("click", handleInputAdvance);
     els.rerideButton.addEventListener("click", rerideTrack);
     els.restartButton.addEventListener("click", startNewCourse);
+    twistOptions.forEach((button) => {
+      button.addEventListener("click", () => {
+        setTwistTurns(Number(button.dataset.twistTurns || 0));
+      });
+    });
 
     els.inputCanvas.addEventListener("pointerdown", handleInputPointerDown);
     els.inputCanvas.addEventListener("pointermove", handleInputPointerMove);
@@ -293,6 +302,27 @@
       return;
     }
     startRide(state.trackData);
+  }
+
+  function setTwistTurns(turns) {
+    state.twistTurns = clamp(Math.round(turns), 0, 3);
+    updateTwistControls();
+  }
+
+  function updateTwistControls() {
+    twistOptions.forEach((button) => {
+      const turns = Number(button.dataset.twistTurns || 0);
+      button.classList.toggle("is-active", turns === state.twistTurns);
+    });
+    if (!els.twistHelp) {
+      return;
+    }
+    if (state.twistTurns <= 0) {
+      els.twistHelp.textContent = "0回: ねじれなし";
+      return;
+    }
+    els.twistHelp.textContent =
+      `${state.twistTurns}回: ゴールまでに${state.twistTurns}回ねじれます`;
   }
 
   function applyInputStage(stageName) {
@@ -327,7 +357,11 @@
       return;
     }
 
-    const trackData = buildTrackData(state.inputs.side.sampled, state.inputs.top.sampled);
+    const trackData = buildTrackData(
+      state.inputs.side.sampled,
+      state.inputs.top.sampled,
+      state.twistTurns
+    );
     state.trackData = trackData;
     startRide(trackData);
   }
@@ -1261,7 +1295,7 @@
     ctx.restore();
   }
 
-  function buildTrackData(sideCurve, topCurve) {
+  function buildTrackData(sideCurve, topCurve, twistTurns = 0) {
     // 側面図は Y と Z、上面図は X を担当します。ループ時は Z も折り返します。
     const topProfileMetrics = getTopProfileMetrics();
     let lateral = topCurve.map(
@@ -1365,9 +1399,8 @@
       turns[i] = smoothedTurns[i];
     }
 
-    const bankTurns = computeBankTurns(points, tangents);
-    const bankAngles = computeBankAngles(bankTurns, cumulative, points.map((point) => point.x));
-    const frames = buildTrackFrames(tangents, bankAngles);
+    const twistAngles = computeTwistAngles(cumulative, twistTurns);
+    const frames = buildTrackFrames(tangents, twistAngles);
     for (let i = 0; i < tangents.length; i += 1) {
       rights[i] = frames.rights[i];
       ups[i] = frames.ups[i];
@@ -1383,10 +1416,12 @@
       ups,
       curvatures,
       turns,
-      bankTurns,
+      bankTurns: [],
       zeroRights: frames.zeroRights,
       zeroUps: frames.zeroUps,
-      bankAngles,
+      bankAngles: twistAngles,
+      twistAngles,
+      twistTurns,
       totalLength: cumulative[cumulative.length - 1],
       analysis,
       bounds
@@ -1913,7 +1948,7 @@
       }));
     }
 
-    const trackData = buildTrackData(sideCurve, topCurve);
+    const trackData = buildTrackData(sideCurve, topCurve, state.twistTurns);
     const bounds = trackData.points.reduce(
       (acc, point) => ({
         minX: Math.min(acc.minX, point.x),
@@ -3365,7 +3400,7 @@
     ctx.restore();
   }
 
-  function buildTrackFrames(tangents, bankAngles) {
+  function buildTrackFrames(tangents, twistAngles) {
     const rights = [];
     const ups = [];
     const zeroRights = [];
@@ -3374,72 +3409,84 @@
       return { rights, ups, zeroRights, zeroUps };
     }
 
-    const initialFrame = createInitialTrackFrame(tangents[0]);
-    let transportRight = initialFrame.right;
-    let transportUp = initialFrame.up;
-    zeroRights[0] = transportRight;
-    zeroUps[0] = transportUp;
-    const firstBanked = applyTrackBankAngle(transportRight, transportUp, bankAngles?.[0] ?? 0);
-    rights[0] = firstBanked.right;
-    ups[0] = firstBanked.up;
+    let zeroFrame = null;
+    for (let i = 0; i < tangents.length; i += 1) {
+      zeroFrame = buildZeroTwistFrame(tangents[i], zeroFrame);
+      zeroRights[i] = zeroFrame.right;
+      zeroUps[i] = zeroFrame.up;
 
-    for (let i = 1; i < tangents.length; i += 1) {
-      const zeroFrame = transportTrackFrame(
-        tangents[i - 1],
-        tangents[i],
-        transportRight,
-        transportUp
+      const twisted = applyTrackBankAngle(
+        zeroFrame.right,
+        zeroFrame.up,
+        twistAngles?.[i] ?? 0
       );
-      transportRight = zeroFrame.right;
-      transportUp = zeroFrame.up;
-      zeroRights[i] = transportRight;
-      zeroUps[i] = transportUp;
-
-      const banked = applyTrackBankAngle(transportRight, transportUp, bankAngles?.[i] ?? 0);
-      rights[i] = banked.right;
-      ups[i] = banked.up;
+      rights[i] = twisted.right;
+      ups[i] = twisted.up;
     }
 
     return { rights, ups, zeroRights, zeroUps };
   }
 
-  function createInitialTrackFrame(tangent) {
-    const flatLength = Math.hypot(tangent.x, tangent.z);
-    const flatForward =
-      flatLength > 0.0001
-        ? { x: tangent.x / flatLength, y: 0, z: tangent.z / flatLength }
-        : null;
-    const horizontalRight = flatForward
-      ? { x: flatForward.z, y: 0, z: -flatForward.x }
-      : { x: 1, y: 0, z: 0 };
-    return orthonormalizeTransportFrame(tangent, horizontalRight, null);
-  }
+  function buildZeroTwistFrame(tangent, previousFrame = null) {
+    const worldUp = { x: 0, y: 1, z: 0 };
+    const projectedUp = sub3(worldUp, scale3(tangent, dot3(worldUp, tangent)));
 
-  function transportTrackFrame(previousTangent, tangent, previousRight, previousUp) {
-    const transportedUp = previousUp
-      ? sub3(previousUp, scale3(tangent, dot3(previousUp, tangent)))
-      : null;
-    const transportedRight = previousRight
-      ? sub3(previousRight, scale3(tangent, dot3(previousRight, tangent)))
-      : null;
+    if (length3(projectedUp) >= 0.0001) {
+      let up = normalize3(projectedUp);
+      if (previousFrame && dot3(up, previousFrame.up) < 0) {
+        up = scale3(up, -1);
+      }
 
-    const frame = orthonormalizeTransportFrame(
-      tangent,
-      transportedRight,
-      transportedUp
-    );
-
-    if (
-      (previousRight && dot3(frame.right, previousRight) < 0) ||
-      (previousUp && dot3(frame.up, previousUp) < 0)
-    ) {
-      return {
-        right: scale3(frame.right, -1),
-        up: scale3(frame.up, -1)
-      };
+      let right = cross3(up, tangent);
+      if (length3(right) < 0.0001) {
+        right = previousFrame ? previousFrame.right : { x: 1, y: 0, z: 0 };
+      }
+      right = normalize3(right);
+      up = normalize3(cross3(tangent, right));
+      return preserveFrameContinuity({ right, up }, previousFrame);
     }
 
-    return frame;
+    let rightHint = previousFrame ? previousFrame.right : null;
+    if (rightHint) {
+      rightHint = sub3(rightHint, scale3(tangent, dot3(rightHint, tangent)));
+    }
+    if (!rightHint || length3(rightHint) < 0.0001) {
+      rightHint = getFallbackRightAxis(tangent);
+    }
+
+    let right = normalize3(rightHint);
+    let up = normalize3(cross3(tangent, right));
+    if (previousFrame && dot3(up, previousFrame.up) < 0) {
+      right = scale3(right, -1);
+      up = scale3(up, -1);
+    }
+
+    return preserveFrameContinuity({ right, up }, previousFrame);
+  }
+
+  function getFallbackRightAxis(tangent) {
+    const flatLength = Math.hypot(tangent.x, tangent.z);
+    if (flatLength > 0.0001) {
+      return { x: tangent.z / flatLength, y: 0, z: -tangent.x / flatLength };
+    }
+    return { x: 1, y: 0, z: 0 };
+  }
+
+  function preserveFrameContinuity(frame, previousFrame = null) {
+    if (!previousFrame) {
+      return frame;
+    }
+
+    let { right, up } = frame;
+    if (
+      dot3(right, previousFrame.right) < 0 ||
+      dot3(up, previousFrame.up) < 0
+    ) {
+      right = scale3(right, -1);
+      up = scale3(up, -1);
+    }
+
+    return { right, up };
   }
 
   function orthonormalizeTransportFrame(tangent, rightHint = null, upHint = null) {
@@ -3503,6 +3550,15 @@
       return [];
     }
     return bankTurns.map(() => 0);
+  }
+
+  function computeTwistAngles(cumulative, twistTurns) {
+    const totalLength = cumulative[cumulative.length - 1] || 0;
+    if (!totalLength || !twistTurns) {
+      return cumulative.map(() => 0);
+    }
+    const totalAngle = twistTurns * Math.PI * 2;
+    return cumulative.map((distance) => (distance / totalLength) * totalAngle);
   }
 
   function getTrackFrame(tangent, rightHint = null, upHint = null) {
@@ -3956,30 +4012,32 @@
         lerp3(trackData.tangents[lowerIndex], trackData.tangents[upperIndex], t)
       );
     }
-    const lowerZeroRight = trackData.zeroRights[lowerIndex];
-    const lowerZeroUp = trackData.zeroUps[lowerIndex];
-    let upperZeroRight = trackData.zeroRights[upperIndex];
-    let upperZeroUp = trackData.zeroUps[upperIndex];
-    if (dot3(lowerZeroRight, upperZeroRight) < 0 || dot3(lowerZeroUp, upperZeroUp) < 0) {
-      upperZeroRight = scale3(upperZeroRight, -1);
-      upperZeroUp = scale3(upperZeroUp, -1);
+    const lowerRight = trackData.rights[lowerIndex];
+    const lowerUp = trackData.ups[lowerIndex];
+    let upperRight = trackData.rights[upperIndex];
+    let upperUp = trackData.ups[upperIndex];
+    if (dot3(lowerRight, upperRight) < 0 || dot3(lowerUp, upperUp) < 0) {
+      upperRight = scale3(upperRight, -1);
+      upperUp = scale3(upperUp, -1);
     }
-    const zeroRightHint = normalize3(
-      lerp3(lowerZeroRight, upperZeroRight, t)
+
+    const frame = orthonormalizeTransportFrame(
+      tangent,
+      normalize3(lerp3(lowerRight, upperRight, t)),
+      normalize3(lerp3(lowerUp, upperUp, t))
     );
-    const zeroUpHint = normalize3(
-      lerp3(lowerZeroUp, upperZeroUp, t)
+    const twistAngle = lerp(
+      (trackData.twistAngles || trackData.bankAngles)[lowerIndex],
+      (trackData.twistAngles || trackData.bankAngles)[upperIndex],
+      t
     );
-    const zeroFrame = orthonormalizeTransportFrame(tangent, zeroRightHint, zeroUpHint);
-    const bankAngle = lerp(trackData.bankAngles[lowerIndex], trackData.bankAngles[upperIndex], t);
-    const frame = applyTrackBankAngle(zeroFrame.right, zeroFrame.up, bankAngle);
 
     return {
       point,
       tangent,
       right: frame.right,
       up: frame.up,
-      bankAngle,
+      bankAngle: twistAngle,
       curvature: lerp(trackData.curvatures[lowerIndex], trackData.curvatures[upperIndex], t),
       turn: lerp(trackData.turns[lowerIndex], trackData.turns[upperIndex], t)
     };
