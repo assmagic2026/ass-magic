@@ -90,8 +90,8 @@
       finalFoldbackStabilizeStrength: 0.96
     },
     ride: {
-      startSpeed: 50 / 3.6,
-      minSpeed: 50 / 3.6,
+      startSpeed: 80 / 3.6,
+      minSpeed: 80 / 3.6,
       maxSpeed: 76,
       gravity: 32,
       rollingResistance: 0.05,
@@ -1787,49 +1787,95 @@
     previewCtx.clearRect(0, 0, width, height);
 
     const gradient = previewCtx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, "rgba(89, 210, 255, 0.86)");
-    gradient.addColorStop(1, "rgba(238, 249, 255, 0.96)");
+    gradient.addColorStop(0, "rgba(150, 226, 255, 0.92)");
+    gradient.addColorStop(0.62, "rgba(243, 249, 255, 0.98)");
+    gradient.addColorStop(1, "rgba(255, 244, 216, 0.96)");
     previewCtx.fillStyle = gradient;
     previewCtx.fillRect(0, 0, width, height);
 
     const previewTrack = buildPreviewTrackData();
     if (!previewTrack) {
-      els.previewStatus.textContent = "2本目を描くと立体になります";
+      els.previewStatus.textContent = "描いた高さを確認できます";
       return;
     }
 
-    drawPreviewGround(previewCtx, width, height);
-    const previewProjection = buildPreviewProjection(previewTrack, width, height);
-    const sections = buildPreviewTrackSections(previewTrack, previewProjection);
-    const supportSections = buildPreviewSupportSections(previewTrack, previewProjection);
-    const tieSections = buildPreviewTieSections(previewTrack, previewProjection);
-    drawPreviewSupports(previewCtx, supportSections);
-    drawPreviewTies(previewCtx, tieSections);
-    drawRailStroke(previewCtx, sections.map((section) => section.leftRail), 6.8, CONFIG.visual.track.railShadow);
-    drawRailStroke(previewCtx, sections.map((section) => section.rightRail), 6.8, CONFIG.visual.track.railShadow);
-    drawRailStroke(previewCtx, sections.map((section) => section.leftRail), 4.8, CONFIG.visual.track.railMetal);
-    drawRailStroke(previewCtx, sections.map((section) => section.rightRail), 4.8, CONFIG.visual.track.railMetal);
-
-    previewCtx.save();
-    previewCtx.fillStyle = "#ff6b4a";
-    previewCtx.beginPath();
-    previewCtx.arc(sections[0].center.x, sections[0].center.y, 5.5, 0, Math.PI * 2);
-    previewCtx.fill();
-    previewCtx.fillStyle = "#1d9bf0";
-    previewCtx.beginPath();
-    previewCtx.arc(
-      sections[sections.length - 1].center.x,
-      sections[sections.length - 1].center.y,
-      5.5,
-      0,
-      Math.PI * 2
-    );
-    previewCtx.fill();
-    previewCtx.restore();
+    drawSidePreview(previewCtx, width, height, previewTrack);
 
     els.previewStatus.textContent = state.inputs.top.valid
-      ? "このコースで走れます"
-      : "描いている途中の立体イメージ";
+      ? "完成コースの横から見た形です"
+      : "この高さで走ります";
+  }
+
+  function drawSidePreview(ctx, width, height, previewTrack) {
+    const bounds = previewTrack.bounds || getTrackBounds(previewTrack.points);
+    const paddingX = 22;
+    const paddingTop = 18;
+    const paddingBottom = 28;
+    const spanZ = Math.max(1, bounds.maxZ - bounds.minZ);
+    const spanY = Math.max(1, bounds.maxY - bounds.minY);
+    const scaleX = (width - paddingX * 2) / spanZ;
+    const scaleY = (height - paddingTop - paddingBottom) / spanY;
+    const scale = Math.min(scaleX, scaleY * 1.12);
+    const offsetX =
+      paddingX + (width - paddingX * 2 - spanZ * scale) * 0.5;
+    const offsetY =
+      paddingTop + (height - paddingTop - paddingBottom - spanY * scale) * 0.5;
+    const project = (point) => ({
+      x: offsetX + (point.z - bounds.minZ) * scale,
+      y: offsetY + (bounds.maxY - point.y) * scale
+    });
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(31, 38, 64, 0.08)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 4; i += 1) {
+      const y = paddingTop + ((height - paddingTop - paddingBottom) * i) / 5;
+      ctx.beginPath();
+      ctx.moveTo(14, y);
+      ctx.lineTo(width - 14, y);
+      ctx.stroke();
+    }
+    for (let i = 1; i <= 5; i += 1) {
+      const x = paddingX + ((width - paddingX * 2) * i) / 6;
+      ctx.beginPath();
+      ctx.moveTo(x, paddingTop);
+      ctx.lineTo(x, height - paddingBottom + 6);
+      ctx.stroke();
+    }
+
+    const groundY = height - paddingBottom + 2;
+    ctx.strokeStyle = "rgba(31, 38, 64, 0.14)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(12, groundY);
+    ctx.lineTo(width - 12, groundY);
+    ctx.stroke();
+
+    const sidePoints = previewTrack.points.map(project);
+    drawRailStroke(ctx, sidePoints, 9, "rgba(26, 42, 68, 0.18)");
+    drawRailStroke(ctx, sidePoints, 6.4, CONFIG.visual.track.railMetal);
+    drawRailStroke(ctx, sidePoints, 2.2, CONFIG.visual.track.railHighlight);
+
+    const startPoint = sidePoints[0];
+    const goalPoint = sidePoints[sidePoints.length - 1];
+    ctx.fillStyle = "#ff6b4a";
+    ctx.beginPath();
+    ctx.arc(startPoint.x, startPoint.y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1d9bf0";
+    ctx.beginPath();
+    ctx.arc(goalPoint.x, goalPoint.y, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(31, 38, 64, 0.52)";
+    ctx.font = '700 12px "Avenir Next", "Hiragino Sans", sans-serif';
+    ctx.fillText("高い", 12, 22);
+    ctx.fillText("低い", 12, height - 10);
+    ctx.textAlign = "left";
+    ctx.fillText("START", Math.min(width - 58, startPoint.x + 10), Math.max(18, startPoint.y - 10));
+    ctx.textAlign = "right";
+    ctx.fillText("GOAL", Math.min(width - 10, goalPoint.x + 28), Math.max(18, goalPoint.y - 10));
+    ctx.restore();
   }
 
   function buildPreviewTrackData() {
