@@ -3920,6 +3920,45 @@
     return (size * camera.focal) / Math.max(depth, CONFIG.ride.nearClip);
   }
 
+  function addRoundedRectPath(ctx, x, y, width, height, radius) {
+    const r = clamp(radius, 0, Math.min(Math.abs(width), Math.abs(height)) * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+    ctx.lineTo(x + r, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  function traceNorikoHeadPath(ctx, panic, grotesque) {
+    ctx.beginPath();
+    ctx.moveTo(0, -47);
+    ctx.bezierCurveTo(24, -47, 37, -22, 35, 9);
+    ctx.bezierCurveTo(
+      33,
+      33 + panic * 1.6,
+      18,
+      53 + grotesque * 3.2,
+      0,
+      57 + grotesque * 4.6
+    );
+    ctx.bezierCurveTo(
+      -18,
+      53 + grotesque * 3.2,
+      -33,
+      33 + panic * 1.6,
+      -35,
+      9
+    );
+    ctx.bezierCurveTo(-37, -22, -24, -47, 0, -47);
+    ctx.closePath();
+  }
+
   function drawNorikoFace(fear, level, wobble, now) {
     const width = els.norikoCanvas.clientWidth;
     const height = els.norikoCanvas.clientHeight;
@@ -3928,143 +3967,619 @@
     }
 
     norikoCtx.clearRect(0, 0, width, height);
+    drawNorikoBackdrop(norikoCtx, width, height, fear, now);
 
-    const wobblePhase = now * 0.009;
-    const squash = 1 + Math.sin(wobblePhase) * 0.02 + fear * 0.08;
-    const stretch = 1 + Math.cos(wobblePhase * 1.3) * 0.018 + Math.max(0, level - 3) * 0.08;
-    const eyeSpread = 19 + fear * 7 + Math.max(0, level - 3) * 6;
-    const eyeY = -8 - fear * 3;
-    const mouthOpen = 2 + Math.max(0, level - 1) * 3 + fear * 9;
-    const faceTilt = Math.sin(wobblePhase * 0.85) * 0.035 + wobble * 0.0014;
-    const offsetChaos = Math.max(0, level - 3) * 8;
-    const collapse = Math.max(0, level - 4) * 16;
+    const phase = now * 0.0082;
+    const panic = clamp((fear - 0.05) / 0.95, 0, 1);
+    const grotesque = clamp((level - 3) / 2, 0, 1);
+    const collapse = clamp(level - 4, 0, 1);
+    const breath = Math.sin(now * 0.0024);
+    const tremble = Math.sin(now * 0.038) * panic * 0.35;
+    const asymmetry = grotesque * 4.6 + collapse * 3.2;
+    const faceTilt =
+      Math.sin(phase * 0.9) * 0.012 +
+      wobble * 0.0006 +
+      Math.sin(phase * 2.1) * collapse * 0.045;
+    const faceScaleX = 1 + panic * 0.018 + grotesque * 0.085;
+    const faceScaleY = 1 - panic * 0.016 + collapse * 0.052;
+    const headShiftY = breath * 0.9 - panic * 0.8;
+    const eyeSpread = 16.8 + panic * 3.6 + grotesque * 5.2;
+    const eyeY = -7.8 - panic * 2.4 - grotesque * 1.8;
+    const browY = eyeY - 12.8 - panic * 1.2 - grotesque * 1.6;
+    const jawDrop = panic * 2.4 + grotesque * 4.8 + collapse * 4.2;
+    const mouthOpen = 1.2 + panic * 5.6 + grotesque * 7.4 + collapse * 9.6;
+    const mouthWidth = 12.5 + panic * 3.8 + grotesque * 5.8;
+    const gazeX = Math.sin(phase * 0.72) * 0.55 + wobble * 0.01 + collapse * 1.8;
+    const gazeY = -0.2 + panic * 0.45 + collapse * 0.8;
+    const noseShiftX = Math.sin(phase * 1.1) * 0.3 + asymmetry * 0.12;
+    const cheekFlush = 0.1 + panic * 0.12 + grotesque * 0.08;
 
     norikoCtx.save();
-    norikoCtx.translate(width * 0.5, height * 0.53);
+    norikoCtx.translate(width * 0.5, height * 0.585 + headShiftY);
     norikoCtx.rotate(faceTilt);
-    norikoCtx.scale(squash, stretch);
+    norikoCtx.scale(faceScaleX, faceScaleY);
 
-    norikoCtx.fillStyle = "#ffd8c0";
-    norikoCtx.beginPath();
-    norikoCtx.ellipse(
-      0,
-      0,
-      34 + fear * 2.4 + collapse * 0.4,
-      44 - fear * 2.4 + collapse * 0.5,
-      0,
-      0,
-      Math.PI * 2
-    );
-    norikoCtx.fill();
+    drawNorikoShoulders(norikoCtx, panic, grotesque);
+    drawNorikoHairBack(norikoCtx, panic, grotesque, phase);
+    drawNorikoNeck(norikoCtx, panic, grotesque);
+    drawNorikoEar(norikoCtx, -31.5 - grotesque * 1.2, 4, panic);
+    drawNorikoEar(norikoCtx, 31.5 + grotesque * 1.2, 4, panic);
+    drawNorikoHead(norikoCtx, panic, grotesque);
+    drawNorikoFacePlanes(norikoCtx, panic, grotesque, collapse);
+    drawNorikoCheeks(norikoCtx, cheekFlush, grotesque);
 
-    norikoCtx.fillStyle = "#f4b188";
-    norikoCtx.beginPath();
-    norikoCtx.ellipse(0, 12 + fear * 3, 9 + fear * 1.8, 12 + fear * 2, 0, 0, Math.PI * 2);
-    norikoCtx.fill();
+    drawNorikoEye(norikoCtx, {
+      x: -eyeSpread - asymmetry * 0.22,
+      y: eyeY - collapse * 1.1 + tremble * 0.6,
+      width: 10.4 + panic * 1.6 + grotesque * 1.2,
+      height: 5.2 + panic * 0.9,
+      panic,
+      grotesque,
+      direction: -1,
+      gazeX: -gazeX,
+      gazeY,
+      skew: -0.035 - collapse * 0.06
+    });
+    drawNorikoEye(norikoCtx, {
+      x: eyeSpread + asymmetry * 0.14,
+      y: eyeY + grotesque * 0.8 - tremble * 0.45,
+      width: 10.8 + panic * 1.8 + grotesque * 1.8,
+      height: 5.3 + panic * 1.1 + collapse * 0.6,
+      panic,
+      grotesque,
+      direction: 1,
+      gazeX: gazeX + collapse * 0.8,
+      gazeY: gazeY + collapse * 0.3,
+      skew: 0.035 + collapse * 0.08
+    });
 
-    norikoCtx.fillStyle = "#51392c";
-    norikoCtx.beginPath();
-    norikoCtx.arc(-14, -34, 12, Math.PI, Math.PI * 2);
-    norikoCtx.arc(14, -34, 12, Math.PI, Math.PI * 2);
-    norikoCtx.fill();
+    drawNorikoBrow(norikoCtx, {
+      x: -eyeSpread - asymmetry * 0.12,
+      y: browY - (panic * 2.4 + grotesque * 2.6),
+      width: 14.2 + panic * 1.2,
+      thickness: 3.8 + grotesque * 1.4,
+      tilt: -0.16 - panic * 0.1 - grotesque * 0.12,
+      panic,
+      grotesque
+    });
+    drawNorikoBrow(norikoCtx, {
+      x: eyeSpread + asymmetry * 0.08,
+      y: browY - (panic * 3.2 + grotesque * 3.6),
+      width: 14.4 + panic * 1.4,
+      thickness: 3.9 + grotesque * 1.5,
+      tilt: 0.16 + panic * 0.12 + grotesque * 0.14,
+      panic,
+      grotesque
+    });
 
-    drawNorikoEye(
-      norikoCtx,
-      -eyeSpread - offsetChaos * 0.3,
-      eyeY - offsetChaos * 0.2,
-      1 + fear * 0.28,
-      1 + Math.max(0, level - 1) * 0.08,
-      fear,
-      -1,
-      level
-    );
-    drawNorikoEye(
-      norikoCtx,
-      eyeSpread - collapse * 0.25,
-      eyeY + offsetChaos * 0.15,
-      1 + fear * 0.32,
-      1 + Math.max(0, level - 1) * 0.08,
-      fear,
-      1,
-      level
-    );
+    drawNorikoNose(norikoCtx, {
+      x: noseShiftX,
+      y: 7.5 + panic * 1.2,
+      panic,
+      grotesque,
+      phase
+    });
+    drawNorikoMouth(norikoCtx, {
+      x: collapse * 0.8 + asymmetry * 0.1,
+      y: 28 + jawDrop,
+      width: mouthWidth,
+      open: mouthOpen,
+      panic,
+      grotesque,
+      phase
+    });
+    drawNorikoHairFront(norikoCtx, panic, grotesque, phase);
 
-    drawNorikoBrow(norikoCtx, -eyeSpread, eyeY - 14 - level * 1.1, -0.12 - fear * 0.26, level);
-    drawNorikoBrow(norikoCtx, eyeSpread, eyeY - 14 - level * 1.1, 0.12 + fear * 0.26, level);
-
-    norikoCtx.strokeStyle = "#7c4a2d";
-    norikoCtx.lineWidth = 2.4;
-    norikoCtx.beginPath();
-    norikoCtx.moveTo(0, 0);
-    norikoCtx.lineTo(Math.sin(wobblePhase) * 2.2 + collapse * 0.08, 15 + fear * 5);
-    norikoCtx.stroke();
-
-    drawNorikoMouth(norikoCtx, 0 + collapse * 0.1, 28 + fear * 4, mouthOpen, level, wobblePhase);
-
-    if (level >= 4) {
-      norikoCtx.fillStyle = "rgba(255, 90, 90, 0.14)";
-      norikoCtx.beginPath();
-      norikoCtx.ellipse(-18, 18, 8, 5, 0.3, 0, Math.PI * 2);
-      norikoCtx.ellipse(18, 18, 8, 5, -0.3, 0, Math.PI * 2);
-      norikoCtx.fill();
+    if (panic > 0.42) {
+      drawNorikoSweat(norikoCtx, -30 - panic * 2, -10, 0.06 + panic * 0.05, phase);
+      drawNorikoSweat(
+        norikoCtx,
+        27 + grotesque * 3,
+        -2 + collapse * 4,
+        -0.08,
+        phase + 0.9
+      );
     }
 
     norikoCtx.restore();
   }
 
-  function drawNorikoEye(ctx, x, y, scaleX, scaleY, fear, direction, level) {
+  function drawNorikoBackdrop(ctx, width, height, fear, now) {
+    const backdrop = ctx.createLinearGradient(0, 0, 0, height);
+    backdrop.addColorStop(0, "#d7ecff");
+    backdrop.addColorStop(0.56, "#f9f2ea");
+    backdrop.addColorStop(1, "#e3c1ae");
+    ctx.fillStyle = backdrop;
+    ctx.fillRect(0, 0, width, height);
+
+    const glowX = width * 0.5 + Math.sin(now * 0.0015) * width * 0.028;
+    const glowY = height * 0.2;
+    const glow = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, width * 0.44);
+    glow.addColorStop(0, `rgba(255,255,255,${0.82 - fear * 0.18})`);
+    glow.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, width, height);
+
+    for (let i = 0; i < 3; i += 1) {
+      const orbX = width * (0.2 + i * 0.28) + Math.sin(now * 0.0008 + i) * 6;
+      const orbY = height * (0.14 + i * 0.1);
+      const orb = ctx.createRadialGradient(orbX, orbY, 0, orbX, orbY, width * 0.12);
+      orb.addColorStop(0, "rgba(255,255,255,0.22)");
+      orb.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = orb;
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, width - 1, height - 1);
+
+    const vignette = ctx.createRadialGradient(
+      width * 0.5,
+      height * 0.45,
+      width * 0.18,
+      width * 0.5,
+      height * 0.45,
+      width * 0.72
+    );
+    vignette.addColorStop(0, "rgba(255,255,255,0)");
+    vignette.addColorStop(1, "rgba(72, 47, 41, 0.18)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  function drawNorikoShoulders(ctx, panic, grotesque) {
     ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(scaleX, scaleY);
-    ctx.fillStyle = "white";
+    const blouse = ctx.createLinearGradient(0, 34, 0, 88);
+    blouse.addColorStop(0, "#91a9d1");
+    blouse.addColorStop(1, "#5f7392");
+    ctx.fillStyle = blouse;
     ctx.beginPath();
-    ctx.ellipse(0, 0, 9 + fear * 3, 6.6 + fear * 1.8, 0, 0, Math.PI * 2);
+    ctx.moveTo(-52, 88);
+    ctx.quadraticCurveTo(-44, 46, -22, 34);
+    ctx.quadraticCurveTo(0, 27 + grotesque * 4, 22, 34);
+    ctx.quadraticCurveTo(44, 46, 52, 88);
+    ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = "#1e1e1e";
-    const pupilOffset = direction * (fear * 1.8 + Math.max(0, level - 4) * 5);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.24)";
     ctx.beginPath();
-    ctx.arc(pupilOffset, fear * 1.5 - Math.max(0, level - 3) * 2.4, 3.6 + fear * 1.1, 0, Math.PI * 2);
+    ctx.ellipse(0, 45, 16 + panic * 1.4, 8.6 + panic, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(63, 78, 105, 0.34)";
+    ctx.beginPath();
+    ctx.moveTo(-34, 88);
+    ctx.quadraticCurveTo(-31, 61, -20, 40);
+    ctx.lineTo(-12, 42);
+    ctx.quadraticCurveTo(-19, 60, -22, 88);
+    ctx.closePath();
+    ctx.moveTo(34, 88);
+    ctx.quadraticCurveTo(31, 61, 20, 40);
+    ctx.lineTo(12, 42);
+    ctx.quadraticCurveTo(19, 60, 22, 88);
+    ctx.closePath();
     ctx.fill();
     ctx.restore();
   }
 
-  function drawNorikoBrow(ctx, x, y, rotation, level) {
+  function drawNorikoHairBack(ctx, panic, grotesque, phase) {
     ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rotation);
-    ctx.strokeStyle = "#4b2f21";
-    ctx.lineWidth = 4 + Math.max(0, level - 3);
+    const hair = ctx.createLinearGradient(0, -62, 0, 64);
+    hair.addColorStop(0, "#6a4535");
+    hair.addColorStop(0.4, "#4d3125");
+    hair.addColorStop(1, "#281b16");
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    ctx.moveTo(-41, -8);
+    ctx.quadraticCurveTo(-48, -46, -15, -62);
+    ctx.quadraticCurveTo(0, -69 - panic * 2, 15, -62);
+    ctx.quadraticCurveTo(48, -46, 42, -8);
+    ctx.quadraticCurveTo(45, 26, 28 + grotesque * 2, 57);
+    ctx.quadraticCurveTo(0, 69 + panic * 2.5, -28, 57);
+    ctx.quadraticCurveTo(-45, 26, -41, -8);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255, 238, 215, 0.18)";
+    ctx.lineWidth = 3.4;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-12, 0);
-    ctx.lineTo(12, 0);
+    ctx.moveTo(-14, -45);
+    ctx.quadraticCurveTo(-2 + Math.sin(phase) * 3, -59, 16, -40);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-24, -18);
+    ctx.quadraticCurveTo(-8, 16 + Math.sin(phase * 0.7) * 4, -18, 48);
+    ctx.moveTo(24, -16);
+    ctx.quadraticCurveTo(9, 18 - Math.sin(phase * 0.7) * 4, 18, 50);
     ctx.stroke();
     ctx.restore();
   }
 
-  function drawNorikoMouth(ctx, x, y, open, level, phase) {
+  function drawNorikoNeck(ctx, panic, grotesque) {
     ctx.save();
-    ctx.translate(x, y);
-    ctx.fillStyle = "#7f1425";
-    ctx.beginPath();
-    ctx.ellipse(
-      Math.sin(phase * 2.1) * Math.max(0, level - 3) * 2,
-      0,
-      12 + Math.max(0, level - 2) * 4,
-      open,
-      Math.sin(phase) * Math.max(0, level - 4) * 0.22,
-      0,
-      Math.PI * 2
-    );
+    const neck = ctx.createLinearGradient(0, 24, 0, 48);
+    neck.addColorStop(0, "#ffd8c3");
+    neck.addColorStop(1, "#e5b197");
+    ctx.fillStyle = neck;
+    addRoundedRectPath(ctx, -9, 24, 18, 18 + panic * 2 + grotesque * 3, 8);
     ctx.fill();
 
-    if (level >= 3) {
-      ctx.fillStyle = "#ff8ba0";
+    ctx.fillStyle = "rgba(146, 85, 69, 0.14)";
+    ctx.beginPath();
+    ctx.ellipse(0, 31, 6.5, 3.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawNorikoHead(ctx, panic, grotesque) {
+    ctx.save();
+    const skin = ctx.createRadialGradient(-8, -20, 8, 0, 0, 66);
+    skin.addColorStop(0, "#ffe8d7");
+    skin.addColorStop(0.6, "#ffd8c1");
+    skin.addColorStop(1, "#e7b08f");
+    ctx.fillStyle = skin;
+    traceNorikoHeadPath(ctx, panic, grotesque);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+    ctx.beginPath();
+    ctx.ellipse(-10, -18, 11.5, 19, -0.28, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(142, 88, 68, 0.26)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNorikoFacePlanes(ctx, panic, grotesque, collapse) {
+    ctx.save();
+    traceNorikoHeadPath(ctx, panic, grotesque);
+    ctx.clip();
+
+    const contour = ctx.createLinearGradient(-34, -28, 28, 58);
+    contour.addColorStop(0, "rgba(130, 78, 61, 0.18)");
+    contour.addColorStop(0.32, "rgba(255,255,255,0)");
+    contour.addColorStop(1, "rgba(122, 70, 55, 0.2)");
+    ctx.fillStyle = contour;
+    ctx.fillRect(-40, -54, 80, 120);
+
+    ctx.fillStyle = `rgba(146, 84, 68, ${0.08 + panic * 0.06 + grotesque * 0.05})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 28 + panic * 1.4, 18, 8 + panic * 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(132, 76, 62, ${0.07 + panic * 0.05})`;
+    ctx.beginPath();
+    ctx.ellipse(-18, 0, 7, 11, -0.45, 0, Math.PI * 2);
+    ctx.ellipse(18, 0, 7, 11, 0.45, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(255,255,255,${0.09 + collapse * 0.04})`;
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 13, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawNorikoEar(ctx, x, y, panic) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = "#f2c8b2";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5.8, 8 + panic * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(171, 106, 90, 0.4)";
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.ellipse(0.6, 0.4, 2.1, 3.4, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNorikoCheeks(ctx, flush, grotesque) {
+    ctx.save();
+    ctx.fillStyle = `rgba(255, 134, 150, ${flush + grotesque * 0.06})`;
+    ctx.beginPath();
+    ctx.ellipse(-18, 18, 9, 5.6, -0.22, 0, Math.PI * 2);
+    ctx.ellipse(18, 18, 9, 5.6, 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawNorikoEye(ctx, options) {
+    const {
+      x,
+      y,
+      width,
+      height,
+      panic,
+      grotesque,
+      direction,
+      gazeX,
+      gazeY,
+      skew
+    } = options;
+    const openHeight = height * (1.06 + panic * 0.25 + grotesque * 0.34);
+    const irisRadius = width * (0.38 + panic * 0.02);
+    const pupilRadius = width * (0.16 + grotesque * 0.02);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(skew);
+
+    const sclera = ctx.createLinearGradient(0, -openHeight, 0, openHeight);
+    sclera.addColorStop(0, "#ffffff");
+    sclera.addColorStop(1, "#e8edf6");
+    ctx.fillStyle = sclera;
+    ctx.beginPath();
+    ctx.moveTo(-width, 0);
+    ctx.quadraticCurveTo(-width * 0.34, -openHeight, 0, -openHeight * 0.92);
+    ctx.quadraticCurveTo(width * 0.38, -openHeight * 1.02, width, 0);
+    ctx.quadraticCurveTo(width * 0.42, openHeight * 0.72, 0, openHeight * 0.58 + grotesque * 1.2);
+    ctx.quadraticCurveTo(-width * 0.45, openHeight * 0.76, -width, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.clip();
+
+    const iris = ctx.createRadialGradient(
+      direction * gazeX - irisRadius * 0.3,
+      gazeY - irisRadius * 0.2,
+      0,
+      direction * gazeX,
+      gazeY,
+      irisRadius
+    );
+    iris.addColorStop(0, "#96715a");
+    iris.addColorStop(0.55, "#6c4c3b");
+    iris.addColorStop(1, "#2c201a");
+    ctx.fillStyle = iris;
+    ctx.beginPath();
+    ctx.arc(direction * gazeX, gazeY, irisRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#1d1410";
+    ctx.beginPath();
+    ctx.arc(direction * gazeX * 1.04, gazeY + 0.4, pupilRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    ctx.beginPath();
+    ctx.arc(direction * gazeX - width * 0.08, gazeY - height * 0.58, width * 0.11, 0, Math.PI * 2);
+    ctx.arc(direction * gazeX + width * 0.12, gazeY - height * 0.2, width * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+
+    const lidShade = ctx.createLinearGradient(0, -openHeight, 0, openHeight);
+    lidShade.addColorStop(0, "rgba(87, 49, 38, 0.18)");
+    lidShade.addColorStop(0.6, "rgba(87, 49, 38, 0)");
+    ctx.fillStyle = lidShade;
+    ctx.fillRect(-width, -openHeight - 2, width * 2, openHeight + 4);
+
+    ctx.restore();
+
+    ctx.strokeStyle = "#4b2f21";
+    ctx.lineWidth = 2.7 + grotesque * 1.1;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x - width, y);
+    ctx.quadraticCurveTo(
+      x - width * 0.14,
+      y - openHeight - 2.6 - grotesque * 0.8,
+      x + width,
+      y - grotesque * 0.24
+    );
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(100, 58, 48, 0.42)";
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(x - width * 0.86, y + 1.2);
+    ctx.quadraticCurveTo(x, y + openHeight * 0.76, x + width * 0.86, y + 0.8);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(65, 33, 25, 0.75)";
+    ctx.lineWidth = 1.2 + panic * 0.35;
+    ctx.beginPath();
+    ctx.moveTo(x - width * 0.76, y - openHeight * 0.42);
+    ctx.lineTo(x - width * 0.95, y - openHeight * 0.72);
+    ctx.moveTo(x, y - openHeight * 0.66);
+    ctx.lineTo(x - direction * width * 0.06, y - openHeight - 2.6);
+    ctx.moveTo(x + width * 0.76, y - openHeight * 0.42);
+    ctx.lineTo(x + width * 0.95, y - openHeight * 0.72);
+    ctx.stroke();
+  }
+
+  function drawNorikoBrow(ctx, options) {
+    const { x, y, width, thickness, tilt, panic, grotesque } = options;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+
+    const brow = ctx.createLinearGradient(0, -6, 0, 4);
+    brow.addColorStop(0, "#4a2b1f");
+    brow.addColorStop(1, "#2d1812");
+    ctx.fillStyle = brow;
+    ctx.beginPath();
+    ctx.moveTo(-width, 1.5 + panic * 0.2);
+    ctx.quadraticCurveTo(0, -5.4 - panic * 1.2 - grotesque * 0.8, width, 0.5);
+    ctx.lineTo(width * 0.92, thickness);
+    ctx.quadraticCurveTo(0, -1.2 - panic * 0.3, -width * 0.94, thickness + 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawNorikoNose(ctx, options) {
+    const { x, y, panic, grotesque, phase } = options;
+    ctx.save();
+    ctx.translate(x, y);
+
+    ctx.strokeStyle = "rgba(143, 90, 74, 0.68)";
+    ctx.lineWidth = 1.35;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-1.1, -10);
+    ctx.quadraticCurveTo(1.3 + grotesque * 0.55, -0.8, 0.2, 10 + panic * 0.65);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(170, 108, 89, 0.32)";
+    ctx.beginPath();
+    ctx.ellipse(0.4, 10.5 + panic * 0.4, 4.6, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.beginPath();
+    ctx.ellipse(-2.2, -2.6, 1.6, 5.2, -0.16, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(154, 94, 78, 0.36)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-0.2, 12.2);
+    ctx.quadraticCurveTo(-0.8, 15.6, -2.2 + Math.sin(phase * 0.8) * 0.2, 18.5);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNorikoMouth(ctx, options) {
+    const { x, y, width, open, panic, grotesque, phase } = options;
+    const lipHeight = 4.1 + panic * 0.75;
+    const mouthAngle = Math.sin(phase * 1.24) * grotesque * 0.04;
+    const innerHeight = Math.max(2.2, open);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(mouthAngle);
+
+    const lip = ctx.createLinearGradient(0, -lipHeight - 2, 0, lipHeight + open * 0.5 + 6);
+    lip.addColorStop(0, "#c75d71");
+    lip.addColorStop(0.5, "#df8a96");
+    lip.addColorStop(1, "#bb556a");
+    ctx.fillStyle = lip;
+    ctx.beginPath();
+    ctx.moveTo(-width, 0);
+    ctx.quadraticCurveTo(-width * 0.46, -lipHeight - panic * 0.6, -1, -lipHeight * 0.92);
+    ctx.quadraticCurveTo(width * 0.46, -lipHeight - panic * 0.28, width, 0);
+    ctx.quadraticCurveTo(width * 0.44, lipHeight * 0.98 + innerHeight * 0.12, 0, lipHeight + innerHeight * 0.18);
+    ctx.quadraticCurveTo(-width * 0.44, lipHeight * 0.98 + innerHeight * 0.12, -width, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(132, 48, 61, 0.32)";
+    ctx.beginPath();
+    ctx.moveTo(-width * 0.9, 0);
+    ctx.quadraticCurveTo(0, -lipHeight * 0.46, width * 0.9, 0);
+    ctx.lineTo(width * 0.74, 0.8);
+    ctx.quadraticCurveTo(0, -lipHeight * 0.18, -width * 0.74, 0.8);
+    ctx.closePath();
+    ctx.fill();
+
+    if (open > 2.8) {
+      ctx.fillStyle = "#351014";
       ctx.beginPath();
-      ctx.ellipse(0, open * 0.4, 9, 4 + Math.max(0, level - 4) * 3, 0, 0, Math.PI);
+      ctx.ellipse(0, lipHeight * 0.45 + innerHeight * 0.04, width * 0.74, innerHeight, 0, 0, Math.PI * 2);
       ctx.fill();
+
+      ctx.fillStyle = "#fff3f0";
+      addRoundedRectPath(ctx, -width * 0.54, -lipHeight * 0.16, width * 1.08, 5.8, 2.4);
+      ctx.fill();
+
+      ctx.fillStyle = "#d96d83";
+      ctx.beginPath();
+      ctx.ellipse(
+        0,
+        lipHeight * 0.82 + innerHeight * 0.42,
+        width * 0.48,
+        Math.max(3.2, innerHeight * 0.46),
+        0,
+        0,
+        Math.PI
+      );
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = "#8d3947";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-width * 0.84, 0);
+      ctx.quadraticCurveTo(0, lipHeight * 0.64 + innerHeight * 0.08, width * 0.84, 0);
+      ctx.stroke();
     }
+
+    ctx.strokeStyle = "rgba(255, 226, 225, 0.46)";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(-width * 0.44, -lipHeight * 0.28);
+    ctx.quadraticCurveTo(0, -lipHeight * 0.56, width * 0.44, -lipHeight * 0.24);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNorikoHairFront(ctx, panic, grotesque, phase) {
+    ctx.save();
+    const bangShift = Math.sin(phase * 1.15) * 1.6;
+    const hair = ctx.createLinearGradient(0, -48, 0, 42);
+    hair.addColorStop(0, "#6c4736");
+    hair.addColorStop(0.5, "#503126");
+    hair.addColorStop(1, "#331f18");
+    ctx.fillStyle = hair;
+    ctx.beginPath();
+    ctx.moveTo(-31, -34);
+    ctx.quadraticCurveTo(-24, -57 - panic * 2, -8, -50);
+    ctx.quadraticCurveTo(-2, -42, 0, -32);
+    ctx.quadraticCurveTo(4, -44 - grotesque * 1.8, 16, -48);
+    ctx.quadraticCurveTo(29, -42, 31, -24);
+    ctx.quadraticCurveTo(20, -17 + bangShift, 9, -11);
+    ctx.quadraticCurveTo(1, -25 - panic * 1.6, -11, -9);
+    ctx.quadraticCurveTo(-18, -17 - bangShift, -31, -34);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#43291f";
+    ctx.beginPath();
+    ctx.moveTo(-33, -24);
+    ctx.quadraticCurveTo(-46, 14, -28, 40 + grotesque * 4);
+    ctx.quadraticCurveTo(-15, 26, -13, 0);
+    ctx.closePath();
+    ctx.moveTo(33, -24);
+    ctx.quadraticCurveTo(46, 14, 28, 40 + grotesque * 4);
+    ctx.quadraticCurveTo(15, 26, 13, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255, 236, 212, 0.15)";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-9, -46);
+    ctx.quadraticCurveTo(-2, -35, -1, -18);
+    ctx.moveTo(8, -44);
+    ctx.quadraticCurveTo(4, -33, 2, -16);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNorikoSweat(ctx, x, y, tilt, phase) {
+    ctx.save();
+    ctx.translate(x, y + Math.sin(phase * 1.7) * 1.4);
+    ctx.rotate(tilt);
+    const sweat = ctx.createLinearGradient(0, -7, 0, 7);
+    sweat.addColorStop(0, "rgba(234, 250, 255, 0.96)");
+    sweat.addColorStop(1, "rgba(170, 221, 255, 0.9)");
+    ctx.fillStyle = sweat;
+    ctx.beginPath();
+    ctx.moveTo(0, -6);
+    ctx.quadraticCurveTo(4, -2, 3.4, 3.2);
+    ctx.quadraticCurveTo(0, 7, -3.4, 3.2);
+    ctx.quadraticCurveTo(-4, -2, 0, -6);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.beginPath();
+    ctx.ellipse(-1, -1.5, 0.9, 2.1, 0.2, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 
