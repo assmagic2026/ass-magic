@@ -91,8 +91,8 @@
       finalFoldbackStabilizeStrength: 0.96
     },
     ride: {
-      startSpeed: 80 / 3.6,
-      minSpeed: 80 / 3.6,
+      startSpeed: 100 / 3.6,
+      minSpeed: 100 / 3.6,
       maxSpeed: 76,
       gravity: 32,
       rollingResistance: 0.05,
@@ -219,7 +219,7 @@
   };
 
   const state = {
-    screen: "title",
+    screen: "input",
     inputStage: "side",
     inputs: {
       side: createEmptyInputState(),
@@ -253,10 +253,7 @@
 
   function init() {
     bindEvents();
-    applyInputStage("side");
-    setScreen("title");
-    handleResize();
-    drawNorikoFace(0, 1, 0, 0);
+    startNewCourse();
   }
 
   function bindEvents() {
@@ -585,7 +582,7 @@
   function syncInputControls() {
     const current = getCurrentInput();
     els.inputNextButton.disabled = !current.valid;
-    const showPreview = state.inputStage === "top" && state.inputs.side.valid;
+    const showPreview = false;
     els.previewBlock.classList.toggle("hidden", !showPreview);
   }
 
@@ -3505,47 +3502,7 @@
     if (!bankTurns.length) {
       return [];
     }
-    if (getInteriorValueRange(lateralValues) < CONFIG.track.bankMinimumLateralRange) {
-      return bankTurns.map(() => 0);
-    }
-
-    const rawAngles = bankTurns.map((_, index) => {
-      const window = getDistanceWindowIndices(cumulative, index, CONFIG.track.bankWindowDistance);
-      const windowTurnAngle = getIntegratedTurnAngleInRange(bankTurns, window.start, window.end);
-      const segmentPeak = getPeakAbsInRange(bankTurns, window.start, window.end);
-      const localTurn = bankTurns[index];
-      const lateralRange = getValueRangeInRange(lateralValues, window.start, window.end);
-
-      if (
-        Math.abs(localTurn) < CONFIG.track.bankDeadZone ||
-        segmentPeak < CONFIG.track.bankDeadZone ||
-        windowTurnAngle < CONFIG.track.bankMinimumAngle ||
-        lateralRange < CONFIG.track.bankMinimumLateralRange
-      ) {
-        return 0;
-      }
-
-      const curveStrength = clamp(
-        windowTurnAngle / Math.max(CONFIG.track.bankTriggerAngle, 0.0001),
-        0,
-        1
-      );
-      const apexStrength = Math.pow(
-        clamp(Math.abs(localTurn) / Math.max(segmentPeak, 0.0001), 0, 1),
-        CONFIG.track.bankResponseExponent
-      );
-      return Math.sign(localTurn) * CONFIG.track.bankLimit * curveStrength * apexStrength;
-    });
-
-    return easeSharpCorners(
-      smoothSeriesByVelocity(
-        smoothValues(rawAngles, CONFIG.track.bankSmoothingPasses, CONFIG.track.bankSmoothingRadius),
-        1,
-        2
-      ),
-      4,
-      0.35
-    );
+    return bankTurns.map(() => 0);
   }
 
   function getTrackFrame(tangent, rightHint = null, upHint = null) {
@@ -3731,12 +3688,12 @@
     norikoCtx.clearRect(0, 0, width, height);
 
     const wobblePhase = now * 0.009;
-    const squash = 1 + Math.sin(wobblePhase) * 0.04 + fear * 0.12;
-    const stretch = 1 + Math.cos(wobblePhase * 1.3) * 0.03 + Math.max(0, level - 3) * 0.08;
-    const eyeSpread = 24 + fear * 10 + Math.max(0, level - 3) * 7;
-    const eyeY = 52 - fear * 4;
-    const mouthOpen = 8 + level * 6 + fear * 12;
-    const faceTilt = Math.sin(wobblePhase * 0.85) * 0.08 + wobble * 0.002;
+    const squash = 1 + Math.sin(wobblePhase) * 0.02 + fear * 0.08;
+    const stretch = 1 + Math.cos(wobblePhase * 1.3) * 0.018 + Math.max(0, level - 3) * 0.08;
+    const eyeSpread = 19 + fear * 7 + Math.max(0, level - 3) * 6;
+    const eyeY = -8 - fear * 3;
+    const mouthOpen = 2 + Math.max(0, level - 1) * 3 + fear * 9;
+    const faceTilt = Math.sin(wobblePhase * 0.85) * 0.035 + wobble * 0.0014;
     const offsetChaos = Math.max(0, level - 3) * 8;
     const collapse = Math.max(0, level - 4) * 16;
 
@@ -3750,31 +3707,31 @@
     norikoCtx.ellipse(
       0,
       0,
-      38 + fear * 3 + collapse * 0.4,
-      48 - fear * 4 + collapse * 0.5,
+      34 + fear * 2.4 + collapse * 0.4,
+      44 - fear * 2.4 + collapse * 0.5,
       0,
       0,
       Math.PI * 2
     );
     norikoCtx.fill();
 
-    norikoCtx.fillStyle = "#f9a776";
+    norikoCtx.fillStyle = "#f4b188";
     norikoCtx.beginPath();
-    norikoCtx.arc(0, 12 + fear * 10, 18 + fear * 3, 0, Math.PI);
+    norikoCtx.ellipse(0, 12 + fear * 3, 9 + fear * 1.8, 12 + fear * 2, 0, 0, Math.PI * 2);
     norikoCtx.fill();
 
     norikoCtx.fillStyle = "#51392c";
     norikoCtx.beginPath();
-    norikoCtx.arc(-15, -36, 11, Math.PI, Math.PI * 2);
-    norikoCtx.arc(15, -36, 11, Math.PI, Math.PI * 2);
+    norikoCtx.arc(-14, -34, 12, Math.PI, Math.PI * 2);
+    norikoCtx.arc(14, -34, 12, Math.PI, Math.PI * 2);
     norikoCtx.fill();
 
     drawNorikoEye(
       norikoCtx,
       -eyeSpread - offsetChaos * 0.3,
       eyeY - offsetChaos * 0.2,
-      1 + fear * 0.5,
-      1 + level * 0.18,
+      1 + fear * 0.28,
+      1 + Math.max(0, level - 1) * 0.08,
       fear,
       -1,
       level
@@ -3783,24 +3740,24 @@
       norikoCtx,
       eyeSpread - collapse * 0.25,
       eyeY + offsetChaos * 0.15,
-      1 + fear * 0.65,
-      1 + level * 0.14,
+      1 + fear * 0.32,
+      1 + Math.max(0, level - 1) * 0.08,
       fear,
       1,
       level
     );
 
-    drawNorikoBrow(norikoCtx, -eyeSpread, eyeY - 20 - level * 1.5, -0.2 - fear * 0.35, level);
-    drawNorikoBrow(norikoCtx, eyeSpread, eyeY - 21 - level * 1.1, 0.2 + fear * 0.35, level);
+    drawNorikoBrow(norikoCtx, -eyeSpread, eyeY - 14 - level * 1.1, -0.12 - fear * 0.26, level);
+    drawNorikoBrow(norikoCtx, eyeSpread, eyeY - 14 - level * 1.1, 0.12 + fear * 0.26, level);
 
     norikoCtx.strokeStyle = "#7c4a2d";
-    norikoCtx.lineWidth = 3;
+    norikoCtx.lineWidth = 2.4;
     norikoCtx.beginPath();
-    norikoCtx.moveTo(0, 18);
-    norikoCtx.lineTo(Math.sin(wobblePhase) * 4 + collapse * 0.1, 28 + fear * 8);
+    norikoCtx.moveTo(0, 0);
+    norikoCtx.lineTo(Math.sin(wobblePhase) * 2.2 + collapse * 0.08, 15 + fear * 5);
     norikoCtx.stroke();
 
-    drawNorikoMouth(norikoCtx, 0 + collapse * 0.1, 42 + fear * 4, mouthOpen, level, wobblePhase);
+    drawNorikoMouth(norikoCtx, 0 + collapse * 0.1, 28 + fear * 4, mouthOpen, level, wobblePhase);
 
     if (level >= 4) {
       norikoCtx.fillStyle = "rgba(255, 90, 90, 0.14)";
@@ -3819,13 +3776,13 @@
     ctx.scale(scaleX, scaleY);
     ctx.fillStyle = "white";
     ctx.beginPath();
-    ctx.ellipse(0, 0, 11 + fear * 4, 8 + fear * 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, 9 + fear * 3, 6.6 + fear * 1.8, 0, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = "#1e1e1e";
-    const pupilOffset = direction * (fear * 3 + Math.max(0, level - 4) * 6);
+    const pupilOffset = direction * (fear * 1.8 + Math.max(0, level - 4) * 5);
     ctx.beginPath();
-    ctx.arc(pupilOffset, fear * 2 - Math.max(0, level - 3) * 3, 4 + fear * 1.3, 0, Math.PI * 2);
+    ctx.arc(pupilOffset, fear * 1.5 - Math.max(0, level - 3) * 2.4, 3.6 + fear * 1.1, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }

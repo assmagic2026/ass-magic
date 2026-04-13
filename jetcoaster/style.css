@@ -173,6 +173,21 @@ h3 {
   gap: 10px;
 }
 
+.input-panel {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 16px 16px calc(14px + var(--safe-bottom));
+}
+
+.input-panel .panel-head {
+  gap: 6px;
+}
+
+.input-kicker {
+  font-size: 0.74rem;
+  letter-spacing: 0.18em;
+}
+
 .canvas-card,
 .preview-block,
 .ride-stage {
@@ -187,6 +202,12 @@ h3 {
     linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(240, 248, 255, 0.92));
   border: 1px solid rgba(255, 255, 255, 0.9);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+.input-panel .canvas-card {
+  aspect-ratio: auto;
+  height: min(48dvh, 390px);
+  min-height: 290px;
 }
 
 #input-canvas,
@@ -227,6 +248,12 @@ h3 {
   min-height: 48px;
 }
 
+.input-panel .status-text {
+  min-height: 0;
+  font-size: 0.92rem;
+  line-height: 1.36;
+}
+
 .preview-block {
   display: grid;
   gap: 8px;
@@ -261,6 +288,10 @@ h3 {
 .button-row {
   display: flex;
   gap: 12px;
+}
+
+.input-panel .button-row {
+  margin-top: auto;
 }
 
 .primary-button,
@@ -455,5 +486,22 @@ h3 {
 
   .noriko-wipe {
     width: 108px;
+  }
+}
+
+@media (max-height: 760px) {
+  .input-panel {
+    gap: 10px;
+    padding: 14px 14px calc(12px + var(--safe-bottom));
+  }
+
+  .input-panel .canvas-card {
+    height: min(44dvh, 330px);
+    min-height: 250px;
+  }
+
+  .input-panel .primary-button,
+  .input-panel .secondary-button {
+    min-height: 52px;
   }
 }
