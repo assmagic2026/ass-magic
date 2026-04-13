@@ -3311,7 +3311,7 @@
       return { rights, ups, zeroRights, zeroUps };
     }
 
-    const initialFrame = getZeroBankFrame(tangents[0]);
+    const initialFrame = createInitialTrackFrame(tangents[0]);
     let transportRight = initialFrame.right;
     let transportUp = initialFrame.up;
     zeroRights[0] = transportRight;
@@ -3321,7 +3321,12 @@
     ups[0] = firstBanked.up;
 
     for (let i = 1; i < tangents.length; i += 1) {
-      const zeroFrame = getZeroBankFrame(tangents[i], transportRight);
+      const zeroFrame = transportTrackFrame(
+        tangents[i - 1],
+        tangents[i],
+        transportRight,
+        transportUp
+      );
       transportRight = zeroFrame.right;
       transportUp = zeroFrame.up;
       zeroRights[i] = transportRight;
@@ -3335,27 +3340,84 @@
     return { rights, ups, zeroRights, zeroUps };
   }
 
-  function getZeroBankFrame(tangent, previousRight = null) {
-    const previousHorizontal = previousRight ? normalizeHorizontal3(previousRight) : null;
+  function createInitialTrackFrame(tangent) {
     const flatLength = Math.hypot(tangent.x, tangent.z);
     const flatForward =
       flatLength > 0.0001
         ? { x: tangent.x / flatLength, y: 0, z: tangent.z / flatLength }
         : null;
-    let right =
-      flatForward
-        ? { x: flatForward.z, y: 0, z: -flatForward.x }
-        : previousHorizontal || { x: 1, y: 0, z: 0 };
+    const horizontalRight = flatForward
+      ? { x: flatForward.z, y: 0, z: -flatForward.x }
+      : { x: 1, y: 0, z: 0 };
+    return orthonormalizeTransportFrame(tangent, horizontalRight, null);
+  }
 
-    if (previousHorizontal && dot3(right, previousHorizontal) < 0) {
-      right = scale3(right, -1);
+  function transportTrackFrame(previousTangent, tangent, previousRight, previousUp) {
+    const transportedUp = previousUp
+      ? sub3(previousUp, scale3(tangent, dot3(previousUp, tangent)))
+      : null;
+    const transportedRight = previousRight
+      ? sub3(previousRight, scale3(tangent, dot3(previousRight, tangent)))
+      : null;
+
+    const frame = orthonormalizeTransportFrame(
+      tangent,
+      transportedRight,
+      transportedUp
+    );
+
+    if (
+      (previousRight && dot3(frame.right, previousRight) < 0) ||
+      (previousUp && dot3(frame.up, previousUp) < 0)
+    ) {
+      return {
+        right: scale3(frame.right, -1),
+        up: scale3(frame.up, -1)
+      };
     }
 
-    right = normalizeHorizontal3(right);
-    return {
-      right,
-      up: normalize3(cross3(tangent, right))
-    };
+    return frame;
+  }
+
+  function orthonormalizeTransportFrame(tangent, rightHint = null, upHint = null) {
+    let up = upHint ? sub3(upHint, scale3(tangent, dot3(upHint, tangent))) : null;
+    let right = rightHint ? sub3(rightHint, scale3(tangent, dot3(rightHint, tangent))) : null;
+
+    if (!up || length3(up) < 0.0001) {
+      if (right && length3(right) >= 0.0001) {
+        right = normalize3(right);
+        up = cross3(tangent, right);
+      }
+    } else {
+      up = normalize3(up);
+      right = cross3(up, tangent);
+    }
+
+    if (!right || length3(right) < 0.0001 || !up || length3(up) < 0.0001) {
+      up = sub3({ x: 0, y: 1, z: 0 }, scale3(tangent, tangent.y));
+      if (length3(up) < 0.0001) {
+        up = sub3({ x: 0, y: 0, z: 1 }, scale3(tangent, tangent.z));
+      }
+      if (length3(up) < 0.0001) {
+        up = sub3({ x: 1, y: 0, z: 0 }, scale3(tangent, tangent.x));
+      }
+      up = normalize3(up);
+      right = cross3(up, tangent);
+    }
+
+    right = normalize3(right);
+    up = normalize3(cross3(tangent, right));
+    right = normalize3(cross3(up, tangent));
+
+    if (rightHint && dot3(right, rightHint) < 0) {
+      right = scale3(right, -1);
+      up = scale3(up, -1);
+    } else if (upHint && dot3(up, upHint) < 0) {
+      right = scale3(right, -1);
+      up = scale3(up, -1);
+    }
+
+    return { right, up };
   }
 
   function applyTrackBankAngle(right, up, bankAngle) {
@@ -3871,7 +3933,10 @@
     const zeroRightHint = normalize3(
       lerp3(trackData.zeroRights[lowerIndex], trackData.zeroRights[upperIndex], t)
     );
-    const zeroFrame = getZeroBankFrame(tangent, zeroRightHint);
+    const zeroUpHint = normalize3(
+      lerp3(trackData.zeroUps[lowerIndex], trackData.zeroUps[upperIndex], t)
+    );
+    const zeroFrame = orthonormalizeTransportFrame(tangent, zeroRightHint, zeroUpHint);
     const bankAngle = lerp(trackData.bankAngles[lowerIndex], trackData.bankAngles[upperIndex], t);
     const frame = applyTrackBankAngle(zeroFrame.right, zeroFrame.up, bankAngle);
 
