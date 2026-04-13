@@ -196,7 +196,6 @@
     startMarker: document.querySelector(".canvas-marker.start"),
     goalMarker: document.querySelector(".canvas-marker.goal"),
     inputStatus: document.getElementById("input-status"),
-    twistHelp: document.getElementById("twist-help"),
     inputResetButton: document.getElementById("input-reset-button"),
     inputNextButton: document.getElementById("input-next-button"),
     previewBlock: document.getElementById("preview-block"),
@@ -204,16 +203,8 @@
     previewStatus: document.getElementById("preview-status"),
     rideCanvas: document.getElementById("ride-canvas"),
     norikoCanvas: document.getElementById("noriko-canvas"),
-    rideMessage: document.getElementById("ride-message"),
     speedReadout: document.getElementById("speed-readout"),
     fearReadout: document.getElementById("fear-readout"),
-    totalScore: document.getElementById("total-score"),
-    thrillScore: document.getElementById("thrill-score"),
-    thrillCaption: document.getElementById("thrill-caption"),
-    smoothScore: document.getElementById("smooth-score"),
-    smoothCaption: document.getElementById("smooth-caption"),
-    norikoScore: document.getElementById("noriko-score"),
-    norikoCaption: document.getElementById("noriko-caption"),
     resultSummary: document.getElementById("result-summary"),
     rerideButton: document.getElementById("reride-button"),
     restartButton: document.getElementById("restart-button")
@@ -236,15 +227,13 @@
     rideFrame: 0,
     scenery: null,
     skyTexture: null,
-    groundPlane: null,
-    twistTurns: 0
+    groundPlane: null
   };
 
   const inputCtx = els.inputCanvas.getContext("2d");
   const previewCtx = els.previewCanvas.getContext("2d");
   const rideCtx = els.rideCanvas.getContext("2d");
   const norikoCtx = els.norikoCanvas.getContext("2d");
-  const twistOptions = Array.from(document.querySelectorAll("[data-twist-turns]"));
 
   function createEmptyInputState() {
     return {
@@ -256,7 +245,6 @@
 
   function init() {
     bindEvents();
-    updateTwistControls();
     startNewCourse();
   }
 
@@ -266,11 +254,6 @@
     els.inputNextButton.addEventListener("click", handleInputAdvance);
     els.rerideButton.addEventListener("click", rerideTrack);
     els.restartButton.addEventListener("click", startNewCourse);
-    twistOptions.forEach((button) => {
-      button.addEventListener("click", () => {
-        setTwistTurns(Number(button.dataset.twistTurns || 0));
-      });
-    });
 
     els.inputCanvas.addEventListener("pointerdown", handleInputPointerDown);
     els.inputCanvas.addEventListener("pointermove", handleInputPointerMove);
@@ -302,27 +285,6 @@
       return;
     }
     startRide(state.trackData);
-  }
-
-  function setTwistTurns(turns) {
-    state.twistTurns = clamp(Math.round(turns), 0, 3);
-    updateTwistControls();
-  }
-
-  function updateTwistControls() {
-    twistOptions.forEach((button) => {
-      const turns = Number(button.dataset.twistTurns || 0);
-      button.classList.toggle("is-active", turns === state.twistTurns);
-    });
-    if (!els.twistHelp) {
-      return;
-    }
-    if (state.twistTurns <= 0) {
-      els.twistHelp.textContent = "0: ねじれなし";
-      return;
-    }
-    els.twistHelp.textContent =
-      `${state.twistTurns}: 100mごとに${state.twistTurns}回転`;
   }
 
   function applyInputStage(stageName) {
@@ -357,11 +319,7 @@
       return;
     }
 
-    const trackData = buildTrackData(
-      state.inputs.side.sampled,
-      state.inputs.top.sampled,
-      state.twistTurns
-    );
+    const trackData = buildTrackData(state.inputs.side.sampled, state.inputs.top.sampled);
     state.trackData = trackData;
     startRide(trackData);
   }
@@ -1295,7 +1253,7 @@
     ctx.restore();
   }
 
-  function buildTrackData(sideCurve, topCurve, twistTurns = 0) {
+  function buildTrackData(sideCurve, topCurve) {
     // 側面図は Y と Z、上面図は X を担当します。ループ時は Z も折り返します。
     const topProfileMetrics = getTopProfileMetrics();
     let lateral = topCurve.map(
@@ -1399,7 +1357,7 @@
       turns[i] = smoothedTurns[i];
     }
 
-    const twistAngles = computeTwistAngles(cumulative, twistTurns);
+    const twistAngles = computeTwistAngles(cumulative);
     const frames = buildTrackFrames(tangents, twistAngles);
     for (let i = 0; i < tangents.length; i += 1) {
       rights[i] = frames.rights[i];
@@ -1421,7 +1379,6 @@
       zeroUps: frames.zeroUps,
       bankAngles: twistAngles,
       twistAngles,
-      twistTurns,
       totalLength: cumulative[cumulative.length - 1],
       analysis,
       bounds
@@ -1948,7 +1905,7 @@
       }));
     }
 
-    const trackData = buildTrackData(sideCurve, topCurve, state.twistTurns);
+    const trackData = buildTrackData(sideCurve, topCurve);
     const bounds = trackData.points.reduce(
       (acc, point) => ({
         minX: Math.min(acc.minX, point.x),
@@ -2334,7 +2291,6 @@
     };
     els.speedReadout.textContent = `${Math.round(CONFIG.ride.startSpeed * 3.6)} km/h`;
     els.fearReadout.textContent = CONFIG.fear.labels[0];
-    els.rideMessage.textContent = "出発！ ノリコさんの様子に注目";
     setScreen("ride");
     rideLoop(performance.now());
   }
@@ -2440,7 +2396,6 @@
 
     els.speedReadout.textContent = `${Math.round(ride.speed * 3.6)} km/h`;
     els.fearReadout.textContent = CONFIG.fear.labels[level - 1];
-    els.rideMessage.textContent = getRideMessage(level);
 
     if (ride.distance >= trackData.totalLength - 0.5) {
       ride.finished = true;
@@ -3551,13 +3506,26 @@
     return bankTurns.map(() => 0);
   }
 
-  function computeTwistAngles(cumulative, twistTurns) {
-    const totalLength = cumulative[cumulative.length - 1] || 0;
-    if (!totalLength || !twistTurns) {
-      return cumulative.map(() => 0);
-    }
-    const anglePerMeter = (twistTurns * Math.PI * 2) / 100;
-    return cumulative.map((distance) => distance * anglePerMeter);
+  function computeTwistAngles(cumulative) {
+    const leftSpinDistance = 100;
+    const pauseDistance = 50;
+    const rightSpinDistance = 100;
+    const cycleDistance = leftSpinDistance + pauseDistance + rightSpinDistance + pauseDistance;
+
+    return cumulative.map((distance) => {
+      const phase = positiveModulo(distance, cycleDistance);
+      if (phase < leftSpinDistance) {
+        return smoothStep01(phase / leftSpinDistance) * Math.PI * 2;
+      }
+      if (phase < leftSpinDistance + pauseDistance) {
+        return Math.PI * 2;
+      }
+      if (phase < leftSpinDistance + pauseDistance + rightSpinDistance) {
+        const local = phase - leftSpinDistance - pauseDistance;
+        return (1 - smoothStep01(local / rightSpinDistance)) * Math.PI * 2;
+      }
+      return 0;
+    });
   }
 
   function getTrackFrame(tangent, rightHint = null, upHint = null) {
@@ -3889,64 +3857,22 @@
   }
 
   function buildResult(analysis, ride) {
-    const thrill = clamp01(
-      invLerp(CONFIG.ride.startSpeed, CONFIG.ride.maxSpeed, ride.maxSpeed) * 0.38 +
-        invLerp(8, 30, analysis.drop) * 0.24 +
-        invLerp(0.8, 4.6, analysis.totalTurn) * 0.2 +
-        invLerp(18, 90, analysis.verticalTravel) * 0.18
-    );
-
-    const smooth = clamp01(1 - invLerp(0.06, 1.1, analysis.roughness));
-
     const level4plus = ride.levelTimes[3] + ride.levelTimes[4];
     const noriko = clamp01(
       clamp(level4plus / Math.max(1, ride.elapsed), 0, 1) * 0.42 +
         invLerp(3, 5, ride.maxLevel) * 0.28 +
         invLerp(0.8, 5.4, ride.distortionIntegral) * 0.3
     );
-
-    const thrillScore = Math.round(thrill * 100);
-    const smoothScore = Math.round(smooth * 100);
     const norikoScore = Math.round(noriko * 100);
-    const totalScore = Math.round(thrillScore * 0.4 + smoothScore * 0.25 + norikoScore * 0.35);
 
     return {
-      thrillScore,
-      smoothScore,
       norikoScore,
-      totalScore,
-      thrillCaption: describeThrill(thrillScore),
-      smoothCaption: describeSmoothness(smoothScore),
-      norikoCaption: describeNoriko(norikoScore),
-      summary: describeResult(thrillScore, smoothScore, norikoScore)
+      summary: describeNorikoReaction(analysis, ride, norikoScore)
     };
   }
 
   function renderResult(result) {
-    els.totalScore.textContent = String(result.totalScore).padStart(3, "0");
-    els.thrillScore.textContent = result.thrillScore;
-    els.smoothScore.textContent = result.smoothScore;
-    els.norikoScore.textContent = result.norikoScore;
-    els.thrillCaption.textContent = result.thrillCaption;
-    els.smoothCaption.textContent = result.smoothCaption;
-    els.norikoCaption.textContent = result.norikoCaption;
     els.resultSummary.textContent = result.summary;
-  }
-
-  function getRideMessage(level) {
-    if (level === 1) {
-      return "まだ余裕あり。ここからです";
-    }
-    if (level === 2) {
-      return "ノリコさんが身構えています";
-    }
-    if (level === 3) {
-      return "顔がだいぶ危ない";
-    }
-    if (level === 4) {
-      return "絶叫中。画面右上が主役です";
-    }
-    return "崩壊完了。ノリコさんが勝てていません";
   }
 
   function getFearLevel(fear) {
@@ -4043,56 +3969,23 @@
     };
   }
 
-  function describeThrill(score) {
-    if (score >= 85) {
-      return "落差も速度も強烈。かなり攻めています。";
-    }
-    if (score >= 65) {
-      return "ちゃんと気持ちいい加速感があります。";
-    }
-    if (score >= 40) {
-      return "やさしめ。家族向け寄りのコースです。";
-    }
-    return "穏やかです。次はもっと上下に暴れてみましょう。";
-  }
 
-  function describeSmoothness(score) {
-    if (score >= 85) {
-      return "線のつながりがきれいで、走りが上品です。";
-    }
-    if (score >= 65) {
-      return "ほどよく滑らか。遊びやすい仕上がりです。";
-    }
-    if (score >= 40) {
-      return "少しガタつきあり。そこが味でもあります。";
-    }
-    return "細かい揺れが多め。描き直すとさらに良くなります。";
-  }
+  function describeNorikoReaction(analysis, ride, norikoScore) {
+    const intenseRatio = (ride.levelTimes[3] + ride.levelTimes[4]) / Math.max(1, ride.elapsed);
 
-  function describeNoriko(score) {
-    if (score >= 85) {
-      return "完全崩壊。顔芸のピークに到達しました。";
+    if (norikoScore >= 88 || ride.maxLevel >= 5) {
+      return "ノリコ『ちょっと待って、回りすぎるし落ちるしで顔どころじゃないんだけど！ でも変な笑いが止まらなかった…』";
     }
-    if (score >= 65) {
-      return "かなり壊れています。十分おいしいです。";
+    if (norikoScore >= 68 || intenseRatio >= 0.34) {
+      return "ノリコ『かなり怖かったのに、気づいたら最後まで見届けちゃった。悔しいけどちょっと好きかも。』";
     }
-    if (score >= 40) {
-      return "ちょっと危なかったですが、まだ人間です。";
+    if (norikoScore >= 42 || ride.maxLevel >= 3) {
+      return "ノリコ『何回かヒヤッとしたけど、まだ耐えられる範囲かな。もう少しだけ攻めてもよさそう。』";
     }
-    return "余裕顔でした。もっと落として曲げてみましょう。";
-  }
-
-  function describeResult(thrill, smooth, noriko) {
-    if (thrill >= 80 && noriko >= 80) {
-      return "自作コースの快感とノリコさんの崩壊芸が両立した大当たりコースです。";
+    if (analysis.drop >= 18 || analysis.verticalTravel >= 70) {
+      return "ノリコ『見た目よりは優しかったけど、山谷が多くてじわじわ来た。次はもっと振り回してみて。』";
     }
-    if (smooth >= 75 && thrill >= 60) {
-      return "乗り心地が良く、それでいてちゃんと刺激もある優秀コースです。";
-    }
-    if (noriko >= 70) {
-      return "コース以上にノリコさんが記憶に残る、顔芸特化型の一本でした。";
-    }
-    return "次は高低差か横揺れをもう少し大きくすると、さらに映えるコースになります。";
+    return "ノリコ『今日はまだ余裕だったかな。次はもっと大胆に描いて、本気で崩しにきてほしい。』";
   }
 
   function specificEnergyFromSpeed(speed, height) {

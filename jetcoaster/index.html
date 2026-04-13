@@ -45,17 +45,13 @@
               STARTからGOALまで、左から右へつなげてください。
             </p>
 
-            <div class="twist-panel" aria-label="100mごとのねじれ">
+            <div class="twist-panel" aria-label="ねじれパターン">
               <div class="twist-head">
-                <span class="twist-label">100mごとの回転数</span>
-                <span id="twist-help" class="twist-help">0: ねじれなし</span>
+                <span class="twist-label">ねじれパターン</span>
               </div>
-              <div class="twist-options">
-                <button type="button" class="twist-option is-active" data-twist-turns="0">0</button>
-                <button type="button" class="twist-option" data-twist-turns="1">1</button>
-                <button type="button" class="twist-option" data-twist-turns="2">2</button>
-                <button type="button" class="twist-option" data-twist-turns="3">3</button>
-              </div>
+              <p class="twist-help twist-help-fixed">
+                100mで左に1回転、50m直進、100mで右に1回転、50m直進を繰り返します。
+              </p>
             </div>
 
             <div id="preview-block" class="preview-block hidden">
@@ -91,9 +87,6 @@
                 <strong id="fear-readout">平常</strong>
               </div>
             </div>
-
-            <div class="ride-message" id="ride-message">出発準備中...</div>
-
             <div class="noriko-wipe">
               <div class="noriko-label">ノリコさん</div>
               <canvas id="noriko-canvas"></canvas>
@@ -104,36 +97,13 @@
         <section id="screen-result" class="screen">
           <div class="panel result-panel">
             <p class="screen-badge">RESULT</p>
-            <h2>コース診断</h2>
+            <h2>ノリコの感想</h2>
 
-            <div class="score-total">
-              <span>TOTAL SCORE</span>
-              <strong id="total-score">000</strong>
+            <div class="result-quote">
+              <p id="result-summary" class="result-summary">
+                コースを走るとコメントが出ます。
+              </p>
             </div>
-
-            <div class="result-grid">
-              <article class="result-card thrill">
-                <h3>スリル</h3>
-                <strong id="thrill-score">0</strong>
-                <p id="thrill-caption">速度と落差を集計します。</p>
-              </article>
-
-              <article class="result-card smooth">
-                <h3>なめらかさ</h3>
-                <strong id="smooth-score">0</strong>
-                <p id="smooth-caption">ガタつきが少ないほど高得点です。</p>
-              </article>
-
-              <article class="result-card noriko">
-                <h3>ノリコさん崩壊度</h3>
-                <strong id="noriko-score">0</strong>
-                <p id="noriko-caption">変顔の持続時間で伸びます。</p>
-              </article>
-            </div>
-
-            <p id="result-summary" class="result-summary">
-              コースを走るとコメントが出ます。
-            </p>
 
             <div class="button-row result-buttons">
               <button id="reride-button" class="secondary-button">
