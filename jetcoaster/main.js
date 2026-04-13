@@ -318,11 +318,11 @@
       return;
     }
     if (state.twistTurns <= 0) {
-      els.twistHelp.textContent = "0回: ねじれなし";
+      els.twistHelp.textContent = "0: ねじれなし";
       return;
     }
     els.twistHelp.textContent =
-      `${state.twistTurns}回: ゴールまでに${state.twistTurns}回ねじれます`;
+      `${state.twistTurns}: 100mごとに${state.twistTurns}回転`;
   }
 
   function applyInputStage(stageName) {
@@ -3536,9 +3536,8 @@
       return { right, up };
     }
 
-    const clampedAngle = clamp(safeAngle, -CONFIG.track.bankLimit, CONFIG.track.bankLimit);
-    const cosB = Math.cos(clampedAngle);
-    const sinB = Math.sin(clampedAngle);
+    const cosB = Math.cos(safeAngle);
+    const sinB = Math.sin(safeAngle);
     return {
       right: normalize3(add3(scale3(right, cosB), scale3(up, sinB))),
       up: normalize3(add3(scale3(up, cosB), scale3(right, -sinB)))
@@ -3557,8 +3556,8 @@
     if (!totalLength || !twistTurns) {
       return cumulative.map(() => 0);
     }
-    const totalAngle = twistTurns * Math.PI * 2;
-    return cumulative.map((distance) => (distance / totalLength) * totalAngle);
+    const anglePerMeter = (twistTurns * Math.PI * 2) / 100;
+    return cumulative.map((distance) => distance * anglePerMeter);
   }
 
   function getTrackFrame(tangent, rightHint = null, upHint = null) {
