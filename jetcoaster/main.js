@@ -2431,6 +2431,7 @@
     drawRideBackground(rideCtx, width, height, camera, state.groundPlane);
     drawGroundGrid(rideCtx, width, height, camera, state.groundPlane);
     drawTrackAhead(rideCtx, width, height, camera, ride.distance);
+    drawGoalFace(rideCtx, width, height, camera, state.trackData);
     drawNorikoFace(ride.fear, getFearLevel(ride.fear), shake, now);
   }
 
@@ -3196,6 +3197,118 @@
     drawRailStroke(ctx, sections.map((section) => section.rightRail), 6.6, CONFIG.visual.track.railMetal);
   }
 
+  function drawGoalFace(ctx, width, height, camera, trackData) {
+    if (!trackData || !trackData.points.length) {
+      return;
+    }
+
+    const goalSample = sampleTrackAtDistance(trackData, trackData.totalLength);
+    const faceRight = normalizeHorizontal3(camera.right);
+    const faceForwardOffset = normalizeHorizontal3(goalSample.tangent);
+    const mouthCenterWorld = add3(goalSample.point, scale3(faceForwardOffset, 7));
+    const faceCenterWorld = add3(mouthCenterWorld, { x: 0, y: 18, z: 0 });
+
+    const center = projectWorldPoint(faceCenterWorld, camera, width, height);
+    const left = projectWorldPoint(
+      add3(faceCenterWorld, scale3(faceRight, -18)),
+      camera,
+      width,
+      height
+    );
+    const right = projectWorldPoint(
+      add3(faceCenterWorld, scale3(faceRight, 18)),
+      camera,
+      width,
+      height
+    );
+    const top = projectWorldPoint(
+      add3(faceCenterWorld, { x: 0, y: 24, z: 0 }),
+      camera,
+      width,
+      height
+    );
+    const bottom = projectWorldPoint(
+      add3(faceCenterWorld, { x: 0, y: -28, z: 0 }),
+      camera,
+      width,
+      height
+    );
+    const mouthCenter = projectWorldPoint(mouthCenterWorld, camera, width, height);
+
+    if (!center || !left || !right || !top || !bottom || !mouthCenter) {
+      return;
+    }
+
+    const faceHalfWidth = Math.max(24, distance2D(left, right) * 0.5);
+    const faceHalfHeight = Math.max(32, distance2D(top, bottom) * 0.5);
+    const tilt = Math.atan2(right.y - left.y, right.x - left.x);
+    const mouthOffsetX = mouthCenter.x - center.x;
+    const mouthOffsetY = mouthCenter.y - center.y;
+    const mouthWidth = faceHalfWidth * 0.42;
+    const mouthHeight = faceHalfHeight * 0.24;
+    const eyeOffsetX = faceHalfWidth * 0.36;
+    const eyeOffsetY = faceHalfHeight * 0.22;
+
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.rotate(tilt);
+
+    ctx.fillStyle = "#4b3126";
+    ctx.beginPath();
+    ctx.ellipse(0, -faceHalfHeight * 0.18, faceHalfWidth * 0.92, faceHalfHeight * 0.94, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#ffd6bf";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, faceHalfWidth, faceHalfHeight, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#f0b18f";
+    ctx.beginPath();
+    ctx.ellipse(0, faceHalfHeight * 0.22, faceHalfWidth * 0.24, faceHalfHeight * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawGoalFaceEye(ctx, -eyeOffsetX, -eyeOffsetY, faceHalfWidth * 0.16, faceHalfHeight * 0.11);
+    drawGoalFaceEye(ctx, eyeOffsetX, -eyeOffsetY, faceHalfWidth * 0.16, faceHalfHeight * 0.11);
+
+    ctx.strokeStyle = "#5a3829";
+    ctx.lineWidth = Math.max(3, faceHalfWidth * 0.04);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-eyeOffsetX - faceHalfWidth * 0.08, -eyeOffsetY - faceHalfHeight * 0.12);
+    ctx.lineTo(-eyeOffsetX + faceHalfWidth * 0.08, -eyeOffsetY - faceHalfHeight * 0.16);
+    ctx.moveTo(eyeOffsetX - faceHalfWidth * 0.08, -eyeOffsetY - faceHalfHeight * 0.16);
+    ctx.lineTo(eyeOffsetX + faceHalfWidth * 0.08, -eyeOffsetY - faceHalfHeight * 0.12);
+    ctx.stroke();
+
+    ctx.fillStyle = "#120807";
+    ctx.beginPath();
+    ctx.ellipse(mouthOffsetX, mouthOffsetY, mouthWidth, mouthHeight, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(255, 185, 185, 0.35)";
+    ctx.lineWidth = Math.max(2, faceHalfWidth * 0.03);
+    ctx.beginPath();
+    ctx.ellipse(mouthOffsetX, mouthOffsetY, mouthWidth * 0.78, mouthHeight * 0.68, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawGoalFaceEye(ctx, x, y, width, height) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, width, height, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1e1e1e";
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.max(3, Math.min(width, height) * 0.45), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   function drawRailStroke(ctx, points, lineWidth, color) {
     if (points.length < 2) {
       return;
@@ -3520,8 +3633,13 @@
     while (distance < totalLength) {
       const remaining = totalLength - distance;
       const typeRoll = random();
+      const twistOccurrence = 0.68 * 0.25;
       const type =
-        typeRoll < 0.34 ? "left" : typeRoll < 0.68 ? "right" : "straight";
+        typeRoll < twistOccurrence * 0.5
+          ? "left"
+          : typeRoll < twistOccurrence
+            ? "right"
+            : "straight";
       const segmentLength = Math.min(
         remaining,
         type === "straight"
