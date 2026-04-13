@@ -55,6 +55,7 @@
       bankTriggerAngle: Math.PI / 3,
       bankMinimumAngle: Math.PI / 18,
       bankMinimumLateralRange: 24,
+      bankMinHorizontalProjection: 0.18,
       bankResponseExponent: 0.82,
       bankSmoothingPasses: 2,
       bankSmoothingRadius: 3,
@@ -1367,7 +1368,7 @@
       turns[i] = smoothedTurns[i];
     }
 
-    const bankTurns = computeBankTurns(points, cumulative);
+    const bankTurns = computeBankTurns(points, tangents);
     const bankAngles = computeBankAngles(bankTurns, cumulative, points.map((point) => point.x));
     const frames = buildTrackFrames(tangents, bankAngles);
     for (let i = 0; i < tangents.length; i += 1) {
@@ -1658,18 +1659,16 @@
     );
   }
 
-  function computeBankTurns(points, cumulative) {
+  function computeBankTurns(points, tangents) {
     const bankTurns = [];
     for (let i = 0; i < points.length; i += 1) {
       const prevIndex = Math.max(0, i - 1);
+      const currentIndex = i;
       const nextIndex = Math.min(points.length - 1, i + 1);
-      bankTurns[i] = computeProgressTurn(
-        cumulative[prevIndex],
-        points[prevIndex].x,
-        cumulative[i],
-        points[i].x,
-        cumulative[nextIndex],
-        points[nextIndex].x
+      bankTurns[i] = computeHorizontalBankTurn(
+        tangents[prevIndex],
+        tangents[currentIndex],
+        tangents[nextIndex]
       );
       if (!Number.isFinite(bankTurns[i])) {
         bankTurns[i] = 0;
@@ -1685,6 +1684,27 @@
       5,
       0.45
     );
+  }
+
+  function computeHorizontalBankTurn(prevTangent, tangent, nextTangent) {
+    const prevHorizontal = Math.hypot(prevTangent.x, prevTangent.z);
+    const currentHorizontal = Math.hypot(tangent.x, tangent.z);
+    const nextHorizontal = Math.hypot(nextTangent.x, nextTangent.z);
+    const minHorizontal = Math.min(prevHorizontal, currentHorizontal, nextHorizontal);
+    if (minHorizontal < 0.0001) {
+      return 0;
+    }
+
+    const prevHeading = { x: prevTangent.x / prevHorizontal, z: prevTangent.z / prevHorizontal };
+    const nextHeading = { x: nextTangent.x / nextHorizontal, z: nextTangent.z / nextHorizontal };
+    const horizontalStrength = smoothStep01(
+      invLerp(CONFIG.track.bankMinHorizontalProjection, 0.95, minHorizontal)
+    );
+    if (horizontalStrength < 0.0001) {
+      return 0;
+    }
+
+    return Math.sin(signedAngleXZ(prevHeading, nextHeading)) * horizontalStrength;
   }
 
   function computeProgressTurn(prevS, prevX, currentS, currentX, nextS, nextX) {
@@ -3485,6 +3505,9 @@
     if (!bankTurns.length) {
       return [];
     }
+    if (getInteriorValueRange(lateralValues) < CONFIG.track.bankMinimumLateralRange) {
+      return bankTurns.map(() => 0);
+    }
 
     const rawAngles = bankTurns.map((_, index) => {
       const window = getDistanceWindowIndices(cumulative, index, CONFIG.track.bankWindowDistance);
@@ -3976,11 +3999,19 @@
         lerp3(trackData.tangents[lowerIndex], trackData.tangents[upperIndex], t)
       );
     }
+    const lowerZeroRight = trackData.zeroRights[lowerIndex];
+    const lowerZeroUp = trackData.zeroUps[lowerIndex];
+    let upperZeroRight = trackData.zeroRights[upperIndex];
+    let upperZeroUp = trackData.zeroUps[upperIndex];
+    if (dot3(lowerZeroRight, upperZeroRight) < 0 || dot3(lowerZeroUp, upperZeroUp) < 0) {
+      upperZeroRight = scale3(upperZeroRight, -1);
+      upperZeroUp = scale3(upperZeroUp, -1);
+    }
     const zeroRightHint = normalize3(
-      lerp3(trackData.zeroRights[lowerIndex], trackData.zeroRights[upperIndex], t)
+      lerp3(lowerZeroRight, upperZeroRight, t)
     );
     const zeroUpHint = normalize3(
-      lerp3(trackData.zeroUps[lowerIndex], trackData.zeroUps[upperIndex], t)
+      lerp3(lowerZeroUp, upperZeroUp, t)
     );
     const zeroFrame = orthonormalizeTransportFrame(tangent, zeroRightHint, zeroUpHint);
     const bankAngle = lerp(trackData.bankAngles[lowerIndex], trackData.bankAngles[upperIndex], t);
