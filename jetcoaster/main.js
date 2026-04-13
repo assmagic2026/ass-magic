@@ -4011,25 +4011,26 @@
         lerp3(trackData.tangents[lowerIndex], trackData.tangents[upperIndex], t)
       );
     }
-    const lowerRight = trackData.rights[lowerIndex];
-    const lowerUp = trackData.ups[lowerIndex];
-    let upperRight = trackData.rights[upperIndex];
-    let upperUp = trackData.ups[upperIndex];
-    if (dot3(lowerRight, upperRight) < 0 || dot3(lowerUp, upperUp) < 0) {
-      upperRight = scale3(upperRight, -1);
-      upperUp = scale3(upperUp, -1);
+    const lowerZeroRight = trackData.zeroRights[lowerIndex];
+    const lowerZeroUp = trackData.zeroUps[lowerIndex];
+    let upperZeroRight = trackData.zeroRights[upperIndex];
+    let upperZeroUp = trackData.zeroUps[upperIndex];
+    if (dot3(lowerZeroRight, upperZeroRight) < 0 || dot3(lowerZeroUp, upperZeroUp) < 0) {
+      upperZeroRight = scale3(upperZeroRight, -1);
+      upperZeroUp = scale3(upperZeroUp, -1);
     }
 
-    const frame = orthonormalizeTransportFrame(
+    const zeroFrame = orthonormalizeTransportFrame(
       tangent,
-      normalize3(lerp3(lowerRight, upperRight, t)),
-      normalize3(lerp3(lowerUp, upperUp, t))
+      normalize3(lerp3(lowerZeroRight, upperZeroRight, t)),
+      normalize3(lerp3(lowerZeroUp, upperZeroUp, t))
     );
     const twistAngle = lerp(
       (trackData.twistAngles || trackData.bankAngles)[lowerIndex],
       (trackData.twistAngles || trackData.bankAngles)[upperIndex],
       t
     );
+    const frame = applyTrackBankAngle(zeroFrame.right, zeroFrame.up, twistAngle);
 
     return {
       point,
