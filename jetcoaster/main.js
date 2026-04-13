@@ -205,7 +205,7 @@
     norikoCanvas: document.getElementById("noriko-canvas"),
     speedReadout: document.getElementById("speed-readout"),
     fearReadout: document.getElementById("fear-readout"),
-    resultSummary: document.getElementById("result-summary"),
+    screamScore: document.getElementById("scream-score"),
     rerideButton: document.getElementById("reride-button"),
     restartButton: document.getElementById("restart-button")
   };
@@ -1357,7 +1357,7 @@
       turns[i] = smoothedTurns[i];
     }
 
-    const twistAngles = computeTwistAngles(cumulative);
+    const twistAngles = computeTwistAngles(cumulative, points);
     const frames = buildTrackFrames(tangents, twistAngles);
     for (let i = 0; i < tangents.length; i += 1) {
       rights[i] = frames.rights[i];
@@ -3506,26 +3506,88 @@
     return bankTurns.map(() => 0);
   }
 
-  function computeTwistAngles(cumulative) {
-    const leftSpinDistance = 100;
-    const pauseDistance = 50;
-    const rightSpinDistance = 100;
-    const cycleDistance = leftSpinDistance + pauseDistance + rightSpinDistance + pauseDistance;
+  function computeTwistAngles(cumulative, points = []) {
+    const totalLength = cumulative[cumulative.length - 1] || 0;
+    if (!totalLength) {
+      return cumulative.map(() => 0);
+    }
 
-    return cumulative.map((distance) => {
-      const phase = positiveModulo(distance, cycleDistance);
-      if (phase < leftSpinDistance) {
-        return smoothStep01(phase / leftSpinDistance) * Math.PI * 2;
-      }
-      if (phase < leftSpinDistance + pauseDistance) {
-        return Math.PI * 2;
-      }
-      if (phase < leftSpinDistance + pauseDistance + rightSpinDistance) {
-        const local = phase - leftSpinDistance - pauseDistance;
-        return (1 - smoothStep01(local / rightSpinDistance)) * Math.PI * 2;
-      }
+    const random = createTrackRandom(points, totalLength);
+    const plan = [];
+    let distance = 0;
+    let angle = 0;
+
+    while (distance < totalLength) {
+      const remaining = totalLength - distance;
+      const typeRoll = random();
+      const type =
+        typeRoll < 0.34 ? "left" : typeRoll < 0.68 ? "right" : "straight";
+      const segmentLength = Math.min(
+        remaining,
+        type === "straight"
+          ? lerp(36, 82, random())
+          : lerp(84, 132, random())
+      );
+      const nextAngle =
+        type === "left"
+          ? angle + Math.PI * 2
+          : type === "right"
+            ? angle - Math.PI * 2
+            : angle;
+
+      plan.push({
+        type,
+        start: distance,
+        end: distance + segmentLength,
+        angleStart: angle,
+        angleEnd: nextAngle
+      });
+
+      distance += segmentLength;
+      angle = nextAngle;
+    }
+
+    return cumulative.map((distanceAlongTrack) =>
+      sampleTwistPlan(plan, distanceAlongTrack)
+    );
+  }
+
+  function sampleTwistPlan(plan, distance) {
+    if (!plan.length) {
       return 0;
-    });
+    }
+
+    const segment =
+      plan.find((entry) => distance <= entry.end) || plan[plan.length - 1];
+    if (segment.type === "straight") {
+      return segment.angleStart;
+    }
+
+    const span = Math.max(0.0001, segment.end - segment.start);
+    const t = smoothStep01(clamp((distance - segment.start) / span, 0, 1));
+    return lerp(segment.angleStart, segment.angleEnd, t);
+  }
+
+  function createTrackRandom(points, totalLength) {
+    let seed = (Math.round(totalLength * 10) ^ points.length ^ 0x9e3779b9) >>> 0;
+    const stride = Math.max(1, Math.floor(points.length / 18));
+
+    for (let i = 0; i < points.length; i += stride) {
+      const point = points[i];
+      seed = mixSeed(seed, Math.round(point.x * 10));
+      seed = mixSeed(seed, Math.round(point.y * 10));
+      seed = mixSeed(seed, Math.round(point.z * 10));
+    }
+
+    return () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 4294967296;
+    };
+  }
+
+  function mixSeed(seed, value) {
+    const mixed = (seed ^ ((value + 0x9e3779b9) >>> 0)) >>> 0;
+    return Math.imul(mixed ^ (mixed >>> 16), 2246822519) >>> 0;
   }
 
   function getTrackFrame(tangent, rightHint = null, upHint = null) {
@@ -3857,22 +3919,23 @@
   }
 
   function buildResult(analysis, ride) {
-    const level4plus = ride.levelTimes[3] + ride.levelTimes[4];
-    const noriko = clamp01(
-      clamp(level4plus / Math.max(1, ride.elapsed), 0, 1) * 0.42 +
-        invLerp(3, 5, ride.maxLevel) * 0.28 +
-        invLerp(0.8, 5.4, ride.distortionIntegral) * 0.3
+    const intenseRatio = (ride.levelTimes[3] + ride.levelTimes[4]) / Math.max(1, ride.elapsed);
+    const scream = clamp01(
+      invLerp(CONFIG.ride.minSpeed, CONFIG.ride.maxSpeed, ride.maxSpeed) * 0.26 +
+        invLerp(3, 5, ride.maxLevel) * 0.24 +
+        intenseRatio * 0.3 +
+        invLerp(0.8, 5.4, ride.distortionIntegral) * 0.2
     );
-    const norikoScore = Math.round(noriko * 100);
 
     return {
-      norikoScore,
-      summary: describeNorikoReaction(analysis, ride, norikoScore)
+      screamScore: Math.round(scream * 100)
     };
   }
 
   function renderResult(result) {
-    els.resultSummary.textContent = result.summary;
+    if (els.screamScore) {
+      els.screamScore.textContent = String(result.screamScore).padStart(3, "0");
+    }
   }
 
   function getFearLevel(fear) {
@@ -3968,26 +4031,6 @@
       turn: lerp(trackData.turns[lowerIndex], trackData.turns[upperIndex], t)
     };
   }
-
-
-  function describeNorikoReaction(analysis, ride, norikoScore) {
-    const intenseRatio = (ride.levelTimes[3] + ride.levelTimes[4]) / Math.max(1, ride.elapsed);
-
-    if (norikoScore >= 88 || ride.maxLevel >= 5) {
-      return "ノリコ『ちょっと待って、回りすぎるし落ちるしで顔どころじゃないんだけど！ でも変な笑いが止まらなかった…』";
-    }
-    if (norikoScore >= 68 || intenseRatio >= 0.34) {
-      return "ノリコ『かなり怖かったのに、気づいたら最後まで見届けちゃった。悔しいけどちょっと好きかも。』";
-    }
-    if (norikoScore >= 42 || ride.maxLevel >= 3) {
-      return "ノリコ『何回かヒヤッとしたけど、まだ耐えられる範囲かな。もう少しだけ攻めてもよさそう。』";
-    }
-    if (analysis.drop >= 18 || analysis.verticalTravel >= 70) {
-      return "ノリコ『見た目よりは優しかったけど、山谷が多くてじわじわ来た。次はもっと振り回してみて。』";
-    }
-    return "ノリコ『今日はまだ余裕だったかな。次はもっと大胆に描いて、本気で崩しにきてほしい。』";
-  }
-
   function specificEnergyFromSpeed(speed, height) {
     return 0.5 * speed * speed + CONFIG.ride.gravity * height;
   }
