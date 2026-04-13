@@ -61,23 +61,23 @@
       bankSmoothingRadius: 3,
       minimumIntentLateralRange: 14,
       tangentSampleDistance: 6,
-      pathSmoothPasses: 1,
-      pathSampleCount: 420,
-      sideProfileSmoothPasses: 2,
-      sideProfileShapePreserve: 0.58,
-      maxDepthStep: 5.2,
-      maxLateralStep: 5.6,
+      pathSmoothPasses: 2,
+      pathSampleCount: 560,
+      sideProfileSmoothPasses: 3,
+      sideProfileShapePreserve: 0.42,
+      maxDepthStep: 4.2,
+      maxLateralStep: 4.5,
       depthSmoothPasses: 4,
-      depthSmoothRadius: 6,
-      lateralSmoothPasses: 4,
-      lateralSmoothRadius: 6,
+      depthSmoothRadius: 8,
+      lateralSmoothPasses: 6,
+      lateralSmoothRadius: 8,
       maxHeightStep: 4.6,
-      verticalSmoothPasses: 4,
-      verticalSmoothRadius: 6,
-      transitionSmoothPasses: 3,
-      transitionSmoothRadius: 5,
-      cornerEaseWindow: 10,
-      cornerEaseStrength: 0.84,
+      verticalSmoothPasses: 5,
+      verticalSmoothRadius: 8,
+      transitionSmoothPasses: 4,
+      transitionSmoothRadius: 7,
+      cornerEaseWindow: 14,
+      cornerEaseStrength: 0.9,
       cornerThresholdMin: 0.42,
       cornerThresholdMultiplier: 2.4,
       deltaClampPasses: 4,
@@ -1486,6 +1486,35 @@
       result = chaikinSmooth3D(result);
     }
     result = resamplePath3DByDistance(result, CONFIG.track.pathSampleCount);
+    const smoothedX = smoothTrackCoordinateSeries(
+      result.map((point) => point.x),
+      CONFIG.track.lateralSmoothPasses,
+      CONFIG.track.lateralSmoothRadius,
+      CONFIG.track.cornerEaseWindow,
+      CONFIG.track.cornerEaseStrength,
+      0.24
+    );
+    const smoothedY = smoothTrackCoordinateSeries(
+      result.map((point) => point.y),
+      CONFIG.track.verticalSmoothPasses,
+      CONFIG.track.verticalSmoothRadius,
+      CONFIG.track.cornerEaseWindow + 2,
+      CONFIG.track.cornerEaseStrength,
+      0.22
+    );
+    const smoothedZ = smoothTrackCoordinateSeries(
+      result.map((point) => point.z),
+      CONFIG.track.depthSmoothPasses + 1,
+      CONFIG.track.depthSmoothRadius,
+      CONFIG.track.cornerEaseWindow + 2,
+      CONFIG.track.cornerEaseStrength * 0.82,
+      0.26
+    );
+    result = result.map((point, index) => ({
+      x: smoothedX[index],
+      y: smoothedY[index],
+      z: smoothedZ[index]
+    }));
     result[0] = { ...points[0] };
     result[result.length - 1] = { ...points[points.length - 1] };
     return result.map((point) => ({
@@ -1539,6 +1568,17 @@
     return values.map((value, index) =>
       index === 0 || index === values.length - 1 ? 0 : value * strength
     );
+  }
+
+  function smoothTrackCoordinateSeries(values, passes, radius, window, strength, preserveBlend) {
+    const base = smoothValues(values, passes, radius);
+    const transitioned = smoothSeriesByVelocity(
+      base,
+      Math.max(1, passes - 2),
+      Math.max(2, radius - 2)
+    );
+    const eased = easeSharpCorners(transitioned, window, strength);
+    return blendSeriesTowardReference(eased, values, preserveBlend);
   }
 
   function getFoldbackIndices(depthValues) {
@@ -2431,7 +2471,6 @@
     drawRideBackground(rideCtx, width, height, camera, state.groundPlane);
     drawGroundGrid(rideCtx, width, height, camera, state.groundPlane);
     drawTrackAhead(rideCtx, width, height, camera, ride.distance);
-    drawGoalFace(rideCtx, width, height, camera, state.trackData);
     drawNorikoFace(ride.fear, getFearLevel(ride.fear), shake, now);
   }
 
