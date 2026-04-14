@@ -4028,7 +4028,7 @@
     const sw = frameSize - cropPad * 2;
     const sh = frameSize - cropPad * 2;
     const panic = clamp((level - 1) / 4, 0, 1);
-    const size = Math.min(width - 8, height - 8) * 1.2;
+    const size = Math.min(width - 8, height - 8) * 1.25;
     const floatY = Math.sin(now * 0.0034) * (0.5 + panic * 0.6);
     const shakeX = wobble * (0.01 + panic * 0.014);
     const shakeY = wobble * (0.008 + panic * 0.012);
