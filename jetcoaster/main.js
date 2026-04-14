@@ -1464,10 +1464,10 @@
 
   function buildGroundPlane(trackData) {
     const bounds = trackData.bounds || getTrackBounds(trackData.points);
-    const margin = 20;
+    const margin = 260;
     const spanX = bounds.maxX - bounds.minX + margin * 2;
     const spanZ = bounds.maxZ - bounds.minZ + margin * 2;
-    const size = Math.ceil(Math.max(spanX, spanZ) / 20) * 20;
+    const size = Math.ceil(Math.max(spanX, spanZ, 1800) / 20) * 20;
     const centerX = (bounds.minX + bounds.maxX) * 0.5;
     const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
     const half = size * 0.5;
@@ -3014,26 +3014,8 @@
     ctx.save();
     addPolygonPath(ctx, groundRegion);
     ctx.clip();
-    for (let z = groundPlane.minZ; z < groundPlane.maxZ; z += groundPlane.gridStep) {
-      drawProjectedQuad(
-        ctx,
-        projectWorldPoint({ x: groundPlane.minX, y: 0, z }, camera, width, height),
-        projectWorldPoint({ x: groundPlane.maxX, y: 0, z }, camera, width, height),
-        projectWorldPoint(
-          { x: groundPlane.maxX, y: 0, z: Math.min(groundPlane.maxZ, z + groundPlane.gridStep) },
-          camera,
-          width,
-          height
-        ),
-        projectWorldPoint(
-          { x: groundPlane.minX, y: 0, z: Math.min(groundPlane.maxZ, z + groundPlane.gridStep) },
-          camera,
-          width,
-          height
-        ),
-        "#ffffff"
-      );
-    }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(-40, -40, width + 80, height + 80);
     ctx.restore();
   }
 
@@ -3049,13 +3031,16 @@
     ctx.save();
     addPolygonPath(ctx, groundRegion);
     ctx.clip();
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.34)";
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.44)";
+    ctx.lineWidth = 1.15;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const sampleStep = Math.max(4, groundPlane.gridStep * 0.25);
 
     for (let z = groundPlane.minZ; z <= groundPlane.maxZ; z += groundPlane.gridStep) {
       drawProjectedWorldPolyline(
         ctx,
-        sampleGroundLineX(groundPlane.minX, groundPlane.maxX, z, groundPlane.gridStep),
+        sampleGroundLineX(groundPlane.minX, groundPlane.maxX, z, sampleStep),
         camera,
         width,
         height
@@ -3065,7 +3050,7 @@
     for (let x = groundPlane.minX; x <= groundPlane.maxX; x += groundPlane.gridStep) {
       drawProjectedWorldPolyline(
         ctx,
-        sampleGroundLineZ(x, groundPlane.minZ, groundPlane.maxZ, groundPlane.gridStep),
+        sampleGroundLineZ(x, groundPlane.minZ, groundPlane.maxZ, sampleStep),
         camera,
         width,
         height
