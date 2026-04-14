@@ -234,6 +234,17 @@
   const previewCtx = els.previewCanvas.getContext("2d");
   const rideCtx = els.rideCanvas.getContext("2d");
   const norikoCtx = els.norikoCanvas.getContext("2d");
+  const norikoSprite = new Image();
+
+  norikoSprite.decoding = "async";
+  norikoSprite.src = "./noriko-sheet.png";
+  norikoSprite.addEventListener("load", () => {
+    if (state.screen === "ride" && state.ride) {
+      renderRide(state.ride.now || performance.now());
+    } else {
+      drawNorikoFace(0, 1, 0, performance.now());
+    }
+  });
 
   function createEmptyInputState() {
     return {
@@ -3994,6 +4005,59 @@
     ctx.closePath();
   }
 
+  function getNorikoSpriteFrame(level) {
+    if (level <= 2) {
+      return { col: 0, row: 0 };
+    }
+    if (level <= 4) {
+      return { col: 0, row: 1 };
+    }
+    return { col: 1, row: 1 };
+  }
+
+  function drawNorikoSpriteFace(ctx, width, height, level, wobble, now) {
+    if (!norikoSprite.complete || !norikoSprite.naturalWidth) {
+      return false;
+    }
+
+    const frameSize = norikoSprite.naturalWidth * 0.5;
+    const cropPad = Math.round(frameSize * 0.045);
+    const frame = getNorikoSpriteFrame(level);
+    const sx = frame.col * frameSize + cropPad;
+    const sy = frame.row * frameSize + cropPad;
+    const sw = frameSize - cropPad * 2;
+    const sh = frameSize - cropPad * 2;
+    const panic = clamp((level - 1) / 4, 0, 1);
+    const size = Math.min(width - 8, height - 8);
+    const floatY = Math.sin(now * 0.0034) * (0.5 + panic * 0.6);
+    const shakeX = wobble * (0.01 + panic * 0.014);
+    const shakeY = wobble * (0.008 + panic * 0.012);
+    const tilt = Math.sin(now * 0.0027) * 0.01 + wobble * 0.00045;
+    const scale = 1 + panic * 0.028;
+
+    ctx.save();
+    addRoundedRectPath(ctx, 0, 0, width, height, 18);
+    ctx.clip();
+
+    const bg = ctx.createLinearGradient(0, 0, 0, height);
+    bg.addColorStop(0, "#edf7ff");
+    bg.addColorStop(1, "#d6ecff");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.translate(width * 0.5 + shakeX, height * 0.5 + floatY + shakeY);
+    ctx.rotate(tilt);
+    ctx.scale(scale, scale);
+
+    ctx.shadowColor = "rgba(31, 47, 77, 0.2)";
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 6;
+    ctx.drawImage(norikoSprite, sx, sy, sw, sh, -size * 0.5, -size * 0.5, size, size);
+
+    ctx.restore();
+    return true;
+  }
+
   function drawNorikoFace(fear, level, wobble, now) {
     const width = els.norikoCanvas.clientWidth;
     const height = els.norikoCanvas.clientHeight;
@@ -4002,6 +4066,9 @@
     }
 
     norikoCtx.clearRect(0, 0, width, height);
+    if (drawNorikoSpriteFace(norikoCtx, width, height, level, wobble, now)) {
+      return;
+    }
     drawNorikoBackdrop(norikoCtx, width, height, fear, now);
 
     const phase = now * 0.0076;
