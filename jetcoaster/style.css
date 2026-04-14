@@ -410,8 +410,8 @@ h3 {
 
 .noriko-wipe {
   top: 14px;
-  right: 14px;
-  width: min(37vw, 164px);
+  right: 8px;
+  width: min(35.2vw, 156px);
   aspect-ratio: 1 / 1.14;
   padding: 0;
   background: transparent;
@@ -488,7 +488,7 @@ h3 {
   }
 
   .noriko-wipe {
-    width: 108px;
+    width: 103px;
   }
 }
 

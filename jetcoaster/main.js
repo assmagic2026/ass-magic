@@ -2482,7 +2482,7 @@
     drawRideBackground(rideCtx, width, height, camera, state.groundPlane);
     drawGroundGrid(rideCtx, width, height, camera, state.groundPlane);
     drawTrackAhead(rideCtx, width, height, camera, ride.distance);
-    drawNorikoFace(ride.fear, getFearLevel(ride.fear), shake, now);
+    drawNorikoFace(ride.fear, getFearLevel(ride.fear), shake, now, ride.speed * 3.6);
   }
 
   function drawRideBackground(ctx, width, height, camera, groundPlane) {
@@ -4005,29 +4005,40 @@
     ctx.closePath();
   }
 
-  function getNorikoSpriteFrame(level) {
-    if (level <= 2) {
+  function getNorikoSpriteStage(speedKmh) {
+    if (speedKmh >= 150) {
+      return 3;
+    }
+    if (speedKmh >= 101) {
+      return 2;
+    }
+    return 1;
+  }
+
+  function getNorikoSpriteFrame(stage) {
+    if (stage <= 1) {
       return { col: 0, row: 0 };
     }
-    if (level === 3) {
+    if (stage === 2) {
       return { col: 0, row: 1 };
     }
     return { col: 1, row: 1 };
   }
 
-  function drawNorikoSpriteFace(ctx, width, height, level, wobble, now) {
+  function drawNorikoSpriteFace(ctx, width, height, level, wobble, now, speedKmh = 0) {
     if (!norikoSprite.complete || !norikoSprite.naturalWidth) {
       return false;
     }
 
     const frameSize = norikoSprite.naturalWidth * 0.5;
     const cropPad = Math.round(frameSize * 0.045);
-    const frame = getNorikoSpriteFrame(level);
+    const stage = getNorikoSpriteStage(speedKmh);
+    const frame = getNorikoSpriteFrame(stage);
     const sx = frame.col * frameSize + cropPad;
     const sy = frame.row * frameSize + cropPad;
     const sw = frameSize - cropPad * 2;
     const sh = frameSize - cropPad * 2;
-    const panic = clamp((level - 1) / 4, 0, 1);
+    const panic = clamp((stage - 1) / 2, 0, 1);
     const size = Math.min(width - 8, height - 8) * 1.25;
     const floatY = Math.sin(now * 0.0034) * (0.5 + panic * 0.6);
     const shakeX = wobble * (0.01 + panic * 0.014);
@@ -4058,7 +4069,7 @@
     return true;
   }
 
-  function drawNorikoFace(fear, level, wobble, now) {
+  function drawNorikoFace(fear, level, wobble, now, speedKmh = 0) {
     const width = els.norikoCanvas.clientWidth;
     const height = els.norikoCanvas.clientHeight;
     if (!width || !height) {
@@ -4066,7 +4077,7 @@
     }
 
     norikoCtx.clearRect(0, 0, width, height);
-    if (drawNorikoSpriteFace(norikoCtx, width, height, level, wobble, now)) {
+    if (drawNorikoSpriteFace(norikoCtx, width, height, level, wobble, now, speedKmh)) {
       return;
     }
     drawNorikoBackdrop(norikoCtx, width, height, fear, now);
