@@ -4025,14 +4025,39 @@
     return { col: 1, row: 1 };
   }
 
+  function getNorikoSpritePlacement(stage, width, height) {
+    if (stage <= 1) {
+      return {
+        sourceInsetRatio: 0.072,
+        offsetX: -width * 0.028,
+        offsetY: 0
+      };
+    }
+
+    if (stage === 2) {
+      return {
+        sourceInsetRatio: 0.078,
+        offsetX: 0,
+        offsetY: height * 0.032
+      };
+    }
+
+    return {
+      sourceInsetRatio: 0.08,
+      offsetX: 0,
+      offsetY: height * 0.034
+    };
+  }
+
   function drawNorikoSpriteFace(ctx, width, height, level, wobble, now, speedKmh = 0) {
     if (!norikoSprite.complete || !norikoSprite.naturalWidth) {
       return false;
     }
 
     const frameSize = norikoSprite.naturalWidth * 0.5;
-    const cropPad = Math.round(frameSize * 0.045);
     const stage = getNorikoSpriteStage(speedKmh);
+    const placement = getNorikoSpritePlacement(stage, width, height);
+    const cropPad = Math.round(frameSize * placement.sourceInsetRatio);
     const frame = getNorikoSpriteFrame(stage);
     const sx = frame.col * frameSize + cropPad;
     const sy = frame.row * frameSize + cropPad;
@@ -4056,7 +4081,10 @@
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    ctx.translate(width * 0.5 + shakeX, height * 0.5 + floatY + shakeY);
+    ctx.translate(
+      width * 0.5 + placement.offsetX + shakeX,
+      height * 0.5 + placement.offsetY + floatY + shakeY
+    );
     ctx.rotate(tilt);
     ctx.scale(scale, scale);
 
