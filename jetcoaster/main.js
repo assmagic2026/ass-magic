@@ -4029,6 +4029,7 @@
     if (stage <= 1) {
       return {
         sourceInsetRatio: 0.072,
+        sourceShiftYRatio: 0.016,
         offsetX: -width * 0.028,
         offsetY: 0
       };
@@ -4037,6 +4038,7 @@
     if (stage === 2) {
       return {
         sourceInsetRatio: 0.078,
+        sourceShiftYRatio: 0.022,
         offsetX: 0,
         offsetY: height * 0.032
       };
@@ -4044,6 +4046,7 @@
 
     return {
       sourceInsetRatio: 0.08,
+      sourceShiftYRatio: 0.02,
       offsetX: 0,
       offsetY: height * 0.034
     };
@@ -4058,9 +4061,10 @@
     const stage = getNorikoSpriteStage(speedKmh);
     const placement = getNorikoSpritePlacement(stage, width, height);
     const cropPad = Math.round(frameSize * placement.sourceInsetRatio);
+    const sourceShiftY = Math.round(frameSize * placement.sourceShiftYRatio);
     const frame = getNorikoSpriteFrame(stage);
     const sx = frame.col * frameSize + cropPad;
-    const sy = frame.row * frameSize + cropPad;
+    const sy = frame.row * frameSize + cropPad + sourceShiftY;
     const sw = frameSize - cropPad * 2;
     const sh = frameSize - cropPad * 2;
     const panic = clamp((stage - 1) / 2, 0, 1);
