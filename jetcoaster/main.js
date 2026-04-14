@@ -3938,24 +3938,24 @@
   function traceNorikoHeadPath(ctx, panic, grotesque) {
     ctx.beginPath();
     ctx.moveTo(0, -49);
-    ctx.bezierCurveTo(21, -49, 35, -26, 35, 3);
+    ctx.bezierCurveTo(23, -49, 37, -24, 37, 4);
     ctx.bezierCurveTo(
-      35,
-      29 + panic * 1.1,
-      20,
-      51 + grotesque * 2.6,
+      37,
+      31 + panic * 1,
+      22,
+      52 + grotesque * 2.4,
       0,
-      56 + grotesque * 3.8
+      57 + grotesque * 3.2
     );
     ctx.bezierCurveTo(
-      -20,
-      51 + grotesque * 2.6,
-      -35,
-      29 + panic * 1.1,
-      -35,
-      3
+      -22,
+      52 + grotesque * 2.4,
+      -37,
+      31 + panic * 1,
+      -37,
+      4
     );
-    ctx.bezierCurveTo(-35, -26, -21, -49, 0, -49);
+    ctx.bezierCurveTo(-37, -24, -23, -49, 0, -49);
     ctx.closePath();
   }
 
@@ -3989,6 +3989,7 @@
     const jawDrop = panic * 1.2 + grotesque * 3.7 + collapse * 4.6;
     const mouthOpen = 0.25 + panic * 2.3 + grotesque * 7 + collapse * 8.2;
     const mouthWidth = 11.7 + panic * 2.2 + grotesque * 4.5;
+    const smile = clamp(0.96 - panic * 0.42 - grotesque * 0.14, 0.18, 1);
     const gazeX = Math.sin(phase * 0.48) * 0.22 + wobble * 0.003 + collapse * 0.5;
     const gazeY = -0.12 + panic * 0.22 + collapse * 0.3;
     const noseShiftX = Math.sin(phase * 0.65) * 0.16 + asymmetry * 0.06;
@@ -4064,10 +4065,12 @@
       y: 25.8 + jawDrop,
       width: mouthWidth,
       open: mouthOpen,
+      smile,
       panic,
       grotesque,
       phase
     });
+    drawNorikoSmileLines(norikoCtx, smile, panic, grotesque);
     drawNorikoHairFront(norikoCtx, panic, grotesque, phase);
 
     if (panic > 0.42) {
@@ -4130,69 +4133,81 @@
 
   function drawNorikoShoulders(ctx, panic, grotesque) {
     ctx.save();
-    const blouse = ctx.createLinearGradient(0, 34, 0, 88);
-    blouse.addColorStop(0, "#91a9d1");
-    blouse.addColorStop(1, "#5f7392");
-    ctx.fillStyle = blouse;
+    const jacket = ctx.createLinearGradient(0, 32, 0, 90);
+    jacket.addColorStop(0, "#20242b");
+    jacket.addColorStop(0.55, "#11151b");
+    jacket.addColorStop(1, "#070a0e");
+    ctx.fillStyle = jacket;
     ctx.beginPath();
-    ctx.moveTo(-52, 88);
-    ctx.quadraticCurveTo(-44, 46, -22, 34);
-    ctx.quadraticCurveTo(0, 27 + grotesque * 4, 22, 34);
-    ctx.quadraticCurveTo(44, 46, 52, 88);
+    ctx.moveTo(-56, 88);
+    ctx.quadraticCurveTo(-47, 44, -23, 33);
+    ctx.quadraticCurveTo(0, 26 + grotesque * 3.5, 23, 33);
+    ctx.quadraticCurveTo(47, 44, 56, 88);
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = "rgba(255, 255, 255, 0.24)";
+    ctx.fillStyle = "#fffdf9";
     ctx.beginPath();
-    ctx.ellipse(0, 45, 16 + panic * 1.4, 8.6 + panic, 0, 0, Math.PI * 2);
+    ctx.moveTo(-18, 39);
+    ctx.quadraticCurveTo(0, 31 + panic * 0.8, 18, 39);
+    ctx.lineTo(12, 53);
+    ctx.quadraticCurveTo(0, 48 + panic * 1.4, -12, 53);
+    ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = "rgba(63, 78, 105, 0.34)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
     ctx.beginPath();
-    ctx.moveTo(-34, 88);
-    ctx.quadraticCurveTo(-31, 61, -20, 40);
-    ctx.lineTo(-12, 42);
-    ctx.quadraticCurveTo(-19, 60, -22, 88);
+    ctx.moveTo(-38, 88);
+    ctx.quadraticCurveTo(-30, 56, -20, 41);
+    ctx.lineTo(-12, 43);
+    ctx.quadraticCurveTo(-18, 59, -20, 88);
     ctx.closePath();
-    ctx.moveTo(34, 88);
-    ctx.quadraticCurveTo(31, 61, 20, 40);
-    ctx.lineTo(12, 42);
-    ctx.quadraticCurveTo(19, 60, 22, 88);
+    ctx.moveTo(38, 88);
+    ctx.quadraticCurveTo(30, 56, 20, 41);
+    ctx.lineTo(12, 43);
+    ctx.quadraticCurveTo(18, 59, 20, 88);
     ctx.closePath();
     ctx.fill();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(0, 40);
+    ctx.lineTo(0, 88);
+    ctx.stroke();
     ctx.restore();
   }
 
   function drawNorikoHairBack(ctx, panic, grotesque, phase) {
     ctx.save();
     const hair = ctx.createLinearGradient(0, -62, 0, 64);
-    hair.addColorStop(0, "#6a4535");
-    hair.addColorStop(0.4, "#4d3125");
-    hair.addColorStop(1, "#281b16");
+    hair.addColorStop(0, "#2f3138");
+    hair.addColorStop(0.4, "#17191d");
+    hair.addColorStop(1, "#090a0d");
     ctx.fillStyle = hair;
     ctx.beginPath();
-    ctx.moveTo(-41, -8);
-    ctx.quadraticCurveTo(-48, -46, -15, -62);
-    ctx.quadraticCurveTo(0, -69 - panic * 2, 15, -62);
-    ctx.quadraticCurveTo(48, -46, 42, -8);
-    ctx.quadraticCurveTo(45, 26, 28 + grotesque * 2, 57);
-    ctx.quadraticCurveTo(0, 69 + panic * 2.5, -28, 57);
-    ctx.quadraticCurveTo(-45, 26, -41, -8);
+    ctx.moveTo(-44, -3);
+    ctx.quadraticCurveTo(-45, -42, -14, -63);
+    ctx.quadraticCurveTo(4, -70 - panic * 1.4, 20, -60);
+    ctx.quadraticCurveTo(44, -42, 44, -1);
+    ctx.quadraticCurveTo(44, 25, 29 + grotesque * 1.4, 54);
+    ctx.quadraticCurveTo(8, 65 + panic * 1.8, -23, 58);
+    ctx.quadraticCurveTo(-43, 27, -44, -3);
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(255, 238, 215, 0.18)";
-    ctx.lineWidth = 3.4;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.11)";
+    ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-14, -45);
-    ctx.quadraticCurveTo(-2 + Math.sin(phase) * 3, -59, 16, -40);
+    ctx.moveTo(-10, -44);
+    ctx.quadraticCurveTo(2 + Math.sin(phase) * 1.6, -57, 18, -37);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(-24, -18);
-    ctx.quadraticCurveTo(-8, 16 + Math.sin(phase * 0.7) * 4, -18, 48);
-    ctx.moveTo(24, -16);
-    ctx.quadraticCurveTo(9, 18 - Math.sin(phase * 0.7) * 4, 18, 50);
+    ctx.moveTo(-26, -12);
+    ctx.quadraticCurveTo(-13, 18 + Math.sin(phase * 0.7) * 3, -18, 48);
+    ctx.moveTo(19, -16);
+    ctx.quadraticCurveTo(14, 18 - Math.sin(phase * 0.7) * 3, 16, 44);
     ctx.stroke();
     ctx.restore();
   }
@@ -4216,9 +4231,9 @@
   function drawNorikoHead(ctx, panic, grotesque) {
     ctx.save();
     const skin = ctx.createRadialGradient(-8, -20, 8, 0, 0, 66);
-    skin.addColorStop(0, "#ffe8d7");
-    skin.addColorStop(0.6, "#ffd8c1");
-    skin.addColorStop(1, "#e7b08f");
+    skin.addColorStop(0, "#ffe8d8");
+    skin.addColorStop(0.58, "#f8d8c4");
+    skin.addColorStop(1, "#dca98c");
     ctx.fillStyle = skin;
     traceNorikoHeadPath(ctx, panic, grotesque);
     ctx.fill();
@@ -4281,10 +4296,10 @@
 
   function drawNorikoCheeks(ctx, flush, grotesque) {
     ctx.save();
-    ctx.fillStyle = `rgba(255, 134, 150, ${flush + grotesque * 0.06})`;
+    ctx.fillStyle = `rgba(255, 139, 152, ${flush + grotesque * 0.05})`;
     ctx.beginPath();
-    ctx.ellipse(-18, 17, 7.4, 4.6, -0.22, 0, Math.PI * 2);
-    ctx.ellipse(18, 17, 7.4, 4.6, 0.22, 0, Math.PI * 2);
+    ctx.ellipse(-19, 18, 7.8, 4.8, -0.22, 0, Math.PI * 2);
+    ctx.ellipse(19, 18, 7.8, 4.8, 0.22, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -4332,9 +4347,9 @@
       gazeY,
       irisRadius
     );
-    iris.addColorStop(0, "#96715a");
-    iris.addColorStop(0.55, "#6c4c3b");
-    iris.addColorStop(1, "#2c201a");
+    iris.addColorStop(0, "#705448");
+    iris.addColorStop(0.55, "#49352c");
+    iris.addColorStop(1, "#201813");
     ctx.fillStyle = iris;
     ctx.beginPath();
     ctx.arc(direction * gazeX, gazeY, irisRadius, 0, Math.PI * 2);
@@ -4378,6 +4393,13 @@
     ctx.moveTo(x - width * 0.8, y + 0.8);
     ctx.quadraticCurveTo(x, y + openHeight * 0.52, x + width * 0.8, y + 0.5);
     ctx.stroke();
+
+    ctx.strokeStyle = "rgba(73, 55, 48, 0.18)";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(x - width * 0.82, y + openHeight * 0.78);
+    ctx.quadraticCurveTo(x, y + openHeight * 1.06, x + width * 0.82, y + openHeight * 0.75);
+    ctx.stroke();
   }
 
   function drawNorikoBrow(ctx, options) {
@@ -4403,15 +4425,15 @@
     ctx.save();
     ctx.translate(x, y);
 
-    ctx.strokeStyle = "rgba(143, 90, 74, 0.52)";
-    ctx.lineWidth = 1.15;
+    ctx.strokeStyle = "rgba(143, 90, 74, 0.48)";
+    ctx.lineWidth = 1.05;
     ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(-1.1, -10);
     ctx.quadraticCurveTo(1.3 + grotesque * 0.55, -0.8, 0.2, 10 + panic * 0.65);
     ctx.stroke();
 
-    ctx.fillStyle = "rgba(170, 108, 89, 0.24)";
+    ctx.fillStyle = "rgba(170, 108, 89, 0.18)";
     ctx.beginPath();
     ctx.ellipse(0.4, 10.5 + panic * 0.4, 4.6, 2.4, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -4421,8 +4443,8 @@
     ctx.ellipse(-2.2, -2.6, 1.6, 5.2, -0.16, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(154, 94, 78, 0.2)";
-    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = "rgba(154, 94, 78, 0.16)";
+    ctx.lineWidth = 0.7;
     ctx.beginPath();
     ctx.moveTo(-0.2, 12.2);
     ctx.quadraticCurveTo(-0.8, 15.6, -2.2 + Math.sin(phase * 0.8) * 0.2, 18.5);
@@ -4431,10 +4453,11 @@
   }
 
   function drawNorikoMouth(ctx, options) {
-    const { x, y, width, open, panic, grotesque, phase } = options;
+    const { x, y, width, open, smile, panic, grotesque, phase } = options;
     const lipHeight = 3.7 + panic * 0.55;
     const mouthAngle = Math.sin(phase * 1.24) * grotesque * 0.025;
     const innerHeight = Math.max(2.2, open);
+    const grinLift = smile * 4.8;
 
     ctx.save();
     ctx.translate(x, y);
@@ -4447,10 +4470,10 @@
     ctx.fillStyle = lip;
     ctx.beginPath();
     ctx.moveTo(-width, 0);
-    ctx.quadraticCurveTo(-width * 0.44, -lipHeight - panic * 0.45, -1, -lipHeight * 0.86);
-    ctx.quadraticCurveTo(width * 0.44, -lipHeight - panic * 0.18, width, 0);
-    ctx.quadraticCurveTo(width * 0.42, lipHeight * 0.78 + innerHeight * 0.08, 0, lipHeight + innerHeight * 0.12);
-    ctx.quadraticCurveTo(-width * 0.42, lipHeight * 0.78 + innerHeight * 0.08, -width, 0);
+    ctx.quadraticCurveTo(-width * 0.44, -lipHeight - grinLift * 0.16 - panic * 0.45, -1, -lipHeight * 0.72);
+    ctx.quadraticCurveTo(width * 0.44, -lipHeight - grinLift * 0.14 - panic * 0.18, width, 0);
+    ctx.quadraticCurveTo(width * 0.44, lipHeight * 0.64 + innerHeight * 0.08 - grinLift * 0.18, 0, lipHeight + innerHeight * 0.08);
+    ctx.quadraticCurveTo(-width * 0.44, lipHeight * 0.64 + innerHeight * 0.08 - grinLift * 0.18, -width, 0);
     ctx.closePath();
     ctx.fill();
 
@@ -4477,63 +4500,96 @@
       );
       ctx.fill();
     } else {
-      ctx.strokeStyle = "#8d3947";
-      ctx.lineWidth = 1.25;
+      ctx.fillStyle = "#fbf4ee";
+      ctx.beginPath();
+      ctx.moveTo(-width * 0.72, -0.8);
+      ctx.quadraticCurveTo(0, grinLift * 0.16 - 1.8, width * 0.72, -0.6);
+      ctx.lineTo(width * 0.62, 4.4 - grinLift * 0.12);
+      ctx.quadraticCurveTo(0, 3.8, -width * 0.62, 4.6 - grinLift * 0.12);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(166, 127, 115, 0.38)";
+      ctx.lineWidth = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(-width * 0.1, -0.2);
+      ctx.lineTo(-width * 0.1, 3.8);
+      ctx.moveTo(width * 0.1, -0.1);
+      ctx.lineTo(width * 0.1, 3.7);
+      ctx.stroke();
+
+      ctx.strokeStyle = "#985062";
+      ctx.lineWidth = 1.15;
       ctx.beginPath();
       ctx.moveTo(-width * 0.84, 0);
-      ctx.quadraticCurveTo(0, lipHeight * 0.34 + innerHeight * 0.03, width * 0.84, 0);
+      ctx.quadraticCurveTo(0, lipHeight * 0.04 - grinLift * 0.36, width * 0.84, 0);
       ctx.stroke();
     }
 
-    ctx.strokeStyle = "rgba(255, 226, 225, 0.32)";
+    ctx.strokeStyle = "rgba(255, 226, 225, 0.26)";
     ctx.lineWidth = 0.8;
     ctx.beginPath();
-    ctx.moveTo(-width * 0.36, -lipHeight * 0.2);
-    ctx.quadraticCurveTo(0, -lipHeight * 0.42, width * 0.36, -lipHeight * 0.18);
+    ctx.moveTo(-width * 0.36, -lipHeight * 0.16 - grinLift * 0.08);
+    ctx.quadraticCurveTo(0, -lipHeight * 0.34 - grinLift * 0.1, width * 0.36, -lipHeight * 0.14 - grinLift * 0.08);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawNorikoSmileLines(ctx, smile, panic, grotesque) {
+    const intensity = clamp(smile * 0.82 + panic * 0.08 + grotesque * 0.1, 0, 1);
+    ctx.save();
+    ctx.strokeStyle = `rgba(133, 91, 77, ${0.18 + intensity * 0.12})`;
+    ctx.lineWidth = 1.15;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-24, 21);
+    ctx.quadraticCurveTo(-28, 28 + intensity * 2, -24, 36 + intensity * 2.4);
+    ctx.moveTo(24, 21);
+    ctx.quadraticCurveTo(28, 28 + intensity * 2, 24, 36 + intensity * 2.4);
     ctx.stroke();
     ctx.restore();
   }
 
   function drawNorikoHairFront(ctx, panic, grotesque, phase) {
     ctx.save();
-    const bangShift = Math.sin(phase * 1.15) * 1.6;
+    const bangShift = Math.sin(phase * 1.15) * 1.2;
     const hair = ctx.createLinearGradient(0, -48, 0, 42);
-    hair.addColorStop(0, "#6c4736");
-    hair.addColorStop(0.5, "#503126");
-    hair.addColorStop(1, "#331f18");
+    hair.addColorStop(0, "#313339");
+    hair.addColorStop(0.45, "#1b1d22");
+    hair.addColorStop(1, "#090a0e");
     ctx.fillStyle = hair;
     ctx.beginPath();
-    ctx.moveTo(-31, -34);
-    ctx.quadraticCurveTo(-24, -57 - panic * 2, -8, -50);
-    ctx.quadraticCurveTo(-2, -42, 0, -32);
-    ctx.quadraticCurveTo(4, -44 - grotesque * 1.8, 16, -48);
-    ctx.quadraticCurveTo(29, -42, 31, -24);
-    ctx.quadraticCurveTo(20, -17 + bangShift, 9, -11);
-    ctx.quadraticCurveTo(1, -25 - panic * 1.6, -11, -9);
-    ctx.quadraticCurveTo(-18, -17 - bangShift, -31, -34);
+    ctx.moveTo(-30, -33);
+    ctx.quadraticCurveTo(-26, -56 - panic * 1.4, -6, -51);
+    ctx.quadraticCurveTo(6, -46, 18, -49);
+    ctx.quadraticCurveTo(32, -46, 34, -22);
+    ctx.quadraticCurveTo(24, -18 + bangShift, 12, -10);
+    ctx.quadraticCurveTo(-1, -8 - panic * 0.8, -15, -2);
+    ctx.quadraticCurveTo(-8, -4, -18, -7 + bangShift * 0.6);
+    ctx.quadraticCurveTo(-24, -14, -30, -33);
     ctx.closePath();
     ctx.fill();
 
-    ctx.fillStyle = "#43291f";
+    ctx.fillStyle = "#15181d";
     ctx.beginPath();
-    ctx.moveTo(-33, -24);
-    ctx.quadraticCurveTo(-46, 14, -28, 40 + grotesque * 4);
-    ctx.quadraticCurveTo(-15, 26, -13, 0);
+    ctx.moveTo(-32, -20);
+    ctx.quadraticCurveTo(-45, 10, -26, 36 + grotesque * 4);
+    ctx.quadraticCurveTo(-14, 23, -13, 1);
     ctx.closePath();
-    ctx.moveTo(33, -24);
-    ctx.quadraticCurveTo(46, 14, 28, 40 + grotesque * 4);
-    ctx.quadraticCurveTo(15, 26, 13, 0);
+    ctx.moveTo(29, -26);
+    ctx.quadraticCurveTo(42, 4, 26, 34 + grotesque * 4);
+    ctx.quadraticCurveTo(17, 21, 13, -2);
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = "rgba(255, 236, 212, 0.15)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.lineWidth = 1.4;
     ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-9, -46);
-    ctx.quadraticCurveTo(-2, -35, -1, -18);
-    ctx.moveTo(8, -44);
-    ctx.quadraticCurveTo(4, -33, 2, -16);
+    ctx.moveTo(-3, -47);
+    ctx.quadraticCurveTo(4, -33, 0, -13);
+    ctx.moveTo(11, -45);
+    ctx.quadraticCurveTo(10, -31, 4, -15);
     ctx.stroke();
     ctx.restore();
   }
