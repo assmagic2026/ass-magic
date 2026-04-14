@@ -111,7 +111,7 @@
       finishDelayMs: 900
     },
     fear: {
-      thresholds: [0.18, 0.38, 0.6, 0.8],
+      thresholds: [0.16, 0.3, 0.46, 0.62],
       labels: ["平常", "緊張", "怖い", "絶叫", "崩壊"]
     },
     visual: {
@@ -4009,7 +4009,7 @@
     if (level <= 2) {
       return { col: 0, row: 0 };
     }
-    if (level <= 4) {
+    if (level === 3) {
       return { col: 0, row: 1 };
     }
     return { col: 1, row: 1 };
@@ -4028,7 +4028,7 @@
     const sw = frameSize - cropPad * 2;
     const sh = frameSize - cropPad * 2;
     const panic = clamp((level - 1) / 4, 0, 1);
-    const size = Math.min(width - 8, height - 8);
+    const size = Math.min(width - 8, height - 8) * 1.2;
     const floatY = Math.sin(now * 0.0034) * (0.5 + panic * 0.6);
     const shakeX = wobble * (0.01 + panic * 0.014);
     const shakeY = wobble * (0.008 + panic * 0.012);
