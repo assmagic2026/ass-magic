@@ -1464,10 +1464,10 @@
 
   function buildGroundPlane(trackData) {
     const bounds = trackData.bounds || getTrackBounds(trackData.points);
-    const margin = 260;
+    const margin = 20;
     const spanX = bounds.maxX - bounds.minX + margin * 2;
     const spanZ = bounds.maxZ - bounds.minZ + margin * 2;
-    const size = Math.ceil(Math.max(spanX, spanZ, 1800) / 20) * 20;
+    const size = Math.ceil(Math.max(spanX, spanZ) / 20) * 20;
     const centerX = (bounds.minX + bounds.maxX) * 0.5;
     const centerZ = (bounds.minZ + bounds.maxZ) * 0.5;
     const half = size * 0.5;
@@ -3005,17 +3005,15 @@
     if (!groundPlane) {
       return;
     }
-    const horizon = getHorizonLine(camera, width, height);
-    const groundRegion = getGroundScreenRegion(camera, width, height, horizon);
-    if (!groundRegion.length) {
+    const planeRegion = getProjectedGroundPlaneRegion(camera, width, height, groundPlane);
+    if (!planeRegion.length) {
       return;
     }
 
     ctx.save();
-    addPolygonPath(ctx, groundRegion);
-    ctx.clip();
+    addPolygonPath(ctx, planeRegion);
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(-40, -40, width + 80, height + 80);
+    ctx.fill();
     ctx.restore();
   }
 
@@ -3023,19 +3021,18 @@
     if (!groundPlane) {
       return;
     }
-    const horizon = getHorizonLine(camera, width, height);
-    const groundRegion = getGroundScreenRegion(camera, width, height, horizon);
-    if (!groundRegion.length) {
+    const planeRegion = getProjectedGroundPlaneRegion(camera, width, height, groundPlane);
+    if (!planeRegion.length) {
       return;
     }
     ctx.save();
-    addPolygonPath(ctx, groundRegion);
+    addPolygonPath(ctx, planeRegion);
     ctx.clip();
     ctx.strokeStyle = "rgba(0, 0, 0, 0.44)";
-    ctx.lineWidth = 1.15;
+    ctx.lineWidth = 1.1;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    const sampleStep = Math.max(4, groundPlane.gridStep * 0.25);
+    const sampleStep = Math.max(2.5, groundPlane.gridStep * 0.18);
 
     for (let z = groundPlane.minZ; z <= groundPlane.maxZ; z += groundPlane.gridStep) {
       drawProjectedWorldPolyline(
@@ -3095,6 +3092,59 @@
       points.push({ x, y: 0, z });
     }
     return points;
+  }
+
+  function sampleGroundPlaneBoundary(groundPlane, step) {
+    const points = [];
+    const pushPoint = (x, z) => {
+      const last = points[points.length - 1];
+      if (!last || last.x !== x || last.z !== z) {
+        points.push({ x, y: 0, z });
+      }
+    };
+
+    for (let x = groundPlane.minX; x <= groundPlane.maxX; x += step) {
+      pushPoint(Math.min(x, groundPlane.maxX), groundPlane.minZ);
+    }
+    pushPoint(groundPlane.maxX, groundPlane.minZ);
+
+    for (let z = groundPlane.minZ; z <= groundPlane.maxZ; z += step) {
+      pushPoint(groundPlane.maxX, Math.min(z, groundPlane.maxZ));
+    }
+    pushPoint(groundPlane.maxX, groundPlane.maxZ);
+
+    for (let x = groundPlane.maxX; x >= groundPlane.minX; x -= step) {
+      pushPoint(Math.max(x, groundPlane.minX), groundPlane.maxZ);
+    }
+    pushPoint(groundPlane.minX, groundPlane.maxZ);
+
+    for (let z = groundPlane.maxZ; z >= groundPlane.minZ; z -= step) {
+      pushPoint(groundPlane.minX, Math.max(z, groundPlane.minZ));
+    }
+
+    return points;
+  }
+
+  function getProjectedGroundPlaneRegion(camera, width, height, groundPlane) {
+    if (!groundPlane) {
+      return [];
+    }
+    const horizon = getHorizonLine(camera, width, height);
+    const groundDirection = getGroundDirection(camera, width, height, horizon);
+    const boundary = sampleGroundPlaneBoundary(
+      groundPlane,
+      Math.max(6, groundPlane.gridStep * 0.5)
+    );
+    const projected = boundary
+      .map((point) => projectWorldPoint(point, camera, width, height))
+      .filter(Boolean)
+      .map((point) => ({ x: point.x, y: point.y }));
+
+    if (projected.length < 3) {
+      return [];
+    }
+
+    return clipPolygonToLineSide(projected, horizon, groundDirection);
   }
 
   function drawTrackAhead(ctx, width, height, camera, distance) {
