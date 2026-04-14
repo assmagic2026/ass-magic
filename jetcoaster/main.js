@@ -234,6 +234,17 @@
   const previewCtx = els.previewCanvas.getContext("2d");
   const rideCtx = els.rideCanvas.getContext("2d");
   const norikoCtx = els.norikoCanvas.getContext("2d");
+  const norikoPhoto = new Image();
+
+  norikoPhoto.decoding = "async";
+  norikoPhoto.src = "./noriko-reference.png";
+  norikoPhoto.addEventListener("load", () => {
+    if (state.screen === "ride" && state.ride) {
+      renderRide(state.ride.now || performance.now());
+    } else {
+      drawNorikoFace(0, 1, 0, performance.now());
+    }
+  });
 
   function createEmptyInputState() {
     return {
@@ -3959,6 +3970,169 @@
     ctx.closePath();
   }
 
+  function getNorikoPhotoCrop() {
+    return {
+      x: 70,
+      y: 70,
+      width: 760,
+      height: 950
+    };
+  }
+
+  function drawNorikoPhotoFace(ctx, width, height, fear, level, wobble, now) {
+    if (!norikoPhoto.complete || !norikoPhoto.naturalWidth) {
+      return false;
+    }
+
+    const panic = clamp((fear - 0.1) / 0.9, 0, 1);
+    const grotesque = clamp((fear - 0.66) / 0.34, 0, 1);
+    const collapse = clamp((fear - 0.84) / 0.16, 0, 1);
+    const smile = clamp(0.98 - panic * 0.36 - grotesque * 0.14, 0.42, 1);
+    const crop = getNorikoPhotoCrop();
+    const frameRadius = 18;
+
+    ctx.save();
+    addRoundedRectPath(ctx, 0, 0, width, height, frameRadius);
+    ctx.clip();
+
+    const bg = ctx.createLinearGradient(0, 0, 0, height);
+    bg.addColorStop(0, "#edf2f6");
+    bg.addColorStop(0.62, "#e7ddd6");
+    bg.addColorStop(1, "#d7c5ba");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.globalAlpha = 0.2;
+    ctx.drawImage(
+      norikoPhoto,
+      crop.x,
+      crop.y,
+      crop.width,
+      crop.height,
+      -width * 0.05,
+      -height * 0.04,
+      width * 1.12,
+      height * 1.08
+    );
+    ctx.globalAlpha = 1;
+
+    drawNorikoPhotoSlices(ctx, crop, width, height, panic, grotesque, collapse, wobble, now);
+
+    drawNorikoPhotoFeature(
+      ctx,
+      crop,
+      { x: 0.205, y: 0.325, width: 0.2, height: 0.13 },
+      {
+        offsetX: -grotesque * 1.8 - collapse * 2.4,
+        offsetY: -panic * 1.2 - collapse * 0.7,
+        scaleX: 1 + panic * 0.05 + grotesque * 0.08,
+        scaleY: 1 + panic * 0.14 + grotesque * 0.2 + collapse * 0.12,
+        alpha: 0.96
+      }
+    );
+    drawNorikoPhotoFeature(
+      ctx,
+      crop,
+      { x: 0.545, y: 0.325, width: 0.2, height: 0.13 },
+      {
+        offsetX: grotesque * 1.3 + collapse * 1.9,
+        offsetY: -panic * 0.9 + collapse * 0.4,
+        scaleX: 1 + panic * 0.04 + grotesque * 0.07,
+        scaleY: 1 + panic * 0.13 + grotesque * 0.18 + collapse * 0.18,
+        alpha: 0.96
+      }
+    );
+    drawNorikoPhotoFeature(
+      ctx,
+      crop,
+      { x: 0.285, y: 0.57, width: 0.39, height: 0.21 },
+      {
+        offsetX: collapse * 2.6,
+        offsetY: panic * 0.8 + collapse * 2.4,
+        scaleX: 1 + (1 - smile) * 0.18 + panic * 0.1 + grotesque * 0.12 + collapse * 0.16,
+        scaleY: 1 + panic * 0.05 + grotesque * 0.18 + collapse * 0.28,
+        alpha: 0.98
+      }
+    );
+
+    if (panic > 0.42) {
+      drawNorikoSweat(ctx, width * 0.23, height * 0.27, 0.08, now * 0.0076);
+      drawNorikoSweat(ctx, width * 0.79, height * 0.31, -0.06, now * 0.0076 + 0.8);
+    }
+
+    const rim = ctx.createLinearGradient(0, 0, 0, height);
+    rim.addColorStop(0, "rgba(255,255,255,0.12)");
+    rim.addColorStop(1, "rgba(49, 33, 28, 0.18)");
+    ctx.strokeStyle = rim;
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(0.7, 0.7, width - 1.4, height - 1.4);
+
+    ctx.restore();
+    return true;
+  }
+
+  function drawNorikoPhotoSlices(ctx, crop, width, height, panic, grotesque, collapse, wobble, now) {
+    const slices = 34;
+    const phase = now * 0.0042;
+
+    for (let i = 0; i < slices; i += 1) {
+      const t = i / (slices - 1);
+      const srcY = crop.y + crop.height * t;
+      const srcH = crop.height / slices + 2;
+      const destY = height * t;
+      const destH = height / slices + 1.4;
+      const eyeBand = Math.exp(-Math.pow((t - 0.41) / 0.09, 2));
+      const mouthBand = Math.exp(-Math.pow((t - 0.69) / 0.1, 2));
+      const jawBand = Math.exp(-Math.pow((t - 0.84) / 0.11, 2));
+      const shiftX =
+        Math.sin(t * 7.8 + phase) * panic * 1.2 +
+        Math.sin(t * 15.4 + phase * 1.3) * collapse * 1.8 +
+        eyeBand * (collapse * 2.2 - grotesque * 0.8) +
+        mouthBand * (grotesque * 1.3 + collapse * 2.4) +
+        wobble * 0.018;
+      const widthScale =
+        1 +
+        eyeBand * (panic * 0.02 + grotesque * 0.05) +
+        mouthBand * (panic * 0.04 + grotesque * 0.08 + collapse * 0.13) +
+        jawBand * (collapse * 0.09);
+      const drawWidth = width * widthScale;
+      const drawX = (width - drawWidth) * 0.5 + shiftX;
+
+      ctx.drawImage(
+        norikoPhoto,
+        crop.x,
+        srcY,
+        crop.width,
+        srcH,
+        drawX,
+        destY,
+        drawWidth,
+        destH
+      );
+    }
+  }
+
+  function drawNorikoPhotoFeature(ctx, crop, region, transform) {
+    const dx = region.x * ctx.canvas.clientWidth + (transform.offsetX || 0);
+    const dy = region.y * ctx.canvas.clientHeight + (transform.offsetY || 0);
+    const dw = region.width * ctx.canvas.clientWidth * (transform.scaleX || 1);
+    const dh = region.height * ctx.canvas.clientHeight * (transform.scaleY || 1);
+    const cx = dx + dw * 0.5;
+    const cy = dy + dh * 0.5;
+    const sx = crop.x + crop.width * region.x;
+    const sy = crop.y + crop.height * region.y;
+    const sw = crop.width * region.width;
+    const sh = crop.height * region.height;
+
+    ctx.save();
+    ctx.globalAlpha = transform.alpha || 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, dw * 0.54, dh * 0.56, 0, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(norikoPhoto, sx, sy, sw, sh, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
   function drawNorikoFace(fear, level, wobble, now) {
     const width = els.norikoCanvas.clientWidth;
     const height = els.norikoCanvas.clientHeight;
@@ -3967,6 +4141,9 @@
     }
 
     norikoCtx.clearRect(0, 0, width, height);
+    if (drawNorikoPhotoFace(norikoCtx, width, height, fear, level, wobble, now)) {
+      return;
+    }
     drawNorikoBackdrop(norikoCtx, width, height, fear, now);
 
     const phase = now * 0.0076;
