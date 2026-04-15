@@ -4029,7 +4029,7 @@
     if (stage <= 1) {
       return {
         sourceInsetRatio: 0.072,
-        sourceShiftYRatio: 0.016,
+        sourceShiftYRatio: 0.04,
         offsetX: -width * 0.028,
         offsetY: 0
       };
@@ -4038,7 +4038,7 @@
     if (stage === 2) {
       return {
         sourceInsetRatio: 0.078,
-        sourceShiftYRatio: 0.022,
+        sourceShiftYRatio: 0.05,
         offsetX: 0,
         offsetY: height * 0.032
       };
@@ -4046,7 +4046,7 @@
 
     return {
       sourceInsetRatio: 0.08,
-      sourceShiftYRatio: 0.02,
+      sourceShiftYRatio: 0.048,
       offsetX: 0,
       offsetY: height * 0.034
     };
