@@ -4029,7 +4029,8 @@
     if (stage <= 1) {
       return {
         sourceInsetRatio: 0.072,
-        sourceShiftYRatio: 0.04,
+        sourceTopInsetRatio: 0.14,
+        sourceBottomInsetRatio: 0.012,
         offsetX: -width * 0.028,
         offsetY: 0
       };
@@ -4038,7 +4039,8 @@
     if (stage === 2) {
       return {
         sourceInsetRatio: 0.078,
-        sourceShiftYRatio: 0.05,
+        sourceTopInsetRatio: 0.152,
+        sourceBottomInsetRatio: 0.014,
         offsetX: 0,
         offsetY: height * 0.032
       };
@@ -4046,7 +4048,8 @@
 
     return {
       sourceInsetRatio: 0.08,
-      sourceShiftYRatio: 0.048,
+      sourceTopInsetRatio: 0.148,
+      sourceBottomInsetRatio: 0.016,
       offsetX: 0,
       offsetY: height * 0.034
     };
@@ -4061,12 +4064,13 @@
     const stage = getNorikoSpriteStage(speedKmh);
     const placement = getNorikoSpritePlacement(stage, width, height);
     const cropPad = Math.round(frameSize * placement.sourceInsetRatio);
-    const sourceShiftY = Math.round(frameSize * placement.sourceShiftYRatio);
+    const topCropPad = Math.round(frameSize * placement.sourceTopInsetRatio);
+    const bottomCropPad = Math.round(frameSize * placement.sourceBottomInsetRatio);
     const frame = getNorikoSpriteFrame(stage);
     const sx = frame.col * frameSize + cropPad;
-    const sy = frame.row * frameSize + cropPad + sourceShiftY;
+    const sy = frame.row * frameSize + topCropPad;
     const sw = frameSize - cropPad * 2;
-    const sh = frameSize - cropPad * 2;
+    const sh = frameSize - topCropPad - bottomCropPad;
     const panic = clamp((stage - 1) / 2, 0, 1);
     const size = Math.min(width - 8, height - 8) * 1.25;
     const floatY = Math.sin(now * 0.0034) * (0.5 + panic * 0.6);
