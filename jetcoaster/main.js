@@ -4052,30 +4052,30 @@
   function getNorikoSpritePlacement(stage, width, height) {
     if (stage <= 1) {
       return {
-        sourceInsetRatio: 0.072,
-        sourceTopInsetRatio: 0.048,
-        sourceBottomInsetRatio: 0.12,
+        sourceInsetRatio: 0.08,
+        sourceTopInsetRatio: 0.08,
+        sourceBottomInsetRatio: 0.08,
         offsetX: -width * 0.028,
-        offsetY: height * 0.028
+        offsetY: height * 0.12
       };
     }
 
     if (stage === 2) {
       return {
-        sourceInsetRatio: 0.078,
-        sourceTopInsetRatio: 0.052,
-        sourceBottomInsetRatio: 0.128,
+        sourceInsetRatio: 0.084,
+        sourceTopInsetRatio: 0.084,
+        sourceBottomInsetRatio: 0.084,
         offsetX: 0,
-        offsetY: height * 0.06
+        offsetY: height * 0.14
       };
     }
 
     return {
-      sourceInsetRatio: 0.08,
-      sourceTopInsetRatio: 0.055,
-      sourceBottomInsetRatio: 0.13,
+      sourceInsetRatio: 0.086,
+      sourceTopInsetRatio: 0.086,
+      sourceBottomInsetRatio: 0.086,
       offsetX: 0,
-      offsetY: height * 0.064
+      offsetY: height * 0.145
     };
   }
 
