@@ -203,6 +203,7 @@
     previewStatus: document.getElementById("preview-status"),
     rideCanvas: document.getElementById("ride-canvas"),
     norikoCanvas: document.getElementById("noriko-canvas"),
+    trackVisibilityButton: document.getElementById("track-visibility-button"),
     speedReadout: document.getElementById("speed-readout"),
     fearReadout: document.getElementById("fear-readout"),
     screamScore: document.getElementById("scream-score"),
@@ -227,7 +228,8 @@
     rideFrame: 0,
     scenery: null,
     skyTexture: null,
-    groundPlane: null
+    groundPlane: null,
+    hideRideTrack: false
   };
 
   const inputCtx = els.inputCanvas.getContext("2d");
@@ -265,6 +267,7 @@
     els.inputNextButton.addEventListener("click", handleInputAdvance);
     els.rerideButton.addEventListener("click", rerideTrack);
     els.restartButton.addEventListener("click", startNewCourse);
+    els.trackVisibilityButton.addEventListener("click", toggleRideTrackVisibility);
 
     els.inputCanvas.addEventListener("pointerdown", handleInputPointerDown);
     els.inputCanvas.addEventListener("pointermove", handleInputPointerMove);
@@ -284,6 +287,7 @@
     state.lastResult = null;
     state.scenery = null;
     state.groundPlane = null;
+    updateRideTrackToggle();
     applyInputStage("side");
     setScreen("input");
     setInputStatus("STARTからGOALまで1本でつなげてください。途中で戻ってもOKです。", false);
@@ -296,6 +300,23 @@
       return;
     }
     startRide(state.trackData);
+  }
+
+  function toggleRideTrackVisibility() {
+    state.hideRideTrack = !state.hideRideTrack;
+    updateRideTrackToggle();
+    if (state.screen === "ride" && state.ride && state.trackData) {
+      renderRide(performance.now());
+    }
+  }
+
+  function updateRideTrackToggle() {
+    if (!els.trackVisibilityButton) {
+      return;
+    }
+    els.trackVisibilityButton.textContent = state.hideRideTrack ? "レール表示" : "レール非表示";
+    els.trackVisibilityButton.classList.toggle("is-hidden", state.hideRideTrack);
+    els.trackVisibilityButton.setAttribute("aria-pressed", state.hideRideTrack ? "true" : "false");
   }
 
   function applyInputStage(stageName) {
@@ -2342,6 +2363,7 @@
     };
     els.speedReadout.textContent = `${Math.round(CONFIG.ride.startSpeed * 3.6)} km/h`;
     els.fearReadout.textContent = CONFIG.fear.labels[0];
+    updateRideTrackToggle();
     setScreen("ride");
     rideLoop(performance.now());
   }
@@ -2481,7 +2503,9 @@
 
     drawRideBackground(rideCtx, width, height, camera, state.groundPlane);
     drawGroundGrid(rideCtx, width, height, camera, state.groundPlane);
-    drawTrackAhead(rideCtx, width, height, camera, ride.distance);
+    if (!state.hideRideTrack) {
+      drawTrackAhead(rideCtx, width, height, camera, ride.distance);
+    }
     drawNorikoFace(ride.fear, getFearLevel(ride.fear), shake, now, ride.speed * 3.6);
   }
 
