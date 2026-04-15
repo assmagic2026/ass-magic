@@ -4053,29 +4053,29 @@
     if (stage <= 1) {
       return {
         sourceInsetRatio: 0.072,
-        sourceTopInsetRatio: 0.14,
-        sourceBottomInsetRatio: 0.012,
+        sourceTopInsetRatio: 0.048,
+        sourceBottomInsetRatio: 0.12,
         offsetX: -width * 0.028,
-        offsetY: 0
+        offsetY: height * 0.028
       };
     }
 
     if (stage === 2) {
       return {
         sourceInsetRatio: 0.078,
-        sourceTopInsetRatio: 0.152,
-        sourceBottomInsetRatio: 0.014,
+        sourceTopInsetRatio: 0.052,
+        sourceBottomInsetRatio: 0.128,
         offsetX: 0,
-        offsetY: height * 0.032
+        offsetY: height * 0.06
       };
     }
 
     return {
       sourceInsetRatio: 0.08,
-      sourceTopInsetRatio: 0.148,
-      sourceBottomInsetRatio: 0.016,
+      sourceTopInsetRatio: 0.055,
+      sourceBottomInsetRatio: 0.13,
       offsetX: 0,
-      offsetY: height * 0.034
+      offsetY: height * 0.064
     };
   }
 
