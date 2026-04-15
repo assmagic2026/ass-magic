@@ -4056,7 +4056,7 @@
         sourceTopInsetRatio: 0.08,
         sourceBottomInsetRatio: 0.08,
         offsetX: -width * 0.028,
-        offsetY: height * 0.075
+        offsetY: height * 0.03
       };
     }
 
@@ -4066,7 +4066,7 @@
         sourceTopInsetRatio: 0.084,
         sourceBottomInsetRatio: 0.084,
         offsetX: 0,
-        offsetY: height * 0.09
+        offsetY: height * 0.04
       };
     }
 
@@ -4075,7 +4075,7 @@
       sourceTopInsetRatio: 0.086,
       sourceBottomInsetRatio: 0.086,
       offsetX: 0,
-      offsetY: height * 0.095
+      offsetY: height * 0.04
     };
   }
 
