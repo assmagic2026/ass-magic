@@ -4,6 +4,7 @@ const CONFIG = {
   canvasHeight: 680,
   worldLeft: 24,
   worldRight: 396,
+  worldTop: 20,
   floorY: 630,
   spawnX: 210,
   spawnY: 88,
@@ -51,6 +52,10 @@ const CONFIG = {
   burstCenterLiftMax: 280,
   burstSpringFactor: 0.16,
   burstDurationMs: 220,
+  burstBoundaryBounce: 0.46,
+  burstFloorFriction: 0.94,
+  burstCollisionPush: 0.72,
+  burstCollisionRecoil: 0.18,
   tapMaxMoveDistance: 16,
   tapMaxTimeMs: 280
 };
@@ -534,11 +539,11 @@ function updateRestingWalkers(now) {
   });
 }
 
-function solveSpring(spring) {
+function solveSpring(spring, now) {
   const particleA = game.particles[spring.aIndex];
   const particleB = game.particles[spring.bIndex];
   const body = particleA.body;
-  const burstFactor = body.burstUntil > performance.now() ? CONFIG.burstSpringFactor : 1;
+  const burstFactor = body.burstUntil > now ? CONFIG.burstSpringFactor : 1;
   const dx = particleB.x - particleA.x;
   const dy = particleB.y - particleA.y;
   const currentLength = Math.hypot(dx, dy) || 0.0001;
@@ -579,25 +584,37 @@ function bodyHasCollision(body) {
   return false;
 }
 
-function applyBoundaryCollision(particle) {
+function applyBoundaryCollision(particle, now) {
+  const burstActive = particle.body.burstUntil > now;
+  const bounce = burstActive ? CONFIG.burstBoundaryBounce : CONFIG.wallBounce;
+  const floorFriction = burstActive ? CONFIG.burstFloorFriction : CONFIG.floorFriction;
+
   if (particle.x < CONFIG.worldLeft + particle.radius) {
     const velocityX = particle.x - particle.oldX;
     particle.x = CONFIG.worldLeft + particle.radius;
-    particle.oldX = particle.x + velocityX * CONFIG.wallBounce;
+    particle.oldX = particle.x + velocityX * bounce;
   }
 
   if (particle.x > CONFIG.worldRight - particle.radius) {
     const velocityX = particle.x - particle.oldX;
     particle.x = CONFIG.worldRight - particle.radius;
-    particle.oldX = particle.x + velocityX * CONFIG.wallBounce;
+    particle.oldX = particle.x + velocityX * bounce;
+  }
+
+  if (particle.y < CONFIG.worldTop + particle.radius) {
+    const velocityX = particle.x - particle.oldX;
+    const velocityY = particle.y - particle.oldY;
+    particle.y = CONFIG.worldTop + particle.radius;
+    particle.oldY = particle.y + velocityY * bounce;
+    particle.oldX = particle.x - velocityX * floorFriction;
   }
 
   if (particle.y > CONFIG.floorY - particle.radius) {
     const velocityX = particle.x - particle.oldX;
     const velocityY = particle.y - particle.oldY;
     particle.y = CONFIG.floorY - particle.radius;
-    particle.oldY = particle.y + velocityY * CONFIG.floorBounce;
-    particle.oldX = particle.x - velocityX * CONFIG.floorFriction;
+    particle.oldY = particle.y + velocityY * bounce;
+    particle.oldX = particle.x - velocityX * floorFriction;
     particle.body.stepTouched = true;
   }
 }
@@ -633,7 +650,7 @@ function moveActiveBodyKinematically(dt) {
   }
 }
 
-function solveParticleCollisions() {
+function solveParticleCollisions(now) {
   for (let i = 0; i < game.particles.length - 1; i += 1) {
     const particleA = game.particles[i];
 
@@ -669,6 +686,33 @@ function solveParticleCollisions() {
       particleA.y -= offsetY;
       particleB.x += offsetX;
       particleB.y += offsetY;
+
+      const burstA = particleA.body.burstUntil > now;
+      const burstB = particleB.body.burstUntil > now;
+
+      if (burstA || burstB) {
+        const push = overlap * CONFIG.burstCollisionPush;
+        const recoil = overlap * CONFIG.burstCollisionRecoil;
+
+        if (burstA && !burstB) {
+          particleA.oldX += normalX * recoil;
+          particleA.oldY += normalY * recoil;
+          particleB.oldX -= normalX * push;
+          particleB.oldY -= normalY * push;
+        } else if (burstB && !burstA) {
+          particleA.oldX += normalX * push;
+          particleA.oldY += normalY * push;
+          particleB.oldX -= normalX * recoil;
+          particleB.oldY -= normalY * recoil;
+        } else {
+          const shared = overlap * 0.26;
+          particleA.oldX += normalX * shared;
+          particleA.oldY += normalY * shared;
+          particleB.oldX -= normalX * shared;
+          particleB.oldY -= normalY * shared;
+        }
+      }
+
       particleA.body.stepTouched = true;
       particleB.body.stepTouched = true;
     }
@@ -697,6 +741,8 @@ function integrateParticles(dt) {
 }
 
 function simulateSubstep(dt) {
+  const now = performance.now();
+
   game.bodies.forEach((body) => {
     body.stepTouched = false;
   });
@@ -709,12 +755,12 @@ function simulateSubstep(dt) {
       if (body.state === "falling") {
         return;
       }
-      body.springs.forEach(solveSpring);
+      body.springs.forEach((spring) => solveSpring(spring, now));
     });
 
-    solveParticleCollisions();
+    solveParticleCollisions(now);
 
-    game.particles.forEach(applyBoundaryCollision);
+    game.particles.forEach((particle) => applyBoundaryCollision(particle, now));
   }
 
   game.bodies.forEach(refreshBodyCache);
@@ -840,7 +886,7 @@ function drawBackground(now) {
   ctx.strokeStyle = "rgba(112, 105, 120, 0.12)";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(CONFIG.worldLeft, 20, CONFIG.worldRight - CONFIG.worldLeft, CONFIG.floorY - 20, 22);
+  ctx.roundRect(CONFIG.worldLeft, CONFIG.worldTop, CONFIG.worldRight - CONFIG.worldLeft, CONFIG.floorY - CONFIG.worldTop, 22);
   ctx.stroke();
 
   const floorGradient = ctx.createLinearGradient(0, CONFIG.floorY - 90, 0, CONFIG.canvasHeight);
