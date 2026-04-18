@@ -343,7 +343,9 @@ function finishSettlingBody(body) {
   });
 
   game.count += 1;
-  countValue.textContent = String(game.count);
+  if (countValue) {
+    countValue.textContent = String(game.count);
+  }
   game.spawnCooldown = CONFIG.spawnDelayMs;
 }
 
@@ -638,8 +640,12 @@ function resetGame() {
   drag.pointerId = null;
   drag.targetX = CONFIG.spawnX;
 
-  countValue.textContent = "0";
-  timeValue.textContent = "0.0s";
+  if (countValue) {
+    countValue.textContent = "0";
+  }
+  if (timeValue) {
+    timeValue.textContent = "0.0s";
+  }
   gameOverPanel.hidden = true;
 
   spawnBody();
@@ -649,8 +655,6 @@ function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = CONFIG.canvasWidth * dpr;
   canvas.height = CONFIG.canvasHeight * dpr;
-  canvas.style.width = `${CONFIG.canvasWidth}px`;
-  canvas.style.height = `${CONFIG.canvasHeight}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
@@ -874,7 +878,9 @@ function update(deltaMs) {
   if (!game.gameOver) {
     const now = performance.now();
     game.elapsedMs = now - game.startTime;
-    timeValue.textContent = `${(game.elapsedMs / 1000).toFixed(1)}s`;
+    if (timeValue) {
+      timeValue.textContent = `${(game.elapsedMs / 1000).toFixed(1)}s`;
+    }
     updateRestingWalkers(now);
     game.accumulator += deltaMs;
 

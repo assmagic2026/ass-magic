@@ -17,11 +17,13 @@
 
 html,
 body {
-  min-height: 100%;
+  height: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100dvh;
+  overflow: hidden;
   font-family: "Hiragino Maru Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
   color: var(--ink);
   background:
@@ -58,9 +60,13 @@ body::after {
 }
 
 .app {
-  width: min(560px, calc(100vw - 24px));
+  width: min(560px, calc(100vw - 16px));
+  height: 100dvh;
   margin: 0 auto;
-  padding: 20px 0 28px;
+  padding: 8px 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .page-head,
@@ -77,54 +83,33 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 18px 16px;
-  margin-bottom: 14px;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
 h1 {
   margin: 0;
-  font-size: clamp(2rem, 9vw, 3rem);
+  font-size: clamp(1.55rem, 7vw, 2.25rem);
   line-height: 1;
   letter-spacing: 0.02em;
 }
 
 .play-panel {
-  padding: 14px;
-}
-
-.hud {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.hud-pill {
-  min-width: 132px;
-  padding: 12px 15px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.62);
-  border: 1px solid rgba(107, 95, 120, 0.12);
-}
-
-.hud-label {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 0.78rem;
-  color: var(--muted);
-}
-
-.hud-pill strong {
-  font-size: 1.34rem;
-  font-weight: 700;
+  flex-direction: column;
+  padding: 10px;
 }
 
 .board-frame {
+  flex: 1 1 auto;
+  min-height: 0;
   position: relative;
   display: flex;
   justify-content: center;
-  padding: 10px;
+  align-items: center;
+  padding: 8px;
   border-radius: 28px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 248, 251, 0.42)),
@@ -134,8 +119,11 @@ h1 {
 
 #gameCanvas {
   display: block;
-  width: min(100%, 420px);
-  height: auto;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 420 / 680;
   border-radius: 22px;
   background: linear-gradient(180deg, #eff6f6 0%, #dce6ea 100%);
   box-shadow: inset 0 0 0 1px rgba(90, 87, 102, 0.08);
@@ -176,7 +164,7 @@ button {
   appearance: none;
   border: 0;
   border-radius: 999px;
-  padding: 12px 18px;
+  padding: 10px 14px;
   font: inherit;
   font-weight: 700;
   color: #fff;
@@ -202,7 +190,7 @@ button:active {
 
 @media (max-width: 900px) {
   .app {
-    width: min(100vw - 24px, 560px);
+    width: min(100vw - 14px, 560px);
   }
 }
 
@@ -214,41 +202,31 @@ button:active {
   }
 
   .app {
-    width: min(100vw - 14px, 520px);
-    padding-top: 8px;
+    width: min(100vw - 10px, 520px);
+    padding: 6px 0 8px;
   }
 
   .page-head,
   .play-panel {
-    border-radius: 24px;
+    border-radius: 20px;
   }
 
   .page-head {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-    padding: 14px;
+    gap: 10px;
+    padding: 10px 12px;
   }
 
   button {
-    width: 100%;
-  }
-
-  .hud {
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-
-  .hud-pill {
-    flex: 1 1 120px;
-    min-width: 0;
+    width: auto;
+    flex: 0 0 auto;
   }
 
   .board-frame {
-    padding: 8px;
+    padding: 6px;
   }
 
   #gameCanvas {
-    width: 100%;
+    width: auto;
+    height: 100%;
   }
 }
