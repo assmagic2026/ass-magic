@@ -44,7 +44,15 @@ const CONFIG = {
   walkCooldownMaxMs: 1800,
   footFlutterAmplitude: 0.18,
   footFlutterSpeedMin: 0.0055,
-  footFlutterSpeedMax: 0.0085
+  footFlutterSpeedMax: 0.0085,
+  burstImpulseMin: 240,
+  burstImpulseMax: 360,
+  burstCenterLiftMin: 180,
+  burstCenterLiftMax: 280,
+  burstSpringFactor: 0.16,
+  burstDurationMs: 220,
+  tapMaxMoveDistance: 16,
+  tapMaxTimeMs: 280
 };
 
 const canvas = document.getElementById("gameCanvas");
@@ -78,6 +86,16 @@ const drag = {
   active: false,
   pointerId: null,
   targetX: CONFIG.spawnX
+};
+
+const tap = {
+  active: false,
+  pointerId: null,
+  bodyId: null,
+  startX: 0,
+  startY: 0,
+  startTime: 0,
+  canceled: false
 };
 
 function clamp(value, min, max) {
@@ -116,6 +134,26 @@ function getCanvasXFromClientX(clientX) {
   return clamp(ratio * CONFIG.canvasWidth, 0, CONFIG.canvasWidth);
 }
 
+function getPointerCanvasPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  const xRatio = rect.width > 0 ? (event.clientX - rect.left) / rect.width : 0.5;
+  const yRatio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+  return {
+    x: clamp(xRatio * CONFIG.canvasWidth, 0, CONFIG.canvasWidth),
+    y: clamp(yRatio * CONFIG.canvasHeight, 0, CONFIG.canvasHeight)
+  };
+}
+
+function getCanvasPointFromClient(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const xRatio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0.5;
+  const yRatio = rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5;
+  return {
+    x: clamp(xRatio * CONFIG.canvasWidth, 0, CONFIG.canvasWidth),
+    y: clamp(yRatio * CONFIG.canvasHeight, 0, CONFIG.canvasHeight)
+  };
+}
+
 function updateDragTarget(event) {
   drag.targetX = getPointerCanvasX(event);
 }
@@ -135,6 +173,25 @@ function endDrag(event) {
 
   drag.active = false;
   drag.pointerId = null;
+}
+
+function endTap(event) {
+  if (event && tap.pointerId !== null && event.pointerId !== tap.pointerId) {
+    return;
+  }
+
+  if (tap.pointerId !== null && canvas.releasePointerCapture) {
+    try {
+      canvas.releasePointerCapture(tap.pointerId);
+    } catch (error) {
+      // Ignore release errors when capture has already been cleared.
+    }
+  }
+
+  tap.active = false;
+  tap.pointerId = null;
+  tap.bodyId = null;
+  tap.canceled = false;
 }
 
 function createParticle(x, y, radius, body) {
@@ -201,6 +258,25 @@ function refreshBodyCache(body) {
   };
 }
 
+function isPointInsideBody(body, x, y) {
+  const radiusX = Math.max(20, body.cache.width * 0.5 + body.radius * 0.1);
+  const radiusY = Math.max(18, body.cache.height * 0.54 + body.radius * 0.08);
+  const dx = (x - body.cache.cx) / radiusX;
+  const dy = (y - body.cache.cy) / radiusY;
+  return dx * dx + dy * dy <= 1;
+}
+
+function findBodyAtPoint(x, y) {
+  return [...game.bodies]
+    .filter((body) => body.state === "resting" || body.state === "settling")
+    .sort((bodyA, bodyB) => bodyB.cache.cy - bodyA.cache.cy)
+    .find((body) => isPointInsideBody(body, x, y)) || null;
+}
+
+function getBodyById(bodyId) {
+  return game.bodies.find((body) => body.id === bodyId) || null;
+}
+
 function createMendakoBody() {
   const big = Math.random() < CONFIG.bigChance;
   const scale = big ? randomRange(CONFIG.bigScaleMin, CONFIG.bigScaleMax) : randomRange(0.92, 1.05);
@@ -237,7 +313,8 @@ function createMendakoBody() {
     walkDir: 0,
     walkUntil: 0,
     nextWalkAt: randomRange(500, 1500),
-    surfaceWalker: false
+    surfaceWalker: false,
+    burstUntil: 0
   };
 
   game.nextBodyId += 1;
@@ -324,7 +401,54 @@ function spawnBody() {
 function triggerGameOver() {
   game.gameOver = true;
   game.activeBody = null;
+  drag.active = false;
+  drag.pointerId = null;
+  tap.active = false;
+  tap.pointerId = null;
+  tap.bodyId = null;
   gameOverPanel.hidden = false;
+}
+
+function burstBody(body) {
+  if (!body) {
+    return;
+  }
+
+  const now = performance.now();
+  body.burstUntil = now + CONFIG.burstDurationMs;
+  body.walkDir = 0;
+  body.walkUntil = 0;
+  body.nextWalkAt = now + randomRange(CONFIG.walkCooldownMinMs, CONFIG.walkCooldownMaxMs);
+  body.surfaceWalker = false;
+
+  const { cx, cy } = body.cache;
+
+  body.particleIndices.forEach((index, particleIndex) => {
+    const particle = game.particles[index];
+    let dx = particle.x - cx;
+    let dy = particle.y - cy;
+    let length = Math.hypot(dx, dy);
+
+    if (length < 0.001) {
+      dx = randomRange(-0.6, 0.6);
+      dy = randomRange(-1.1, -0.4);
+      length = Math.hypot(dx, dy) || 1;
+    }
+
+    const directionX = dx / length;
+    const directionY = dy / length;
+    const impulse = randomRange(CONFIG.burstImpulseMin, CONFIG.burstImpulseMax);
+    const lift = particleIndex === 0
+      ? randomRange(CONFIG.burstCenterLiftMin, CONFIG.burstCenterLiftMax)
+      : randomRange(18, 58);
+    const jitterX = randomRange(-18, 18);
+    const jitterY = randomRange(-14, 10);
+    const velocityX = directionX * impulse + jitterX;
+    const velocityY = directionY * impulse - lift + jitterY;
+
+    particle.oldX = particle.x - velocityX;
+    particle.oldY = particle.y - velocityY;
+  });
 }
 
 function finishSettlingBody(body) {
@@ -380,6 +504,14 @@ function updateRestingWalkers(now) {
   );
 
   restingBodies.forEach((body) => {
+    if (body.burstUntil > now) {
+      body.surfaceWalker = false;
+      body.walkDir = 0;
+      body.walkUntil = 0;
+      body.nextWalkAt = now + randomRange(CONFIG.walkCooldownMinMs, CONFIG.walkCooldownMaxMs);
+      return;
+    }
+
     body.surfaceWalker = surfaceIds.has(body.id);
 
     if (!body.surfaceWalker) {
@@ -405,12 +537,14 @@ function updateRestingWalkers(now) {
 function solveSpring(spring) {
   const particleA = game.particles[spring.aIndex];
   const particleB = game.particles[spring.bIndex];
+  const body = particleA.body;
+  const burstFactor = body.burstUntil > performance.now() ? CONFIG.burstSpringFactor : 1;
   const dx = particleB.x - particleA.x;
   const dy = particleB.y - particleA.y;
   const currentLength = Math.hypot(dx, dy) || 0.0001;
   const difference = (currentLength - spring.restLength) / currentLength;
-  const offsetX = dx * difference * spring.stiffness * 0.5;
-  const offsetY = dy * difference * spring.stiffness * 0.5;
+  const offsetX = dx * difference * spring.stiffness * burstFactor * 0.5;
+  const offsetY = dy * difference * spring.stiffness * burstFactor * 0.5;
 
   particleA.x += offsetX;
   particleA.y += offsetY;
@@ -638,6 +772,9 @@ function resetGame() {
   game.nextBodyId = 1;
   drag.active = false;
   drag.pointerId = null;
+  tap.active = false;
+  tap.pointerId = null;
+  tap.bodyId = null;
   drag.targetX = CONFIG.spawnX;
 
   if (countValue) {
@@ -735,11 +872,15 @@ function getBodyAngle(body, now) {
 
 function drawMendako(body, now) {
   const { cx, cy, width, height } = body.cache;
-  const drawWidth = Math.max(40, width * 1.18);
-  const drawHeight = Math.max(24, height * 0.84);
+  const burstActive = body.burstUntil > now;
+  const burstProgress = burstActive
+    ? 1 - clamp((body.burstUntil - now) / CONFIG.burstDurationMs, 0, 1)
+    : 0;
+  const drawWidth = Math.max(40, width * 1.18 * (1 + burstProgress * 0.14));
+  const drawHeight = Math.max(24, height * 0.84 * (1 - burstProgress * 0.06));
   const angle = getBodyAngle(body, now);
   const walkIntensity = body.state !== "falling"
-    ? (body.walkDir !== 0 ? 1 : body.surfaceWalker ? 0.55 : 0.28)
+    ? (burstActive ? 0 : (body.walkDir !== 0 ? 1 : body.surfaceWalker ? 0.55 : 0.28))
     : 0;
   const bodyBob = Math.sin(now * body.footRate + body.footPhase) * drawHeight * 0.012 * walkIntensity;
   const drawY = cy + drawHeight * 0.08 + bodyBob;
@@ -751,6 +892,14 @@ function drawMendako(body, now) {
   ctx.save();
   ctx.translate(cx, drawY);
   ctx.rotate(angle);
+
+  if (burstActive) {
+    ctx.strokeStyle = `rgba(255, 255, 255, ${0.2 * (1 - burstProgress)})`;
+    ctx.lineWidth = 2 + burstProgress * 1.2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, drawWidth * (0.68 + burstProgress * 0.16), drawHeight * (0.56 + burstProgress * 0.08), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
 
   const bodyGradient = ctx.createLinearGradient(0, top, 0, bottom + drawHeight * 0.34);
   bodyGradient.addColorStop(0, hsl(body.hue - 4, body.saturation + 4, body.lightness + 9));
@@ -933,6 +1082,24 @@ canvas.addEventListener("pointerdown", (event) => {
     return;
   }
 
+  const point = getPointerCanvasPoint(event);
+  const tappedBody = findBodyAtPoint(point.x, point.y);
+
+  if (tappedBody) {
+    tap.active = true;
+    tap.pointerId = event.pointerId;
+    tap.bodyId = tappedBody.id;
+    tap.startX = point.x;
+    tap.startY = point.y;
+    tap.startTime = performance.now();
+    tap.canceled = false;
+    if (canvas.setPointerCapture) {
+      canvas.setPointerCapture(event.pointerId);
+    }
+    event.preventDefault();
+    return;
+  }
+
   drag.active = true;
   drag.pointerId = event.pointerId;
   updateDragTarget(event);
@@ -942,6 +1109,15 @@ canvas.addEventListener("pointerdown", (event) => {
   event.preventDefault();
 });
 canvas.addEventListener("pointermove", (event) => {
+  if (tap.active && event.pointerId === tap.pointerId) {
+    const point = getPointerCanvasPoint(event);
+    if (distance(point.x, point.y, tap.startX, tap.startY) > CONFIG.tapMaxMoveDistance) {
+      tap.canceled = true;
+    }
+    event.preventDefault();
+    return;
+  }
+
   if (!drag.active || event.pointerId !== drag.pointerId) {
     return;
   }
@@ -949,13 +1125,39 @@ canvas.addEventListener("pointermove", (event) => {
   updateDragTarget(event);
   event.preventDefault();
 });
-canvas.addEventListener("pointerup", endDrag);
-canvas.addEventListener("pointercancel", endDrag);
+canvas.addEventListener("pointerup", (event) => {
+  if (tap.active && event.pointerId === tap.pointerId) {
+    const point = getPointerCanvasPoint(event);
+    const elapsed = performance.now() - tap.startTime;
+    if (
+      !tap.canceled &&
+      distance(point.x, point.y, tap.startX, tap.startY) <= CONFIG.tapMaxMoveDistance &&
+      elapsed <= CONFIG.tapMaxTimeMs
+    ) {
+      burstBody(getBodyById(tap.bodyId));
+    }
+
+    endTap(event);
+    event.preventDefault();
+    return;
+  }
+
+  endDrag(event);
+});
+canvas.addEventListener("pointercancel", (event) => {
+  if (tap.active && event.pointerId === tap.pointerId) {
+    endTap(event);
+  }
+  endDrag(event);
+});
 canvas.addEventListener("pointerleave", (event) => {
   if (event.pointerType !== "mouse") {
     return;
   }
 
+  if (tap.active && event.pointerId === tap.pointerId) {
+    endTap(event);
+  }
   endDrag(event);
 });
 
@@ -965,26 +1167,81 @@ if (!window.PointerEvent) {
       return;
     }
 
+    const touch = event.touches[0];
+    const point = getCanvasPointFromClient(touch.clientX, touch.clientY);
+    const tappedBody = findBodyAtPoint(point.x, point.y);
+
+    if (tappedBody) {
+      tap.active = true;
+      tap.pointerId = touch.identifier;
+      tap.bodyId = tappedBody.id;
+      tap.startX = point.x;
+      tap.startY = point.y;
+      tap.startTime = performance.now();
+      tap.canceled = false;
+      event.preventDefault();
+      return;
+    }
+
     drag.active = true;
-    drag.pointerId = "touch";
-    drag.targetX = getCanvasXFromClientX(event.touches[0].clientX);
+    drag.pointerId = touch.identifier;
+    drag.targetX = point.x;
     event.preventDefault();
   }, { passive: false });
 
   canvas.addEventListener("touchmove", (event) => {
-    if (!drag.active || drag.pointerId !== "touch" || !event.touches.length) {
+    if (tap.active && event.touches.length) {
+      const touch = event.touches[0];
+      if (tap.pointerId === touch.identifier) {
+        const point = getCanvasPointFromClient(touch.clientX, touch.clientY);
+        if (distance(point.x, point.y, tap.startX, tap.startY) > CONFIG.tapMaxMoveDistance) {
+          tap.canceled = true;
+        }
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (!drag.active || !event.touches.length) {
       return;
     }
 
-    drag.targetX = getCanvasXFromClientX(event.touches[0].clientX);
+    const touch = event.touches[0];
+    if (drag.pointerId !== touch.identifier) {
+      return;
+    }
+
+    const point = getCanvasPointFromClient(touch.clientX, touch.clientY);
+    drag.targetX = point.x;
     event.preventDefault();
   }, { passive: false });
 
-  canvas.addEventListener("touchend", () => {
+  canvas.addEventListener("touchend", (event) => {
+    if (tap.active && event.changedTouches.length) {
+      const touch = event.changedTouches[0];
+      if (tap.pointerId === touch.identifier) {
+        const point = getCanvasPointFromClient(touch.clientX, touch.clientY);
+        const elapsed = performance.now() - tap.startTime;
+        if (
+          !tap.canceled &&
+          distance(point.x, point.y, tap.startX, tap.startY) <= CONFIG.tapMaxMoveDistance &&
+          elapsed <= CONFIG.tapMaxTimeMs
+        ) {
+          burstBody(getBodyById(tap.bodyId));
+        }
+        endTap();
+        event.preventDefault();
+        return;
+      }
+    }
+
     endDrag();
   });
 
   canvas.addEventListener("touchcancel", () => {
+    if (tap.active) {
+      endTap();
+    }
     endDrag();
   });
 }
