@@ -6023,16 +6023,39 @@ function filterVisibleBookMessages(entries) {
   return entries.filter((entry) => shouldIncludeBookMessageEntry(entry));
 }
 
-function purgeExcludedBookMessagesFromStorage() {
+function loadCachedBookMessages() {
   try {
     const stored = window.localStorage.getItem(BOOK_MESSAGE_STORAGE_KEY);
-    if (!stored) return;
+    if (!stored) return [];
     const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return;
-    const normalizedMessages = parsed.map(normalizeMessageEntry).filter(Boolean);
-    const visibleMessages = filterVisibleBookMessages(normalizedMessages);
-    if (visibleMessages.length === normalizedMessages.length) return;
-    window.localStorage.setItem(BOOK_MESSAGE_STORAGE_KEY, JSON.stringify(visibleMessages));
+    if (!Array.isArray(parsed) || !parsed.length) return [];
+    return filterVisibleBookMessages(parsed.map(normalizeMessageEntry).filter(Boolean));
+  } catch (error) {
+    console.warn('Failed to load cached book messages:', error);
+    return [];
+  }
+}
+
+function persistVisibleBookMessages(entries) {
+  try {
+    window.localStorage.setItem(
+      BOOK_MESSAGE_STORAGE_KEY,
+      JSON.stringify(
+        filterVisibleBookMessages(entries)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, BOOK_MESSAGE_LIMIT)
+      )
+    );
+  } catch (error) {
+    console.warn('Failed to cache book messages:', error);
+  }
+}
+
+function purgeExcludedBookMessagesFromStorage() {
+  try {
+    const visibleMessages = loadCachedBookMessages();
+    if (!visibleMessages.length) return;
+    persistVisibleBookMessages(visibleMessages);
   } catch (error) {
     console.warn('Failed to purge excluded book messages:', error);
   }
@@ -6350,7 +6373,15 @@ async function loadMessages(options = {}) {
 
       bookUiState.backend = 'supabase';
       setBookStatusDefault();
-      bookUiState.lastMessages = messages.length ? messages : cloneMessages(BOOK_MESSAGE_SEED);
+      if (messages.length) {
+        persistVisibleBookMessages(messages);
+      }
+      const cachedMessages = loadCachedBookMessages();
+      bookUiState.lastMessages = messages.length
+        ? messages
+        : cachedMessages.length
+        ? cachedMessages
+        : cloneMessages(BOOK_MESSAGE_SEED);
       return cloneMessages(bookUiState.lastMessages);
     } catch (error) {
       console.warn('Failed to load Supabase book messages, falling back locally:', error);
@@ -6362,17 +6393,12 @@ async function loadMessages(options = {}) {
     setBookStatusDefault();
   }
 
-  let messages = cloneMessages(BOOK_MESSAGE_SEED);
-  try {
-    const stored = window.localStorage.getItem(BOOK_MESSAGE_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length) {
-        messages = filterVisibleBookMessages(parsed.map(normalizeMessageEntry).filter(Boolean));
-      }
-    }
-  } catch (error) {
-    console.warn('Failed to load book messages:', error);
+  let messages = bookUiState.lastMessages.length
+    ? cloneMessages(bookUiState.lastMessages)
+    : cloneMessages(BOOK_MESSAGE_SEED);
+  const cachedMessages = loadCachedBookMessages();
+  if (cachedMessages.length) {
+    messages = cachedMessages;
   }
 
   bookUiState.lastMessages = messages
@@ -6435,11 +6461,7 @@ async function saveMessage(payload) {
   };
   const nextMessages = filterVisibleBookMessages([entry, ...messages]).slice(0, BOOK_MESSAGE_LIMIT);
   bookUiState.lastMessages = nextMessages;
-  try {
-    window.localStorage.setItem(BOOK_MESSAGE_STORAGE_KEY, JSON.stringify(nextMessages));
-  } catch (error) {
-    console.warn('Failed to save book message:', error);
-  }
+  persistVisibleBookMessages(nextMessages);
   return { ...entry };
 }
 
