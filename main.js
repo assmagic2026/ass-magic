@@ -6327,7 +6327,7 @@ function setBookStatusDefault() {
       bookStatus.textContent = 'この本に書いたことばは、ほかの人にも共有されます。';
       break;
     case 'degraded':
-      bookStatus.textContent = '共有の記録に接続できなかったため、この端末の記録を表示しています。';
+      bookStatus.textContent = '停止中';
       break;
     default:
       bookStatus.textContent = '今はこの端末の中だけに保存されます。Supabaseをつなぐと、みんなのメッセージを共有できます。';
@@ -6355,13 +6355,32 @@ async function loadMessages(options = {}) {
   if (isSupabaseConfigured()) {
     try {
       const hiddenAuthor = encodeURIComponent(RETURN_HISTORY_BOOK_FALLBACK_AUTHOR);
-      const response = await fetchWithTimeout(
-        getSupabaseRestUrl(`?select=id,name,message,created_at&name=not.eq.${hiddenAuthor}&order=created_at.desc&limit=${BOOK_MESSAGE_FETCH_LIMIT}`),
-        {
-          headers: getSupabaseHeaders(),
-          cache: 'no-store'
+      let response = null;
+      let lastError = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          response = await fetchWithTimeout(
+            getSupabaseRestUrl(`?select=id,name,message,created_at&name=not.eq.${hiddenAuthor}&order=created_at.desc&limit=${BOOK_MESSAGE_FETCH_LIMIT}`),
+            {
+              headers: getSupabaseHeaders(),
+              cache: 'no-store'
+            }
+          );
+          if (!response.ok) {
+            throw new Error(`supabase-load-${response.status}`);
+          }
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) {
+            await new Promise((resolve) => window.setTimeout(resolve, 450 + attempt * 650));
+          }
         }
-      );
+      }
+      if (lastError || !response) {
+        throw lastError ?? new Error('supabase-load-unknown');
+      }
       if (!response.ok) {
         throw new Error(`supabase-load-${response.status}`);
       }
@@ -6376,17 +6395,16 @@ async function loadMessages(options = {}) {
       if (messages.length) {
         persistVisibleBookMessages(messages);
       }
-      const cachedMessages = loadCachedBookMessages();
       bookUiState.lastMessages = messages.length
         ? messages
-        : cachedMessages.length
-        ? cachedMessages
-        : cloneMessages(BOOK_MESSAGE_SEED);
+        : [];
       return cloneMessages(bookUiState.lastMessages);
     } catch (error) {
       console.warn('Failed to load Supabase book messages, falling back locally:', error);
       bookUiState.backend = 'degraded';
       setBookStatusDefault();
+      bookUiState.lastMessages = [];
+      return [];
     }
   } else {
     bookUiState.backend = 'local';
@@ -6395,9 +6413,9 @@ async function loadMessages(options = {}) {
 
   let messages = bookUiState.lastMessages.length
     ? cloneMessages(bookUiState.lastMessages)
-    : cloneMessages(BOOK_MESSAGE_SEED);
+    : [];
   const cachedMessages = loadCachedBookMessages();
-  if (cachedMessages.length) {
+  if (cachedMessages.length && bookUiState.backend !== 'degraded') {
     messages = cachedMessages;
   }
 
@@ -6561,7 +6579,9 @@ function renderBookReadPage(messages) {
   if (!messages.length) {
     const empty = document.createElement('div');
     empty.className = 'book-message-card';
-    empty.textContent = 'まだ何も書かれていません。最初のひとことを残せます。';
+    empty.textContent = bookUiState.backend === 'degraded'
+      ? '停止中'
+      : 'まだ何も書かれていません。最初のひとことを残せます。';
     bookMessagePage.append(empty);
     if (bookNextPage) bookNextPage.disabled = true;
     return;
