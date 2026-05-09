@@ -4,13 +4,15 @@ export const playlist = [
     src: './list/nakimushi/track-15.wav',
     art: './list/nakimushi/cover-15.jpg',
     lyricsPath: './list/nakimushi/lyrics.txt',
+    href: 'https://big-up.style/0FAx9eIAXU',
     initial: true
   },
   {
     title: 'ニャーニャーハラスメント',
     src: './list/nyahara/track-16.wav',
     art: './list/nyahara/cover-16.jpg',
-    lyricsPath: './list/nyahara/lyrics.txt'
+    lyricsPath: './list/nyahara/lyrics.txt',
+    href: 'https://big-up.style/Vszi15V7rE'
   },
   {
     title: 'かかとがフランスパン',
