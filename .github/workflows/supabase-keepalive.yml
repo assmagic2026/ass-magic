@@ -1,0 +1,46 @@
+name: Supabase Keepalive
+
+on:
+  schedule:
+    - cron: "0 0 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping Supabase REST API
+        env:
+          SUPABASE_URL: https://mktbftramoiplbfdyidw.supabase.co
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_ANON_KEY:-}" ]; then
+            echo "SUPABASE_ANON_KEY is not set"
+            exit 1
+          fi
+
+          URL="$SUPABASE_URL/rest/v1/book_messages?select=*&limit=1"
+          RESPONSE_FILE="$(mktemp)"
+          trap 'rm -f "$RESPONSE_FILE"' EXIT
+
+          echo "Pinging Supabase: $URL"
+
+          HTTP_STATUS="$(curl -sS -o "$RESPONSE_FILE" -w "%{http_code}" \
+            "$URL" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "Accept: application/json")"
+
+          echo "HTTP status: $HTTP_STATUS"
+          echo "Response:"
+          cat "$RESPONSE_FILE"
+
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "Supabase keepalive failed"
+            exit 1
+          fi
+
+          echo "Supabase keepalive succeeded"
