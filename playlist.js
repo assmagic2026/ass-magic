@@ -16,6 +16,7 @@ export const playlist = [
   },
   {
     title: 'かかとがフランスパン',
+    disabled: true,
     src: './list/1kakato/track-01.mp3',
     art: './list/1kakato/cover-01.jpg',
     href: 'https://big-up.style/458G0ndX8N',

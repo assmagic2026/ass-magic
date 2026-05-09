@@ -73,7 +73,9 @@ function easeInOutQuint(t) {
     : 1 - Math.pow(-2 * t + 2, 5) / 2;
 }
 
-const playlist = playlistData.map((track) => ({
+const playlist = playlistData
+  .filter((track) => track?.disabled !== true)
+  .map((track) => ({
   ...track,
   lyrics: Array.isArray(track.lyrics)
     ? track.lyrics
