@@ -87,8 +87,11 @@ const playlist = playlistData.map((track) => ({
   fullLyrics: typeof track.lyricsText === 'string' ? track.lyricsText.trim() : '',
   fullLyricsPromise: null
 }));
+const EXPLICIT_INITIAL_TRACK_INDEX = playlist.findIndex((track) => track.initial === true);
 const INITIAL_TRACK_INDEX = playlist.length > 0
-  ? Math.floor(Math.random() * playlist.length)
+  ? (EXPLICIT_INITIAL_TRACK_INDEX >= 0
+      ? EXPLICIT_INITIAL_TRACK_INDEX
+      : Math.floor(Math.random() * playlist.length))
   : 0;
 let currentTrackIndex = INITIAL_TRACK_INDEX;
 let randomTrackQueue = [];

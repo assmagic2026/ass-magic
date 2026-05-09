@@ -1,5 +1,18 @@
 export const playlist = [
   {
+    title: '泣き虫のおじさん',
+    src: './list/nakimushi/track-15.wav',
+    art: './list/nakimushi/cover-15.jpg',
+    lyricsPath: './list/nakimushi/lyrics.txt',
+    initial: true
+  },
+  {
+    title: 'ニャーニャーハラスメント',
+    src: './list/nyahara/track-16.wav',
+    art: './list/nyahara/cover-16.jpg',
+    lyricsPath: './list/nyahara/lyrics.txt'
+  },
+  {
     title: 'かかとがフランスパン',
     src: './list/1kakato/track-01.mp3',
     art: './list/1kakato/cover-01.jpg',
