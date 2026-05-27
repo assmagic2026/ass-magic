@@ -21,6 +21,7 @@
 これで次のことができます。
 - メッセージを読む
 - 匿名でメッセージを書く
+- Data API 経由で `anon` が `book_messages` を読んだり書いたりできる
 
 ## 3. 公開用キーを確認する
 
@@ -66,3 +67,5 @@ git push
 - Supabase 未接続のときは、今まで通りこの端末の `localStorage` に保存されます
 - Supabase をつなぐと、共有メッセージが優先されます
 - 将来テーブル名を変えたい場合は `/Users/assmagic/Desktop/飛行３/supabase-config.js` の `table` を変えるだけです
+- Supabase の Data API 仕様変更に備えて、`book_messages` には明示的な `GRANT` を入れています
+- 既存の `book_messages` に権限だけ入れ直したい場合は、`/Users/assmagic/Desktop/飛行３/supabase-data-api-grants.sql` を SQL Editor で実行してください
