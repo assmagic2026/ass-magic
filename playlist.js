@@ -1,11 +1,17 @@
 export const playlist = [
   {
+    title: '動物みたいなロボットみたいな人',
+    src: './list/animalrobot/track-17.mp3',
+    art: './list/animalrobot/cover-17.jpg',
+    lyricsPath: './list/animalrobot/lyrics.txt',
+    initial: true
+  },
+  {
     title: '泣き虫のおじさん',
     src: './list/nakimushi/track-15.wav',
     art: './list/nakimushi/cover-15.jpg',
     lyricsPath: './list/nakimushi/lyrics.txt',
-    href: 'https://big-up.style/0FAx9eIAXU',
-    initial: true
+    href: 'https://big-up.style/0FAx9eIAXU'
   },
   {
     title: 'ニャーニャーハラスメント',
