@@ -31,9 +31,16 @@
           <a data-quality="standard" href="?mode=realism&quality=standard">標準</a>
           <a data-quality="high" href="?mode=realism&quality=high">高画質</a>
         </div>
+        <div class="view-switch" role="group" aria-label="カメラ設定">
+          <a id="view-orbit" href="?mode=realism&quality=standard&view=orbit">観察</a>
+          <a id="view-flight" href="?mode=realism&quality=standard&view=flight">飛行</a>
+          <button id="flight-reset" type="button">戻る</button>
+        </div>
       </section>
 
       <p class="help">ドラッグで視点移動 / ホイールで距離調整</p>
+      <div id="flight-stick" class="flight-stick" aria-hidden="true"><span></span></div>
+      <div id="flight-readout" class="flight-readout" aria-live="polite"></div>
       <div class="loading" id="loading">BUILDING THE WORLD</div>
     </main>
 

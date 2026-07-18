@@ -47,6 +47,37 @@ const orbit = {
   y: 0,
   idle: 0,
 };
+const flightStick = document.querySelector("#flight-stick");
+const flightStickKnob = flightStick.querySelector("span");
+const flightReadout = document.querySelector("#flight-readout");
+const flightHelp = document.querySelector(".help");
+const flight = {
+  position: new THREE.Vector3(),
+  yaw: 0,
+  pitch: 0,
+  speed: 7,
+  targetSpeed: 7,
+  cruiseAltitude: 8,
+  pointerId: null,
+  pointerX: 0,
+  pointerY: 0,
+  inputX: 0,
+  inputY: 0,
+  keys: new Set(),
+  readoutElapsed: 0,
+};
+const flightForward = new THREE.Vector3();
+const flightLookTarget = new THREE.Vector3();
+const bookFlightTarget = new THREE.Vector3(-2.35, 8.2, -1.35);
+const bookPassTarget = new THREE.Vector3(8.5, 5.8, -2.1);
+
+if (settings.view === "flight") {
+  camera.fov = 56;
+  camera.updateProjectionMatrix();
+  flightReadout.classList.add("is-visible");
+  flightHelp.textContent = "ドラッグで旋回・上下移動 / ホイールまたは W・S で速度調整";
+  resetFlight();
+}
 
 const textureDisposables = [];
 const terrain = createTerrain();
@@ -72,23 +103,11 @@ document.querySelector("#loading").classList.add("is-hidden");
 const clock = new THREE.Clock();
 renderer.setAnimationLoop(() => {
   const delta = Math.min(clock.getDelta(), 0.1);
-  orbit.idle += delta;
-  if (!orbit.dragging && orbit.idle > 4) {
-    orbit.desiredYaw += delta * 0.018;
+  if (settings.view === "flight") {
+    updateFlight(delta);
+  } else {
+    updateOrbit(delta);
   }
-
-  const smoothing = 1 - Math.exp(-delta * 7);
-  orbit.yaw = THREE.MathUtils.lerp(orbit.yaw, orbit.desiredYaw, smoothing);
-  orbit.pitch = THREE.MathUtils.lerp(orbit.pitch, orbit.desiredPitch, smoothing);
-  orbit.distance = THREE.MathUtils.lerp(orbit.distance, orbit.desiredDistance, smoothing);
-
-  const planarDistance = Math.cos(orbit.pitch) * orbit.distance;
-  camera.position.set(
-    Math.sin(orbit.yaw) * planarDistance,
-    Math.sin(orbit.pitch) * orbit.distance + 5,
-    Math.cos(orbit.yaw) * planarDistance,
-  );
-  camera.lookAt(cameraTarget);
 
   if (adaptiveDpr.sample(delta)) resize();
   renderer.render(scene, camera);
@@ -109,12 +128,8 @@ function createTerrain() {
   for (let index = 0; index < positions.count; index += 1) {
     const x = positions.getX(index);
     const z = positions.getZ(index);
-    const radialCurve = -(x * x + z * z) / 270;
     const broad = Math.sin(x * 0.105) * 1.45 + Math.cos(z * 0.13) * 1.05;
-    const detail = settings.mode === "realism"
-      ? Math.sin((x + z) * 0.48) * 0.18 + Math.sin(x * 0.91 - z * 0.37) * 0.12
-      : Math.round((Math.sin(x * 0.16) + Math.cos(z * 0.12)) * 0.9) * 0.72;
-    positions.setY(index, radialCurve + broad + detail - 1.1);
+    positions.setY(index, getTerrainHeight(x, z));
 
     if (settings.mode === "current") {
       const paletteIndex = Math.abs(Math.floor((x * 0.11 + z * 0.07 + broad) * 1.7)) % palette.length;
@@ -148,6 +163,15 @@ function createTerrain() {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.receiveShadow = settings.preset.shadowSize > 0;
   return mesh;
+}
+
+function getTerrainHeight(x, z) {
+  const radialCurve = -(x * x + z * z) / 270;
+  const broad = Math.sin(x * 0.105) * 1.45 + Math.cos(z * 0.13) * 1.05;
+  const detail = settings.mode === "realism"
+    ? Math.sin((x + z) * 0.48) * 0.18 + Math.sin(x * 0.91 - z * 0.37) * 0.12
+    : Math.round((Math.sin(x * 0.16) + Math.cos(z * 0.12)) * 0.9) * 0.72;
+  return radialCurve + broad + detail - 1.1;
 }
 
 function createTerrainTextures(size) {
@@ -770,7 +794,141 @@ function addAtmosphere() {
   scene.add(new THREE.Points(geometry, material));
 }
 
+function updateOrbit(delta) {
+  orbit.idle += delta;
+  if (!orbit.dragging && orbit.idle > 4) {
+    orbit.desiredYaw += delta * 0.018;
+  }
+
+  const smoothing = 1 - Math.exp(-delta * 7);
+  orbit.yaw = THREE.MathUtils.lerp(orbit.yaw, orbit.desiredYaw, smoothing);
+  orbit.pitch = THREE.MathUtils.lerp(orbit.pitch, orbit.desiredPitch, smoothing);
+  orbit.distance = THREE.MathUtils.lerp(orbit.distance, orbit.desiredDistance, smoothing);
+
+  const planarDistance = Math.cos(orbit.pitch) * orbit.distance;
+  camera.position.set(
+    Math.sin(orbit.yaw) * planarDistance,
+    Math.sin(orbit.pitch) * orbit.distance + 5,
+    Math.cos(orbit.yaw) * planarDistance,
+  );
+  camera.lookAt(cameraTarget);
+}
+
+function updateFlight(delta) {
+  const keyboardX = Number(flight.keys.has("ArrowRight") || flight.keys.has("KeyD"))
+    - Number(flight.keys.has("ArrowLeft") || flight.keys.has("KeyA"));
+  const keyboardY = Number(flight.keys.has("ArrowUp")) - Number(flight.keys.has("ArrowDown"));
+  const steerX = THREE.MathUtils.clamp(flight.inputX + keyboardX, -1, 1);
+  const steerY = THREE.MathUtils.clamp(flight.inputY + keyboardY, -1, 1);
+
+  flight.yaw += steerX * delta * 0.92;
+  flight.pitch = THREE.MathUtils.clamp(
+    flight.pitch + steerY * delta * 0.68,
+    -0.48,
+    0.48,
+  );
+  if (Math.abs(steerY) < 0.02) {
+    flight.pitch = THREE.MathUtils.lerp(
+      flight.pitch,
+      0,
+      1 - Math.exp(-delta * 0.72),
+    );
+  }
+
+  if (flight.keys.has("KeyW")) flight.targetSpeed += delta * 5.5;
+  if (flight.keys.has("KeyS")) flight.targetSpeed -= delta * 5.5;
+  flight.targetSpeed = THREE.MathUtils.clamp(flight.targetSpeed, 3, 16);
+  flight.speed = THREE.MathUtils.lerp(
+    flight.speed,
+    flight.targetSpeed,
+    1 - Math.exp(-delta * 2.5),
+  );
+
+  const cosPitch = Math.cos(flight.pitch);
+  flightForward.set(
+    Math.sin(flight.yaw) * cosPitch,
+    Math.sin(flight.pitch),
+    Math.cos(flight.yaw) * cosPitch,
+  );
+  flight.position.addScaledVector(flightForward, flight.speed * delta);
+
+  const distanceToBook = Math.hypot(
+    flight.position.x - bookFlightTarget.x,
+    flight.position.z - bookFlightTarget.z,
+  );
+  if (distanceToBook < 24 && Math.abs(steerX) < 0.18) {
+    const passYaw = Math.atan2(
+      bookPassTarget.x - flight.position.x,
+      bookPassTarget.z - flight.position.z,
+    );
+    const passDifference = Math.atan2(
+      Math.sin(passYaw - flight.yaw),
+      Math.cos(passYaw - flight.yaw),
+    );
+    const passStrength = THREE.MathUtils.clamp((24 - distanceToBook) / 15, 0.04, 1);
+    flight.yaw += passDifference * (1 - Math.exp(-delta * 1.18 * passStrength));
+  }
+
+  const range = Math.hypot(flight.position.x, flight.position.z);
+  if (range > 48 && Math.abs(steerX) < 0.18) {
+    const centerYaw = Math.atan2(-flight.position.x, -flight.position.z);
+    const yawDifference = Math.atan2(
+      Math.sin(centerYaw - flight.yaw),
+      Math.cos(centerYaw - flight.yaw),
+    );
+    const returnStrength = THREE.MathUtils.clamp((range - 48) / 14, 0.08, 1);
+    flight.yaw += yawDifference * (1 - Math.exp(-delta * 0.62 * returnStrength));
+  }
+  if (range > 68) {
+    resetFlight();
+    return;
+  }
+
+  const ground = getTerrainHeight(flight.position.x, flight.position.z);
+  if (Math.abs(steerY) < 0.02) {
+    const desiredY = ground + flight.cruiseAltitude;
+    flight.position.y = THREE.MathUtils.lerp(
+      flight.position.y,
+      desiredY,
+      1 - Math.exp(-delta * 0.58),
+    );
+  }
+  flight.position.y = Math.max(flight.position.y, ground + 2.2);
+
+  camera.position.copy(flight.position);
+  flightLookTarget.copy(flight.position).add(flightForward);
+  camera.lookAt(flightLookTarget);
+
+  flight.readoutElapsed += delta;
+  if (flight.readoutElapsed >= 0.12) {
+    const altitude = Math.max(0, flight.position.y - ground);
+    flightReadout.innerHTML = `SPEED ${flight.speed.toFixed(1)}<br>ALT ${altitude.toFixed(1)}`;
+    flight.readoutElapsed = 0;
+  }
+}
+
+function resetFlight() {
+  const startX = 30;
+  const startZ = 42;
+  const startY = getTerrainHeight(startX, startZ) + flight.cruiseAltitude;
+  const target = bookFlightTarget.clone();
+  const direction = target.sub(new THREE.Vector3(startX, startY, startZ));
+  flight.position.set(startX, startY, startZ);
+  flight.yaw = Math.atan2(direction.x, direction.z);
+  flight.pitch = Math.atan2(direction.y, Math.hypot(direction.x, direction.z));
+  flight.speed = 7;
+  flight.targetSpeed = 7;
+  flight.inputX = 0;
+  flight.inputY = 0;
+  flight.readoutElapsed = 1;
+}
+
 function setupInteraction() {
+  if (settings.view === "flight") {
+    setupFlightInteraction();
+    return;
+  }
+
   canvas.addEventListener("pointerdown", (event) => {
     orbit.dragging = true;
     orbit.pointerId = event.pointerId;
@@ -809,6 +967,61 @@ function setupInteraction() {
     );
     orbit.idle = 0;
   }, { passive: false });
+}
+
+function setupFlightInteraction() {
+  canvas.addEventListener("pointerdown", (event) => {
+    flight.pointerId = event.pointerId;
+    flight.pointerX = event.clientX;
+    flight.pointerY = event.clientY;
+    flight.inputX = 0;
+    flight.inputY = 0;
+    flightStick.style.left = `${event.clientX}px`;
+    flightStick.style.top = `${event.clientY}px`;
+    flightStickKnob.style.transform = "translate(0px, 0px)";
+    flightStick.classList.add("is-visible");
+    canvas.setPointerCapture(event.pointerId);
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== flight.pointerId) return;
+    const dx = event.clientX - flight.pointerX;
+    const dy = event.clientY - flight.pointerY;
+    flight.inputX = THREE.MathUtils.clamp(dx / 72, -1, 1);
+    flight.inputY = THREE.MathUtils.clamp(-dy / 72, -1, 1);
+    flightStickKnob.style.transform = `translate(${flight.inputX * 29}px, ${-flight.inputY * 29}px)`;
+  });
+
+  const releaseFlightPointer = (event) => {
+    if (event.pointerId !== flight.pointerId) return;
+    flight.pointerId = null;
+    flight.inputX = 0;
+    flight.inputY = 0;
+    flightStick.classList.remove("is-visible");
+  };
+  canvas.addEventListener("pointerup", releaseFlightPointer);
+  canvas.addEventListener("pointercancel", releaseFlightPointer);
+
+  canvas.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    flight.targetSpeed = THREE.MathUtils.clamp(
+      flight.targetSpeed - event.deltaY * 0.012,
+      3,
+      16,
+    );
+  }, { passive: false });
+
+  window.addEventListener("keydown", (event) => {
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.code)) {
+      event.preventDefault();
+    }
+    flight.keys.add(event.code);
+  });
+  window.addEventListener("keyup", (event) => {
+    flight.keys.delete(event.code);
+  });
+  window.addEventListener("blur", () => flight.keys.clear());
+  document.querySelector("#flight-reset").addEventListener("click", resetFlight);
 }
 
 function resize() {

@@ -49,6 +49,7 @@ export function getExperimentSettings() {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("mode") === "realism" ? "realism" : "current";
   const requestedQuality = params.get("quality") || "standard";
+  const view = params.get("view") === "flight" ? "flight" : "orbit";
   const quality = Object.hasOwn(QUALITY_PRESETS, requestedQuality)
     ? requestedQuality
     : "standard";
@@ -57,6 +58,7 @@ export function getExperimentSettings() {
   return {
     mode,
     quality,
+    view,
     preset: QUALITY_PRESETS[presetKey],
   };
 }
@@ -65,21 +67,31 @@ export function configureLinks(settings) {
   const currentLink = document.querySelector("#mode-current");
   const realismLink = document.querySelector("#mode-realism");
   const qualitySwitch = document.querySelector("#quality-switch");
+  const viewSwitch = document.querySelector(".view-switch");
+  const orbitLink = document.querySelector("#view-orbit");
+  const flightLink = document.querySelector("#view-flight");
+  const viewParam = `&view=${settings.view}`;
 
-  currentLink.href = "?mode=current&quality=standard";
-  realismLink.href = `?mode=realism&quality=${settings.quality}`;
+  currentLink.href = `?mode=current&quality=standard${viewParam}`;
+  realismLink.href = `?mode=realism&quality=${settings.quality}${viewParam}`;
   currentLink.setAttribute("aria-current", String(settings.mode === "current"));
   realismLink.setAttribute("aria-current", String(settings.mode === "realism"));
   qualitySwitch.classList.toggle("is-disabled", settings.mode === "current");
 
   qualitySwitch.querySelectorAll("[data-quality]").forEach((link) => {
     const quality = link.dataset.quality;
-    link.href = `?mode=realism&quality=${quality}`;
+    link.href = `?mode=realism&quality=${quality}${viewParam}`;
     link.setAttribute(
       "aria-current",
       String(settings.mode === "realism" && settings.quality === quality),
     );
   });
+
+  orbitLink.href = `?mode=${settings.mode}&quality=${settings.quality}&view=orbit`;
+  flightLink.href = `?mode=${settings.mode}&quality=${settings.quality}&view=flight`;
+  orbitLink.setAttribute("aria-current", String(settings.view === "orbit"));
+  flightLink.setAttribute("aria-current", String(settings.view === "flight"));
+  viewSwitch.classList.toggle("is-flight", settings.view === "flight");
 }
 
 export class AdaptivePixelRatio {

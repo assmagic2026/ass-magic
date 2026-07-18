@@ -30,9 +30,10 @@ export class PerformanceHud {
     const modeLabel = this.settings.mode === "realism"
       ? `REALISM / ${this.settings.preset.label}`
       : "CURRENT-LIKE";
+    const viewLabel = this.settings.view === "flight" ? "FLIGHT" : "ORBIT";
 
     const markup = [
-      `<strong>${modeLabel}</strong>`,
+      `<strong>${modeLabel} / ${viewLabel}</strong>`,
       `FPS AVG&nbsp;&nbsp;${(1000 / averageMs).toFixed(1)}`,
       `1% LOW&nbsp;&nbsp;${(1000 / p99Ms).toFixed(1)}`,
       `FRAME&nbsp;&nbsp;&nbsp;&nbsp;${averageMs.toFixed(1)} ms`,
