@@ -1012,7 +1012,7 @@ const BLACK_BOX_REVEAL_IMAGE = Object.freeze({
   caption: 'かわいいのがいた。'
 });
 const DEVIL_GUIDE_COPY = Object.freeze({
-  question: 'おまえは、この星で何をする？',
+  question: '何が望みだ？',
   escape: '黒い球か白い球に触れろ。世界が白黒になったら、別の物体に触れず反対側の球へ行け。昼夜が反転したら、リングを起動しろ。伸びた光の先に帰り道がある。',
   routePending: 'その道案内は、次の段階でつなぐ。今は目印だけ覚えておけ。'
 });
