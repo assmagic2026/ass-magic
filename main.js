@@ -115,6 +115,7 @@ const THEME_FILTER_DOWN_RATE = 42;
 const THEME_FILTER_UP_RATE = 1.35;
 let bgmPending = false;
 let bgmLastAttemptAt = 0;
+let bgmPlayAttemptId = 0;
 let lastTrackControlActionAt = 0;
 let lastLyricsCurrent = '';
 let lastLyricsFull = '';
@@ -787,10 +788,12 @@ function playCurrentTrack() {
   ensureBgmAudioChain();
   applyBgmOutputVolume(getBgmBaseTargetVolume());
   applyBgmFilterFrequency(THEME_FILTER_BASE_FREQ);
+  const playAttemptId = ++bgmPlayAttemptId;
   bgmPending = true;
   const playResult = bgm.play();
   if (playResult && typeof playResult.then === 'function') {
     playResult.then(() => {
+      if (playAttemptId !== bgmPlayAttemptId) return;
       if (themeState.mode === 'monochrome' || isEndingSequenceActive()) {
         bgm.pause();
         bgmPending = false;
@@ -804,6 +807,7 @@ function playCurrentTrack() {
       updateLyricsUi();
       bgmPending = false;
     }).catch((error) => {
+      if (playAttemptId !== bgmPlayAttemptId) return;
       console.warn('BGM playback was blocked or failed:', error);
       bgmPending = false;
     });
@@ -816,6 +820,9 @@ function playCurrentTrack() {
 }
 
 function loadTrack(index, autoplay = false) {
+  bgmPlayAttemptId += 1;
+  bgmPending = false;
+  bgmLastAttemptAt = 0;
   currentTrackIndex = (index + playlist.length) % playlist.length;
   const track = playlist[currentTrackIndex];
   bgm.pause();
@@ -8481,9 +8488,10 @@ trackToggle?.addEventListener('click', (e) => {
   });
 });
 
-trackNext?.addEventListener('pointerup', (e) => {
+trackNext?.addEventListener('pointerdown', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  primeEffectAudioFromGesture();
   runTrackControlAction(() => {
     nextTrack();
   });
@@ -8491,6 +8499,8 @@ trackNext?.addEventListener('pointerup', (e) => {
 trackNext?.addEventListener('click', (e) => {
   e.preventDefault();
   e.stopPropagation();
+  if (e.detail !== 0) return;
+  primeEffectAudioFromGesture();
   runTrackControlAction(() => {
     nextTrack();
   });
