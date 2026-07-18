@@ -34,6 +34,8 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 const runtimeUrlParams = new URLSearchParams(window.location.search);
 const DEBUG_CAT_PREVIEW = runtimeUrlParams.get('catdebug') === '1';
 const DEBUG_SANCTUARY_START = runtimeUrlParams.get('sanctuarydebug') === '1';
+const DEVIL_GUIDE_ENABLED = runtimeUrlParams.get('devil') === '1';
+const DEBUG_DEVIL_GUIDE = runtimeUrlParams.get('devildebug') === '1';
 const PROMO_CAPTURE_MODE = runtimeUrlParams.get('promo') === '1';
 const PROMO_CAPTURE_WIDTH = 1920;
 const PROMO_CAPTURE_HEIGHT = 1080;
@@ -1009,6 +1011,20 @@ const BLACK_BOX_REVEAL_IMAGE = Object.freeze({
   download: 'blackbox-cat.jpg',
   caption: 'かわいいのがいた。'
 });
+const DEVIL_GUIDE_COPY = Object.freeze({
+  question: 'おまえは、この星で何をする？',
+  escape: '黒い球か白い球に触れろ。世界が白黒になったら、別の物体に触れず反対側の球へ行け。昼夜が反転したら、リングを起動しろ。伸びた光の先に帰り道がある。',
+  routePending: 'その道案内は、次の段階でつなぐ。今は目印だけ覚えておけ。'
+});
+const DEVIL_GUIDE_DESTINATIONS = Object.freeze([
+  { id: 'record-player', label: 'レコードプレイヤー' },
+  { id: 'book', label: '巨大な本' },
+  { id: 'white-sphere', label: '白い球体' },
+  { id: 'black-sphere', label: '黒い球体' },
+  { id: 'compass', label: '羅針盤' },
+  { id: 'sanctuary', label: '太陽光式集光遠達装置' },
+  { id: 'black-box', label: '高速移動する黒い箱' }
+]);
 const BOOK_MESSAGE_STORAGE_KEY = 'ass-magic-book-messages-v1';
 const BOOK_PLAYER_STATE_STORAGE_KEY = 'ass-magic-book-player-v1';
 const BOOK_MESSAGE_LIMIT = 12;
@@ -1037,6 +1053,16 @@ const CAT_ROUTE_CATCHUP_RESPONSE = 20.0;
 const CAT_ROUTE_ROTATION_RESPONSE = 7.2;
 const CAT_ROUTE_COMPANION_SCALE = 0.1512;
 const CAT_ROUTE_MOUNT_OFFSET = new THREE.Vector3(0.34, 0.02, 0.12);
+const DEVIL_GUIDE_STORAGE_KEY = 'ass-magic-devil-guide-v1';
+const DEVIL_GUIDE_SPAWN_DELAY = 5.0;
+const DEVIL_GUIDE_SPAWN_DISTANCE = 14.0;
+const DEVIL_GUIDE_SPAWN_SIDE = -2.2;
+const DEVIL_GUIDE_SPAWN_HEIGHT = 3.1;
+const DEVIL_GUIDE_CONTACT_RADIUS = 5.2;
+const DEVIL_GUIDE_REARM_EXIT_RADIUS = 8.5;
+const DEVIL_GUIDE_MODEL_SCALE = 1.5;
+const DEVIL_GUIDE_BOB_AMOUNT = 0.28;
+const DEVIL_GUIDE_BOB_SPEED = 1.7;
 const INVERT_WORLD_FILTER = 'invert(1) hue-rotate(180deg) saturate(0.94) brightness(1.05)';
 const MONOCHROME_WORLD_FILTER = 'grayscale(1) contrast(1.78) brightness(1.42)';
 const FREEZE_CLOUD_DRIFT_FOR_TEST = true;
@@ -2010,6 +2036,10 @@ const catDesiredPosition = new THREE.Vector3();
 const catMountForward = new THREE.Vector3();
 const catMountUp = new THREE.Vector3();
 const catTargetQuaternion = new THREE.Quaternion();
+const devilGuideUp = new THREE.Vector3();
+const devilGuideRight = new THREE.Vector3();
+const devilGuideFaceDirection = new THREE.Vector3();
+const devilGuideBasePosition = new THREE.Vector3();
 const updatePlayerPrevForwardScratch = new THREE.Vector3();
 const updatePlayerUpScratch = new THREE.Vector3();
 const updatePlayerRightScratch = new THREE.Vector3();
@@ -3570,6 +3600,24 @@ const blackBoxUiState = {
   openedOnce: false,
   rearmRequired: false
 };
+const devilGuideState = {
+  enabled: DEVIL_GUIDE_ENABLED,
+  model: null,
+  ui: null,
+  spawnTimer: 0,
+  bobTime: 0,
+  visible: false,
+  dialogOpen: false,
+  lockActive: false,
+  dismissed: false,
+  banished: false,
+  summonVisible: false,
+  rearmRequired: false,
+  view: 'question',
+  selectedDestinationLabel: '',
+  anchorPosition: new THREE.Vector3(),
+  anchorUp: new THREE.Vector3(0, 1, 0)
+};
 const captureUiState = {
   open: false,
   busy: false,
@@ -3738,6 +3786,426 @@ registerThemeTriggerFromObject(blackBoxLandmark, 4.7, 14.4, {
   tag: 'black-box',
   onTrigger: (contactPoint) => handleBlackBoxTrigger(contactPoint)
 });
+
+function loadDevilGuidePreferences() {
+  if (!DEVIL_GUIDE_ENABLED) return;
+  try {
+    const stored = window.localStorage.getItem(DEVIL_GUIDE_STORAGE_KEY);
+    if (!stored) return;
+    const parsed = JSON.parse(stored);
+    devilGuideState.banished = Boolean(parsed?.banished);
+  } catch (error) {
+    console.warn('Failed to load devil guide preferences:', error);
+  }
+}
+
+function saveDevilGuidePreferences() {
+  if (!DEVIL_GUIDE_ENABLED) return;
+  try {
+    window.localStorage.setItem(
+      DEVIL_GUIDE_STORAGE_KEY,
+      JSON.stringify({ banished: devilGuideState.banished })
+    );
+  } catch (error) {
+    console.warn('Failed to save devil guide preferences:', error);
+  }
+}
+
+function createDevilGuideModel() {
+  const group = new THREE.Group();
+  group.name = 'DevilGuide';
+  group.visible = false;
+
+  const bodyMat = new THREE.MeshLambertMaterial({
+    color: 0x111015,
+    emissive: 0x1f0506,
+    emissiveIntensity: 0.38,
+    flatShading: true
+  });
+  const bellyMat = new THREE.MeshLambertMaterial({
+    color: 0x24161b,
+    emissive: 0x2a0708,
+    emissiveIntensity: 0.2,
+    flatShading: true
+  });
+  const hornMat = new THREE.MeshBasicMaterial({ color: 0xff2c22, toneMapped: false });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffefe2, toneMapped: false });
+  const wingMat = new THREE.MeshLambertMaterial({
+    color: 0x050509,
+    emissive: 0x160004,
+    emissiveIntensity: 0.28,
+    flatShading: true
+  });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.82, 8, 7), bodyMat);
+  body.scale.set(0.74, 1.04, 0.58);
+  body.position.y = 0.1;
+  group.add(body);
+
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), bellyMat);
+  belly.scale.set(0.88, 1.14, 0.32);
+  belly.position.set(0, -0.03, 0.44);
+  group.add(belly);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 8, 7), bodyMat);
+  head.scale.set(0.88, 0.82, 0.76);
+  head.position.set(0, 0.88, 0.08);
+  group.add(head);
+
+  for (const side of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 5), hornMat);
+    horn.position.set(side * 0.26, 1.24, 0.04);
+    horn.rotation.z = side * -0.28;
+    group.add(horn);
+
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 4), eyeMat);
+    eye.scale.set(1.25, 0.62, 0.62);
+    eye.position.set(side * 0.16, 0.9, 0.43);
+    group.add(eye);
+
+    const wing = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.86, 3), wingMat);
+    wing.scale.set(0.74, 0.32, 1.0);
+    wing.position.set(side * 0.58, 0.18, -0.18);
+    wing.rotation.z = side * -0.9;
+    wing.rotation.y = side * 0.7;
+    group.add(wing);
+  }
+
+  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.88, 3, 5), hornMat);
+  tail.position.set(0.34, -0.48, -0.42);
+  tail.rotation.x = -0.82;
+  tail.rotation.z = -0.55;
+  group.add(tail);
+
+  const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.24, 3), hornMat);
+  tailTip.position.set(0.62, -0.78, -0.72);
+  tailTip.rotation.x = -0.9;
+  tailTip.rotation.z = -0.55;
+  group.add(tailTip);
+
+  group.scale.setScalar(DEVIL_GUIDE_MODEL_SCALE);
+  return group;
+}
+
+function createDevilGuideUi() {
+  const overlay = document.createElement('div');
+  overlay.id = 'devil-guide-overlay';
+  overlay.className = 'ui-control';
+  overlay.setAttribute('aria-hidden', 'true');
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'devil-guide-backdrop';
+  overlay.appendChild(backdrop);
+
+  const panel = document.createElement('div');
+  panel.id = 'devil-guide-panel';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  overlay.appendChild(panel);
+
+  const kicker = document.createElement('div');
+  kicker.className = 'devil-guide-kicker';
+  kicker.textContent = 'GUIDE';
+  panel.appendChild(kicker);
+
+  const message = document.createElement('div');
+  message.id = 'devil-guide-message';
+  panel.appendChild(message);
+
+  const actions = document.createElement('div');
+  actions.id = 'devil-guide-actions';
+  panel.appendChild(actions);
+
+  const summon = document.createElement('button');
+  summon.id = 'devil-guide-summon';
+  summon.className = 'ui-control';
+  summon.type = 'button';
+  summon.textContent = '悪魔を呼ぶ';
+  summon.setAttribute('aria-hidden', 'true');
+
+  for (const target of [overlay, summon]) {
+    target.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    target.addEventListener('pointerup', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    target.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+
+  summon.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    summonDevilGuide(true);
+  });
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(summon);
+
+  return { overlay, panel, message, actions, summon };
+}
+
+function makeDevilGuideButton(label, onClick, className = '') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className ? `devil-guide-choice ${className}` : 'devil-guide-choice';
+  button.textContent = label;
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function renderDevilGuideDialog() {
+  const ui = devilGuideState.ui;
+  if (!ui) return;
+  ui.actions.innerHTML = '';
+
+  if (devilGuideState.view === 'escape') {
+    ui.message.textContent = DEVIL_GUIDE_COPY.escape;
+    ui.actions.appendChild(makeDevilGuideButton('わかった', () => finishDevilGuideConversation()));
+    ui.actions.appendChild(makeDevilGuideButton('戻る', () => {
+      devilGuideState.view = 'question';
+      renderDevilGuideDialog();
+    }, 'secondary'));
+    return;
+  }
+
+  if (devilGuideState.view === 'destinations') {
+    ui.message.textContent = 'どこへ行きたい？';
+    for (const destination of DEVIL_GUIDE_DESTINATIONS) {
+      ui.actions.appendChild(makeDevilGuideButton(destination.label, () => {
+        devilGuideState.selectedDestinationLabel = destination.label;
+        devilGuideState.view = 'destination-pending';
+        renderDevilGuideDialog();
+      }));
+    }
+    ui.actions.appendChild(makeDevilGuideButton('戻る', () => {
+      devilGuideState.view = 'question';
+      renderDevilGuideDialog();
+    }, 'secondary'));
+    return;
+  }
+
+  if (devilGuideState.view === 'destination-pending') {
+    ui.message.textContent = `${devilGuideState.selectedDestinationLabel}。${DEVIL_GUIDE_COPY.routePending}`;
+    ui.actions.appendChild(makeDevilGuideButton('わかった', () => finishDevilGuideConversation()));
+    ui.actions.appendChild(makeDevilGuideButton('別の場所', () => {
+      devilGuideState.view = 'destinations';
+      renderDevilGuideDialog();
+    }, 'secondary'));
+    return;
+  }
+
+  ui.message.textContent = DEVIL_GUIDE_COPY.question;
+  ui.actions.appendChild(makeDevilGuideButton('自由に空を飛んで探索したい', () => finishDevilGuideConversation()));
+  ui.actions.appendChild(makeDevilGuideButton('惑星を脱出したい', () => {
+    devilGuideState.view = 'escape';
+    renderDevilGuideDialog();
+  }));
+  ui.actions.appendChild(makeDevilGuideButton('案内してほしい', () => {
+    devilGuideState.view = 'destinations';
+    renderDevilGuideDialog();
+  }));
+  ui.actions.appendChild(makeDevilGuideButton('消えろ', () => banishDevilGuide(), 'danger'));
+}
+
+function syncDevilGuideUi() {
+  if (!DEVIL_GUIDE_ENABLED || !devilGuideState.ui) return;
+  devilGuideState.ui.overlay.classList.toggle('is-open', devilGuideState.dialogOpen);
+  devilGuideState.ui.overlay.setAttribute('aria-hidden', devilGuideState.dialogOpen ? 'false' : 'true');
+  devilGuideState.ui.summon.classList.toggle('is-visible', devilGuideState.summonVisible && !devilGuideState.banished);
+  devilGuideState.ui.summon.setAttribute('aria-hidden', devilGuideState.summonVisible && !devilGuideState.banished ? 'false' : 'true');
+}
+
+function positionDevilGuideNearPlayer() {
+  if (!devilGuideState.model) return;
+  devilGuideUp.copy(state.pos).normalize();
+  devilGuideRight.crossVectors(state.forward, devilGuideUp);
+  if (devilGuideRight.lengthSq() < 0.0001) {
+    devilGuideRight.set(1, 0, 0);
+  } else {
+    devilGuideRight.normalize();
+  }
+  devilGuideBasePosition.copy(state.pos)
+    .addScaledVector(state.forward, DEVIL_GUIDE_SPAWN_DISTANCE)
+    .addScaledVector(devilGuideRight, DEVIL_GUIDE_SPAWN_SIDE)
+    .addScaledVector(devilGuideUp, DEVIL_GUIDE_SPAWN_HEIGHT);
+  devilGuideState.anchorPosition.copy(devilGuideBasePosition);
+  devilGuideState.anchorUp.copy(devilGuideUp);
+  devilGuideState.model.position.copy(devilGuideBasePosition);
+  faceDevilGuideToPlayer();
+}
+
+function faceDevilGuideToPlayer() {
+  if (!devilGuideState.model) return;
+  devilGuideFaceDirection.copy(state.pos).sub(devilGuideState.model.position);
+  if (devilGuideFaceDirection.lengthSq() < 0.0001) {
+    devilGuideFaceDirection.copy(state.forward).multiplyScalar(-1);
+  }
+  devilGuideFaceDirection.normalize();
+  writeBasisQuaternion(devilGuideState.model.quaternion, devilGuideFaceDirection, devilGuideState.anchorUp);
+}
+
+function summonDevilGuide(openDialog = false) {
+  if (!DEVIL_GUIDE_ENABLED || devilGuideState.banished || !devilGuideState.model) return;
+  devilGuideState.visible = true;
+  devilGuideState.dismissed = false;
+  devilGuideState.summonVisible = false;
+  devilGuideState.rearmRequired = false;
+  positionDevilGuideNearPlayer();
+  devilGuideState.model.visible = true;
+  if (openDialog) {
+    openDevilGuideDialog();
+  } else {
+    syncDevilGuideUi();
+  }
+}
+
+function openDevilGuideDialog() {
+  if (!DEVIL_GUIDE_ENABLED || devilGuideState.banished || !devilGuideState.ui) return;
+  clearFlightInputState();
+  devilGuideState.view = 'question';
+  devilGuideState.dialogOpen = true;
+  devilGuideState.lockActive = true;
+  devilGuideState.rearmRequired = true;
+  renderDevilGuideDialog();
+  syncDevilGuideUi();
+}
+
+function closeDevilGuideDialog() {
+  if (!DEVIL_GUIDE_ENABLED) return;
+  devilGuideState.dialogOpen = false;
+  devilGuideState.lockActive = false;
+  syncDevilGuideUi();
+}
+
+function finishDevilGuideConversation() {
+  if (!DEVIL_GUIDE_ENABLED) return;
+  closeDevilGuideDialog();
+  devilGuideState.visible = false;
+  devilGuideState.dismissed = true;
+  devilGuideState.summonVisible = true;
+  if (devilGuideState.model) {
+    devilGuideState.model.visible = false;
+  }
+  syncDevilGuideUi();
+}
+
+function banishDevilGuide() {
+  if (!DEVIL_GUIDE_ENABLED) return;
+  closeDevilGuideDialog();
+  devilGuideState.visible = false;
+  devilGuideState.dismissed = true;
+  devilGuideState.banished = true;
+  devilGuideState.summonVisible = false;
+  if (devilGuideState.model) {
+    devilGuideState.model.visible = false;
+  }
+  saveDevilGuidePreferences();
+  syncDevilGuideUi();
+}
+
+function resetDevilGuideForDebug() {
+  if (!DEVIL_GUIDE_ENABLED || !DEBUG_DEVIL_GUIDE) return;
+  try {
+    window.localStorage.removeItem(DEVIL_GUIDE_STORAGE_KEY);
+  } catch (error) {
+    console.warn('Failed to reset devil guide preferences:', error);
+  }
+  closeDevilGuideDialog();
+  devilGuideState.spawnTimer = 0;
+  devilGuideState.visible = false;
+  devilGuideState.dismissed = false;
+  devilGuideState.banished = false;
+  devilGuideState.summonVisible = false;
+  devilGuideState.rearmRequired = false;
+  if (devilGuideState.model) {
+    devilGuideState.model.visible = false;
+  }
+  syncDevilGuideUi();
+}
+
+function isDevilGuideGameplayPaused() {
+  return DEVIL_GUIDE_ENABLED && devilGuideState.lockActive;
+}
+
+function isDevilGuideInputLocked() {
+  return DEVIL_GUIDE_ENABLED && devilGuideState.lockActive;
+}
+
+function updateDevilGuide(dt, gameplayPaused) {
+  if (!DEVIL_GUIDE_ENABLED || !devilGuideState.model) return;
+
+  if (!devilGuideState.visible && !devilGuideState.dismissed && !devilGuideState.banished && !gameplayPaused) {
+    devilGuideState.spawnTimer += dt;
+    if (devilGuideState.spawnTimer >= DEVIL_GUIDE_SPAWN_DELAY) {
+      summonDevilGuide(false);
+    }
+  }
+
+  if (devilGuideState.visible) {
+    devilGuideState.bobTime += dt * DEVIL_GUIDE_BOB_SPEED;
+    devilGuideState.model.position.copy(devilGuideState.anchorPosition)
+      .addScaledVector(devilGuideState.anchorUp, Math.sin(devilGuideState.bobTime) * DEVIL_GUIDE_BOB_AMOUNT);
+    faceDevilGuideToPlayer();
+    devilGuideState.model.rotateZ(Math.sin(devilGuideState.bobTime * 0.74) * 0.08);
+
+    if (
+      devilGuideState.rearmRequired &&
+      state.pos.distanceToSquared(devilGuideState.model.position) >= DEVIL_GUIDE_REARM_EXIT_RADIUS * DEVIL_GUIDE_REARM_EXIT_RADIUS
+    ) {
+      devilGuideState.rearmRequired = false;
+    }
+  }
+}
+
+function tryTriggerDevilGuideContact(start, end) {
+  if (
+    !DEVIL_GUIDE_ENABLED ||
+    !devilGuideState.visible ||
+    devilGuideState.dialogOpen ||
+    devilGuideState.rearmRequired ||
+    devilGuideState.banished ||
+    !devilGuideState.model
+  ) {
+    return false;
+  }
+
+  const t = getSegmentSphereHit(
+    start,
+    end,
+    devilGuideState.model.position,
+    DEVIL_GUIDE_CONTACT_RADIUS
+  );
+  if (t === null) return false;
+
+  openDevilGuideDialog();
+  return true;
+}
+
+function initDevilGuide() {
+  if (!DEVIL_GUIDE_ENABLED) return;
+  loadDevilGuidePreferences();
+  devilGuideState.model = createDevilGuideModel();
+  scene.add(devilGuideState.model);
+  devilGuideState.ui = createDevilGuideUi();
+  syncDevilGuideUi();
+  if (DEBUG_DEVIL_GUIDE) {
+    window.__assMagicDevilGuide = {
+      reset: resetDevilGuideForDebug,
+      summon: () => summonDevilGuide(true),
+      hide: finishDevilGuideConversation
+    };
+  }
+}
 
 function placeCatPreviewAnchor() {
   const startRight = new THREE.Vector3().crossVectors(startUp, state.forward).normalize();
@@ -5023,6 +5491,37 @@ function releaseCameraLook() {
   input.lookId = null;
   input.lookDragging = false;
   state.cameraLensTarget = 0;
+}
+
+function clearFlightInputState() {
+  accelPointers.clear();
+  input.accelHeld = false;
+  input.accelKeyHeld = false;
+  input.leftId = null;
+  input.rightId = null;
+  input.lookId = null;
+  input.lookDragging = false;
+  input.turnX = 0;
+  input.turnY = 0;
+  input.flapQueued = false;
+  input.keyLeftHeld = false;
+  input.keyRightHeld = false;
+  input.keyUpHeld = false;
+  input.keyDownHeld = false;
+  input.arrowLeftHeld = false;
+  input.arrowRightHeld = false;
+  input.arrowUpHeld = false;
+  input.arrowDownHeld = false;
+  input.stickId = null;
+  input.stickOffset.x = 0;
+  input.stickOffset.y = 0;
+  input.stickSmooth.set(0, 0);
+  input.keySmooth.set(0, 0);
+  resetCameraLook(true);
+  refreshAccelHeld();
+  if (stickHandle) {
+    stickHandle.style.transform = 'translate(-50%, -50%)';
+  }
 }
 
 function triggerVerticalLoop() {
@@ -6850,6 +7349,11 @@ function handlePointerDown(e) {
     return;
   }
 
+  if (isDevilGuideInputLocked()) {
+    clearFlightInputState();
+    return;
+  }
+
   startBgmFromGesture();
   maybeEnableAppleTouchEffects();
 
@@ -6890,6 +7394,10 @@ function handlePointerDown(e) {
 
 function handlePointerMove(e) {
   e.preventDefault();
+  if (isDevilGuideInputLocked()) {
+    clearFlightInputState();
+    return;
+  }
   invalidateBackgroundTapCandidate(e.pointerId, e.clientX, e.clientY);
 
   if (e.pointerId === input.lookId) {
@@ -6944,6 +7452,10 @@ function handlePointerMove(e) {
 
 function handlePointerUp(e) {
   e.preventDefault();
+  if (isDevilGuideInputLocked()) {
+    clearFlightInputState();
+    return;
+  }
   const screwTriggered = resolveBackgroundTap(e.pointerId, e.clientX, e.clientY);
   accelPointers.delete(e.pointerId);
   refreshAccelHeld();
@@ -6971,6 +7483,10 @@ function handlePointerUp(e) {
 
 function handleMouseDown(e) {
   if (e.target instanceof Element && e.target.closest('.ui-control')) return;
+  if (isDevilGuideInputLocked()) {
+    clearFlightInputState();
+    return;
+  }
   startBgmFromGesture();
   maybeEnableAppleTouchEffects();
 }
@@ -7510,8 +8026,14 @@ window.addEventListener('keydown', (e) => {
     closeBookOverlay();
     closeBlackBoxOverlay();
     closeMusicSelectorOverlay();
+    closeDevilGuideDialog();
     closeEndingOverlay();
     setSiteMenuOpen(false);
+  }
+  if (DEBUG_DEVIL_GUIDE && e.code === 'KeyD' && e.shiftKey) {
+    e.preventDefault();
+    resetDevilGuideForDebug();
+    return;
   }
   if (e.code === 'KeyC' && e.shiftKey) {
     e.preventDefault();
@@ -7523,6 +8045,10 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.code === 'Space' || e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD' || e.code === 'ArrowUp' || e.code === 'ArrowDown' || e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
     e.preventDefault();
+    if (isDevilGuideInputLocked()) {
+      clearFlightInputState();
+      return;
+    }
     primeEffectAudioFromGesture();
     ensureBgm();
   }
@@ -8790,6 +9316,7 @@ if (DEBUG_SANCTUARY_START) {
 if (PROMO_CAPTURE_MODE) {
   applyPromoPreset('flight');
 }
+initDevilGuide();
 syncEndingPresentation();
 layoutEndingRoll(true);
 
@@ -8804,12 +9331,15 @@ function tick() {
     bookUiState.open ||
     blackBoxUiState.open ||
     musicSelectorState.open ||
+    isDevilGuideGameplayPaused() ||
     endingUiState.open ||
     endingUiState.transitionActive ||
     endingUiState.whiteoutActive;
   if (!gameplayPaused) {
     updatePlayer(dt);
-    checkThemeTriggerCollision(previousFramePlayerPos, state.pos);
+    if (!tryTriggerDevilGuideContact(previousFramePlayerPos, state.pos)) {
+      checkThemeTriggerCollision(previousFramePlayerPos, state.pos);
+    }
     updateBlackBox(dt);
     if (giantRecordPlayerDisc && isBgmEffectivelyPlaying()) {
       giantRecordPlayerDisc.rotation.y += dt * GIANT_RECORD_PLAYER_SPIN_RATE;
@@ -8829,6 +9359,7 @@ function tick() {
     updateSpaceStars(0);
     updateEarthReturn();
   }
+  updateDevilGuide(dt, gameplayPaused || isDevilGuideGameplayPaused());
   updateCatCompanion(dt);
   updateCatRouteBubble(dt);
   updateEndingSequence(dt);
