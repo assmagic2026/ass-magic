@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#84aab0">
+    <title>ASS MAGIC / Realism Study</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main id="stage">
+      <canvas id="scene" aria-label="リアル表現の比較用3Dシーン"></canvas>
+
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">ASS MAGIC / VISUAL STUDY 01</p>
+          <h1>THE GIANT BOOK</h1>
+        </div>
+        <span class="isolation-badge">本番には未接続</span>
+      </header>
+
+      <aside id="perf-hud" class="perf-hud" aria-live="polite"></aside>
+
+      <section class="controls" aria-label="比較設定">
+        <div class="mode-switch" role="group" aria-label="表示モード">
+          <a id="mode-current" href="?mode=current&quality=standard">現行風</a>
+          <a id="mode-realism" href="?mode=realism&quality=standard">リアル試作</a>
+        </div>
+        <div id="quality-switch" class="quality-switch" role="group" aria-label="画質設定">
+          <a data-quality="low" href="?mode=realism&quality=low">軽量</a>
+          <a data-quality="standard" href="?mode=realism&quality=standard">標準</a>
+          <a data-quality="high" href="?mode=realism&quality=high">高画質</a>
+        </div>
+      </section>
+
+      <p class="help">ドラッグで視点移動 / ホイールで距離調整</p>
+      <div class="loading" id="loading">BUILDING THE WORLD</div>
+    </main>
+
+    <script type="module" src="./realism.js"></script>
+  </body>
+</html>
