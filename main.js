@@ -1063,12 +1063,14 @@ const DEVIL_GUIDE_SPAWN_SIDE = -10.0;
 const DEVIL_GUIDE_SPAWN_HEIGHT = 3.1;
 const DEVIL_GUIDE_NOTICE_RADIUS = 38.0;
 const DEVIL_GUIDE_NOTICE_GRACE = 0.65;
-const DEVIL_GUIDE_FLEE_SPEED_GAP = 10.0;
-const DEVIL_GUIDE_FLEE_MIN_SPEED = 28.0;
-const DEVIL_GUIDE_FLEE_MAX_SPEED = 110.0;
+const DEVIL_GUIDE_FLEE_SPEED_GAP = 6.0;
+const DEVIL_GUIDE_FLEE_MIN_SPEED = 32.0;
+const DEVIL_GUIDE_FLEE_MAX_SPEED = 114.0;
 const DEVIL_GUIDE_FLEE_TURN_RESPONSE = 2.8;
+const DEVIL_GUIDE_FLEE_WEAVE_SPEED = 2.15;
+const DEVIL_GUIDE_FLEE_WEAVE_AMOUNT = 0.56;
 const DEVIL_GUIDE_OUT_OF_VIEW_HOLD = 0.75;
-const DEVIL_GUIDE_RESPAWN_DELAY = 1.0;
+const DEVIL_GUIDE_RESPAWN_DELAY = 5.0;
 const DEVIL_GUIDE_CONTACT_RADIUS = 5.2;
 const DEVIL_GUIDE_REARM_EXIT_RADIUS = 8.5;
 const DEVIL_GUIDE_MODEL_SCALE = 1.5;
@@ -2054,6 +2056,7 @@ const devilGuideBasePosition = new THREE.Vector3();
 const devilGuideAwayDirection = new THREE.Vector3();
 const devilGuideDesiredDirection = new THREE.Vector3();
 const devilGuideTravelAxis = new THREE.Vector3();
+const devilGuideEvadeRight = new THREE.Vector3();
 const devilGuideScreenPosition = new THREE.Vector3();
 const updatePlayerPrevForwardScratch = new THREE.Vector3();
 const updatePlayerUpScratch = new THREE.Vector3();
@@ -3627,6 +3630,11 @@ const devilGuideState = {
   waiting: false,
   hasBeenVisible: false,
   outOfViewTime: 0,
+  entrySide: -1,
+  nextEntrySide: -1,
+  lastScreenSide: -1,
+  fleeTime: 0,
+  evadeWave: 0,
   flightForward: new THREE.Vector3(),
   bobTime: 0,
   visible: false,
@@ -3840,24 +3848,31 @@ function createDevilGuideModel() {
   group.visible = false;
 
   const bodyMat = new THREE.MeshLambertMaterial({
-    color: 0x111015,
-    emissive: 0x1f0506,
-    emissiveIntensity: 0.38,
+    color: 0x7b1118,
+    emissive: 0x320306,
+    emissiveIntensity: 0.42,
     flatShading: true
   });
   const bellyMat = new THREE.MeshLambertMaterial({
-    color: 0x24161b,
-    emissive: 0x2a0708,
-    emissiveIntensity: 0.2,
-    flatShading: true
-  });
-  const hornMat = new THREE.MeshBasicMaterial({ color: 0xff2c22, toneMapped: false });
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffefe2, toneMapped: false });
-  const wingMat = new THREE.MeshLambertMaterial({
-    color: 0x050509,
-    emissive: 0x160004,
+    color: 0x31070b,
+    emissive: 0x240103,
     emissiveIntensity: 0.28,
     flatShading: true
+  });
+  const hornMat = new THREE.MeshLambertMaterial({
+    color: 0x13080a,
+    emissive: 0x120001,
+    emissiveIntensity: 0.3,
+    flatShading: true
+  });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffc21a, toneMapped: false });
+  const fangMat = new THREE.MeshBasicMaterial({ color: 0xffead8, toneMapped: false });
+  const wingMat = new THREE.MeshLambertMaterial({
+    color: 0x29070d,
+    emissive: 0x250104,
+    emissiveIntensity: 0.36,
+    flatShading: true,
+    side: THREE.DoubleSide
   });
 
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.82, 8, 7), bodyMat);
@@ -3875,26 +3890,68 @@ function createDevilGuideModel() {
   head.position.set(0, 0.88, 0.08);
   group.add(head);
 
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, 0.12);
+  wingShape.lineTo(0.88, 0.62);
+  wingShape.lineTo(0.72, 0.06);
+  wingShape.lineTo(1.18, -0.22);
+  wingShape.lineTo(0.58, -0.2);
+  wingShape.lineTo(0.36, -0.78);
+  wingShape.lineTo(0.04, -0.32);
+  wingShape.closePath();
+  const wingGeometry = new THREE.ShapeGeometry(wingShape, 1);
+  const wingRoots = [];
+
   for (const side of [-1, 1]) {
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 5), hornMat);
-    horn.position.set(side * 0.26, 1.24, 0.04);
-    horn.rotation.z = side * -0.28;
-    group.add(horn);
+    const hornBase = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.58, 5), hornMat);
+    hornBase.position.set(side * 0.28, 1.28, -0.02);
+    hornBase.rotation.z = side * -0.42;
+    group.add(hornBase);
+
+    const hornTip = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.42, 5), hornMat);
+    hornTip.position.set(side * 0.48, 1.55, -0.04);
+    hornTip.rotation.z = side * -0.78;
+    group.add(hornTip);
+
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 4), bodyMat);
+    ear.position.set(side * 0.48, 0.94, 0.02);
+    ear.rotation.z = side * -1.15;
+    group.add(ear);
 
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 4), eyeMat);
-    eye.scale.set(1.25, 0.62, 0.62);
+    eye.scale.set(1.45, 0.52, 0.52);
     eye.position.set(side * 0.16, 0.9, 0.43);
     group.add(eye);
 
-    const wing = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.86, 3), wingMat);
-    wing.scale.set(0.74, 0.32, 1.0);
-    wing.position.set(side * 0.58, 0.18, -0.18);
-    wing.rotation.z = side * -0.9;
-    wing.rotation.y = side * 0.7;
-    group.add(wing);
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.17, 5), fangMat);
+    fang.position.set(side * 0.12, 0.7, 0.47);
+    fang.rotation.z = Math.PI;
+    group.add(fang);
+
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.42, 3, 5), bodyMat);
+    arm.position.set(side * 0.53, 0.05, 0.05);
+    arm.rotation.z = side * -0.72;
+    group.add(arm);
+
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.38, 3, 5), bodyMat);
+    leg.position.set(side * 0.27, -0.66, 0.0);
+    group.add(leg);
+
+    const hoof = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 5), hornMat);
+    hoof.position.set(side * 0.27, -0.98, 0.12);
+    hoof.rotation.x = Math.PI * 0.5;
+    group.add(hoof);
+
+    const wingRoot = new THREE.Group();
+    wingRoot.position.set(side * 0.4, 0.34, -0.24);
+    const wing = new THREE.Mesh(wingGeometry, wingMat);
+    wing.scale.x = side;
+    wingRoot.add(wing);
+    wingRoots.push({ root: wingRoot, side });
+    group.add(wingRoot);
   }
 
-  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.88, 3, 5), hornMat);
+  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.92, 3, 5), bodyMat);
   tail.position.set(0.34, -0.48, -0.42);
   tail.rotation.x = -0.82;
   tail.rotation.z = -0.55;
@@ -3906,6 +3963,7 @@ function createDevilGuideModel() {
   tailTip.rotation.z = -0.55;
   group.add(tailTip);
 
+  group.userData.wingRoots = wingRoots;
   group.scale.setScalar(DEVIL_GUIDE_MODEL_SCALE);
   return group;
 }
@@ -4093,13 +4151,24 @@ function placeDevilGuideAtPlayerOffset(forwardOffset, sideOffset) {
 function startDevilGuideEscape() {
   devilGuideState.fleeing = true;
   devilGuideState.waiting = false;
+  devilGuideState.entrySide = devilGuideState.nextEntrySide;
   devilGuideState.entryTime = DEVIL_GUIDE_ENTRY_DURATION;
   devilGuideState.noticeGrace = 0;
   devilGuideState.hasBeenVisible = false;
   devilGuideState.outOfViewTime = 0;
-  placeDevilGuideAtPlayerOffset(DEVIL_GUIDE_ENTRY_FORWARD, DEVIL_GUIDE_ENTRY_SIDE);
+  devilGuideState.fleeTime = 0;
+  devilGuideState.evadeWave = 0;
+  placeDevilGuideAtPlayerOffset(
+    DEVIL_GUIDE_ENTRY_FORWARD,
+    Math.abs(DEVIL_GUIDE_ENTRY_SIDE) * devilGuideState.entrySide
+  );
   devilGuideState.flightForward.copy(devilGuideRight)
-    .addScaledVector(devilGuideState.anchorUp, -devilGuideRight.dot(devilGuideState.anchorUp))
+    .multiplyScalar(-devilGuideState.entrySide);
+  devilGuideState.flightForward
+    .addScaledVector(
+      devilGuideState.anchorUp,
+      -devilGuideState.flightForward.dot(devilGuideState.anchorUp)
+    )
     .normalize();
   writeBasisQuaternion(
     devilGuideState.model.quaternion,
@@ -4117,9 +4186,14 @@ function updateDevilGuideEscape(dt) {
     const eased = progress * progress * (3 - 2 * progress);
     placeDevilGuideAtPlayerOffset(
       THREE.MathUtils.lerp(DEVIL_GUIDE_ENTRY_FORWARD, DEVIL_GUIDE_SPAWN_DISTANCE, eased),
-      THREE.MathUtils.lerp(DEVIL_GUIDE_ENTRY_SIDE, DEVIL_GUIDE_SPAWN_SIDE, eased)
+      THREE.MathUtils.lerp(
+        Math.abs(DEVIL_GUIDE_ENTRY_SIDE) * devilGuideState.entrySide,
+        Math.abs(DEVIL_GUIDE_SPAWN_SIDE) * devilGuideState.entrySide,
+        eased
+      )
     );
-    devilGuideState.flightForward.copy(devilGuideRight);
+    devilGuideState.flightForward.copy(devilGuideRight)
+      .multiplyScalar(-devilGuideState.entrySide);
     devilGuideState.flightForward.addScaledVector(
       devilGuideState.anchorUp,
       -devilGuideState.anchorUp.dot(devilGuideState.flightForward)
@@ -4134,6 +4208,7 @@ function updateDevilGuideEscape(dt) {
     return;
   }
 
+  devilGuideState.fleeTime += dt;
   devilGuideUp.copy(devilGuideState.anchorPosition).normalize();
   devilGuideAwayDirection.copy(devilGuideState.anchorPosition).sub(state.pos);
   devilGuideAwayDirection.addScaledVector(
@@ -4152,8 +4227,18 @@ function updateDevilGuideEscape(dt) {
   } else {
     devilGuideDesiredDirection.normalize();
   }
-  devilGuideDesiredDirection.multiplyScalar(0.7)
-    .addScaledVector(devilGuideAwayDirection, 0.3)
+  devilGuideEvadeRight.crossVectors(devilGuideUp, devilGuideAwayDirection).normalize();
+  const distanceToPlayer = devilGuideState.anchorPosition.distanceTo(state.pos);
+  const proximity = THREE.MathUtils.clamp(
+    1 - distanceToPlayer / DEVIL_GUIDE_NOTICE_RADIUS,
+    0,
+    1
+  );
+  devilGuideState.evadeWave = Math.sin(devilGuideState.fleeTime * DEVIL_GUIDE_FLEE_WEAVE_SPEED);
+  const weaveAmount = DEVIL_GUIDE_FLEE_WEAVE_AMOUNT * (0.7 + proximity * 0.3);
+  devilGuideDesiredDirection.multiplyScalar(0.38)
+    .addScaledVector(devilGuideAwayDirection, 0.62)
+    .addScaledVector(devilGuideEvadeRight, devilGuideState.evadeWave * weaveAmount)
     .normalize();
   const turnBlend = 1 - Math.exp(-DEVIL_GUIDE_FLEE_TURN_RESPONSE * dt);
   devilGuideState.flightForward.lerp(devilGuideDesiredDirection, turnBlend)
@@ -4182,9 +4267,11 @@ function beginDevilGuideFleeFromPlayer() {
   devilGuideState.waiting = false;
   devilGuideState.fleeing = true;
   devilGuideState.noticeGrace = DEVIL_GUIDE_NOTICE_GRACE;
+  devilGuideState.fleeTime = 0;
+  devilGuideState.evadeWave = 0;
 }
 
-function queueDevilGuideRespawn() {
+function queueDevilGuideRespawn(exitSide = devilGuideState.lastScreenSide) {
   devilGuideState.visible = false;
   devilGuideState.fleeing = false;
   devilGuideState.waiting = false;
@@ -4192,6 +4279,10 @@ function queueDevilGuideRespawn() {
   devilGuideState.noticeGrace = 0;
   devilGuideState.hasBeenVisible = false;
   devilGuideState.outOfViewTime = 0;
+  devilGuideState.nextEntrySide = exitSide >= 0 ? 1 : -1;
+  devilGuideState.lastScreenSide = devilGuideState.nextEntrySide;
+  devilGuideState.fleeTime = 0;
+  devilGuideState.evadeWave = 0;
   devilGuideState.spawnTimer = Math.max(0, DEVIL_GUIDE_SPAWN_DELAY - DEVIL_GUIDE_RESPAWN_DELAY);
   devilGuideState.rearmRequired = false;
   if (devilGuideState.model) {
@@ -4217,12 +4308,18 @@ function updateDevilGuideVisibility(dt) {
   if (inView) {
     devilGuideState.hasBeenVisible = true;
     devilGuideState.outOfViewTime = 0;
+    if (Math.abs(devilGuideScreenPosition.x) > 0.08) {
+      devilGuideState.lastScreenSide = devilGuideScreenPosition.x >= 0 ? 1 : -1;
+    }
     return;
   }
   if (!devilGuideState.hasBeenVisible) return;
   devilGuideState.outOfViewTime += dt;
   if (devilGuideState.outOfViewTime >= DEVIL_GUIDE_OUT_OF_VIEW_HOLD) {
-    queueDevilGuideRespawn();
+    const exitSide = Math.abs(devilGuideScreenPosition.x) > 0.08
+      ? (devilGuideScreenPosition.x >= 0 ? 1 : -1)
+      : devilGuideState.lastScreenSide;
+    queueDevilGuideRespawn(exitSide);
   }
 }
 
@@ -4321,6 +4418,11 @@ function resetDevilGuideForDebug() {
   devilGuideState.waiting = false;
   devilGuideState.hasBeenVisible = false;
   devilGuideState.outOfViewTime = 0;
+  devilGuideState.entrySide = -1;
+  devilGuideState.nextEntrySide = -1;
+  devilGuideState.lastScreenSide = -1;
+  devilGuideState.fleeTime = 0;
+  devilGuideState.evadeWave = 0;
   devilGuideState.visible = false;
   devilGuideState.dismissed = false;
   devilGuideState.banished = false;
@@ -4376,7 +4478,19 @@ function updateDevilGuide(dt, gameplayPaused) {
         devilGuideState.anchorUp
       );
     }
-    devilGuideState.model.rotateZ(Math.sin(devilGuideState.bobTime * 0.74) * 0.08);
+    const wingRoots = devilGuideState.model.userData.wingRoots;
+    if (wingRoots) {
+      const wingFlap = Math.sin(devilGuideState.bobTime * 7.2) * 0.48;
+      for (const wingRoot of wingRoots) {
+        wingRoot.root.rotation.y = wingRoot.side * (0.2 + wingFlap);
+      }
+    }
+    const escapeLean = devilGuideState.fleeing && devilGuideState.entryTime <= 0
+      ? devilGuideState.evadeWave * 0.2
+      : 0;
+    devilGuideState.model.rotateZ(
+      Math.sin(devilGuideState.bobTime * 0.74) * 0.08 + escapeLean
+    );
 
     if (
       devilGuideState.rearmRequired &&
