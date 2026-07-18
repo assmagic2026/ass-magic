@@ -1063,11 +1063,11 @@ const DEVIL_GUIDE_SPAWN_SIDE = -8.0;
 const DEVIL_GUIDE_SPAWN_HEIGHT = 3.1;
 const DEVIL_GUIDE_NOTICE_RADIUS = 38.0;
 const DEVIL_GUIDE_NOTICE_GRACE = 0.65;
-const DEVIL_GUIDE_FLEE_FAST_GAP = 3.0;
-const DEVIL_GUIDE_FLEE_SLOW_GAP = 15.0;
+const DEVIL_GUIDE_FLEE_FAST_GAP = -8.0;
+const DEVIL_GUIDE_FLEE_SLOW_GAP = 12.0;
 const DEVIL_GUIDE_FLEE_SPEED_PULSE = 1.45;
-const DEVIL_GUIDE_FLEE_MIN_SPEED = 26.0;
-const DEVIL_GUIDE_FLEE_MAX_SPEED = 114.0;
+const DEVIL_GUIDE_FLEE_MIN_SPEED = 30.0;
+const DEVIL_GUIDE_FLEE_MAX_SPEED = 128.0;
 const DEVIL_GUIDE_FLEE_TURN_RESPONSE = 2.45;
 const DEVIL_GUIDE_FLEE_WEAVE_SPEED = 1.35;
 const DEVIL_GUIDE_FLEE_WEAVE_AMOUNT = 0.18;
@@ -3853,103 +3853,142 @@ function createDevilGuideModel() {
   group.name = 'DevilGuide';
   group.visible = false;
 
-  const bodyMat = new THREE.MeshLambertMaterial({
-    color: 0x7b1118,
-    emissive: 0x320306,
-    emissiveIntensity: 0.42,
-    flatShading: true
-  });
-  const bellyMat = new THREE.MeshLambertMaterial({
-    color: 0x31070b,
-    emissive: 0x240103,
-    emissiveIntensity: 0.28,
-    flatShading: true
-  });
-  const hornMat = new THREE.MeshLambertMaterial({
-    color: 0x13080a,
-    emissive: 0x120001,
+  const silhouetteMat = new THREE.MeshLambertMaterial({
+    color: 0x09070a,
+    emissive: 0x160004,
     emissiveIntensity: 0.3,
     flatShading: true
   });
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffc21a, toneMapped: false });
-  const fangMat = new THREE.MeshBasicMaterial({ color: 0xffead8, toneMapped: false });
+  const hornMat = new THREE.MeshLambertMaterial({
+    color: 0x020203,
+    emissive: 0x090001,
+    emissiveIntensity: 0.24,
+    flatShading: true
+  });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2b16, toneMapped: false });
   const wingMat = new THREE.MeshLambertMaterial({
-    color: 0x29070d,
-    emissive: 0x250104,
-    emissiveIntensity: 0.36,
+    color: 0x040305,
+    emissive: 0x100002,
+    emissiveIntensity: 0.3,
     flatShading: true,
     side: THREE.DoubleSide
   });
 
-  const body = new THREE.Mesh(new THREE.SphereGeometry(0.82, 8, 7), bodyMat);
-  body.scale.set(0.74, 1.04, 0.58);
-  body.position.y = 0.1;
-  group.add(body);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.24, 1.08, 4, 6), silhouetteMat);
+  torso.scale.set(0.82, 1, 0.56);
+  torso.position.y = 0.28;
+  group.add(torso);
 
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), bellyMat);
-  belly.scale.set(0.88, 1.14, 0.32);
-  belly.position.set(0, -0.03, 0.44);
-  group.add(belly);
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.38, 7, 5), silhouetteMat);
+  shoulders.scale.set(1.38, 0.42, 0.62);
+  shoulders.position.y = 0.82;
+  group.add(shoulders);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.48, 8, 7), bodyMat);
-  head.scale.set(0.88, 0.82, 0.76);
-  head.position.set(0, 0.88, 0.08);
+  const hips = new THREE.Mesh(new THREE.SphereGeometry(0.3, 7, 5), silhouetteMat);
+  hips.scale.set(0.9, 0.56, 0.58);
+  hips.position.y = -0.43;
+  group.add(hips);
+
+  const tatteredWaist = new THREE.Mesh(
+    new THREE.ConeGeometry(0.4, 0.86, 5, 1, true),
+    silhouetteMat
+  );
+  tatteredWaist.position.y = -0.72;
+  group.add(tatteredWaist);
+
+  const neck = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.28, 3, 5), silhouetteMat);
+  neck.position.y = 1.04;
+  group.add(neck);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.29, 7, 6), silhouetteMat);
+  head.scale.set(0.78, 1.08, 0.82);
+  head.position.set(0, 1.34, 0.02);
   group.add(head);
 
   const wingShape = new THREE.Shape();
-  wingShape.moveTo(0, 0.12);
-  wingShape.lineTo(0.88, 0.62);
-  wingShape.lineTo(0.72, 0.06);
-  wingShape.lineTo(1.18, -0.22);
-  wingShape.lineTo(0.58, -0.2);
-  wingShape.lineTo(0.36, -0.78);
-  wingShape.lineTo(0.04, -0.32);
+  wingShape.moveTo(0, 0.08);
+  wingShape.lineTo(0.72, 1.12);
+  wingShape.lineTo(1.42, 1.54);
+  wingShape.lineTo(2.25, 1.48);
+  wingShape.lineTo(1.82, 0.92);
+  wingShape.lineTo(2.5, 0.42);
+  wingShape.lineTo(1.72, 0.2);
+  wingShape.lineTo(2.18, -0.4);
+  wingShape.lineTo(1.28, -0.18);
+  wingShape.lineTo(1.02, -0.92);
+  wingShape.lineTo(0.56, -0.34);
+  wingShape.lineTo(0.14, -0.62);
   wingShape.closePath();
   const wingGeometry = new THREE.ShapeGeometry(wingShape, 1);
   const wingRoots = [];
 
   for (const side of [-1, 1]) {
-    const hornBase = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.58, 5), hornMat);
-    hornBase.position.set(side * 0.28, 1.28, -0.02);
-    hornBase.rotation.z = side * -0.42;
+    const hornBase = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.52, 5), hornMat);
+    hornBase.position.set(side * 0.2, 1.58, -0.02);
+    hornBase.rotation.z = side * -0.68;
     group.add(hornBase);
 
-    const hornTip = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.42, 5), hornMat);
-    hornTip.position.set(side * 0.48, 1.55, -0.04);
-    hornTip.rotation.z = side * -0.78;
+    const hornTip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.42, 5), hornMat);
+    hornTip.position.set(side * 0.42, 1.76, -0.03);
+    hornTip.rotation.z = side * -1.16;
     group.add(hornTip);
 
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 4), bodyMat);
-    ear.position.set(side * 0.48, 0.94, 0.02);
-    ear.rotation.z = side * -1.15;
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.3, 4), silhouetteMat);
+    ear.position.set(side * 0.31, 1.35, 0.0);
+    ear.rotation.z = side * -1.32;
     group.add(ear);
 
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055, 6, 4), eyeMat);
-    eye.scale.set(1.45, 0.52, 0.52);
-    eye.position.set(side * 0.16, 0.9, 0.43);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 5, 3), eyeMat);
+    eye.scale.set(1.7, 0.48, 0.48);
+    eye.position.set(side * 0.095, 1.36, 0.245);
     group.add(eye);
 
-    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.17, 5), fangMat);
-    fang.position.set(side * 0.12, 0.7, 0.47);
-    fang.rotation.z = Math.PI;
-    group.add(fang);
+    const upperArm = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.075, 0.64, 3, 5),
+      silhouetteMat
+    );
+    upperArm.position.set(side * 0.43, 0.48, 0.0);
+    upperArm.rotation.z = side * 0.42;
+    group.add(upperArm);
 
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.42, 3, 5), bodyMat);
-    arm.position.set(side * 0.53, 0.05, 0.05);
-    arm.rotation.z = side * -0.72;
-    group.add(arm);
+    const forearm = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.058, 0.74, 3, 5),
+      silhouetteMat
+    );
+    forearm.position.set(side * 0.62, -0.08, 0.02);
+    forearm.rotation.z = side * 0.18;
+    group.add(forearm);
 
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.38, 3, 5), bodyMat);
-    leg.position.set(side * 0.27, -0.66, 0.0);
-    group.add(leg);
+    for (let clawIndex = -1; clawIndex <= 1; clawIndex += 1) {
+      const claw = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.27, 4), hornMat);
+      claw.position.set(side * (0.67 + clawIndex * 0.035), -0.63, 0.02 + clawIndex * 0.035);
+      claw.rotation.z = side * 0.16;
+      group.add(claw);
+    }
 
-    const hoof = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 5), hornMat);
-    hoof.position.set(side * 0.27, -0.98, 0.12);
-    hoof.rotation.x = Math.PI * 0.5;
-    group.add(hoof);
+    const upperLeg = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.1, 0.7, 3, 5),
+      silhouetteMat
+    );
+    upperLeg.position.set(side * 0.2, -0.95, 0.0);
+    upperLeg.rotation.z = side * -0.16;
+    group.add(upperLeg);
+
+    const lowerLeg = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.072, 0.72, 3, 5),
+      silhouetteMat
+    );
+    lowerLeg.position.set(side * 0.3, -1.55, 0.02);
+    lowerLeg.rotation.z = side * 0.2;
+    group.add(lowerLeg);
+
+    const talon = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.4, 5), hornMat);
+    talon.position.set(side * 0.33, -2.03, 0.12);
+    talon.rotation.x = Math.PI * 0.5;
+    group.add(talon);
 
     const wingRoot = new THREE.Group();
-    wingRoot.position.set(side * 0.4, 0.34, -0.24);
+    wingRoot.position.set(side * 0.28, 0.88, -0.18);
     const wing = new THREE.Mesh(wingGeometry, wingMat);
     wing.scale.x = side;
     wingRoot.add(wing);
@@ -3957,16 +3996,18 @@ function createDevilGuideModel() {
     group.add(wingRoot);
   }
 
-  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.052, 0.92, 3, 5), bodyMat);
-  tail.position.set(0.34, -0.48, -0.42);
-  tail.rotation.x = -0.82;
-  tail.rotation.z = -0.55;
+  const tailCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0.06, -0.52, -0.2),
+    new THREE.Vector3(0.72, -0.82, -0.42),
+    new THREE.Vector3(1.05, -0.28, -0.62),
+    new THREE.Vector3(0.78, 0.22, -0.72)
+  ]);
+  const tail = new THREE.Mesh(new THREE.TubeGeometry(tailCurve, 12, 0.035, 4, false), silhouetteMat);
   group.add(tail);
 
-  const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.24, 3), hornMat);
-  tailTip.position.set(0.62, -0.78, -0.72);
-  tailTip.rotation.x = -0.9;
-  tailTip.rotation.z = -0.55;
+  const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.3, 3), hornMat);
+  tailTip.position.set(0.79, 0.3, -0.73);
+  tailTip.rotation.z = -0.42;
   group.add(tailTip);
 
   group.userData.wingRoots = wingRoots;
@@ -4392,11 +4433,11 @@ function updateDevilGuideShadow() {
   devilGuideUp.copy(devilGuideState.anchorPosition).normalize();
   const groundRadius = getSurfaceRadius(devilGuideUp) + 0.06;
   const altitude = Math.max(0, devilGuideState.anchorPosition.length() - groundRadius);
-  const shadowScale = THREE.MathUtils.clamp(1.42 - altitude * 0.12, 0.42, 1.18);
+  const shadowScale = THREE.MathUtils.clamp(2.35 - altitude * 0.16, 0.62, 2.0);
   devilShadow.visible = true;
   devilShadow.position.copy(devilGuideUp).multiplyScalar(groundRadius);
   devilShadow.quaternion.setFromUnitVectors(FORWARD_AXIS, devilGuideUp);
-  devilShadow.scale.set(shadowScale * 1.25, shadowScale * 0.82, 1);
+  devilShadow.scale.set(shadowScale * 1.4, shadowScale * 0.72, 1);
   devilShadow.material.opacity = THREE.MathUtils.clamp(0.22 - altitude * 0.025, 0.04, 0.18);
 }
 
