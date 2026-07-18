@@ -3889,9 +3889,9 @@ function createDevilGuideModel() {
 
   const spinePoints = [
     new THREE.Vector3(0, -0.38, 0),
-    new THREE.Vector3(0, 0.0, 0.02),
-    new THREE.Vector3(0, 0.38, 0.14),
-    new THREE.Vector3(0, 0.7, 0.4)
+    new THREE.Vector3(0, 0.0, 0.04),
+    new THREE.Vector3(0, 0.34, 0.24),
+    new THREE.Vector3(0, 0.62, 0.62)
   ];
   addBodySegment(spinePoints[0], spinePoints[1], 0.19);
   addBodySegment(spinePoints[1], spinePoints[2], 0.205);
@@ -3899,7 +3899,7 @@ function createDevilGuideModel() {
 
   const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.38, 7, 5), silhouetteMat);
   shoulders.scale.set(1.38, 0.42, 0.62);
-  shoulders.position.set(0, 0.7, 0.4);
+  shoulders.position.set(0, 0.62, 0.62);
   group.add(shoulders);
 
   const hips = new THREE.Mesh(new THREE.SphereGeometry(0.3, 7, 5), silhouetteMat);
@@ -3915,15 +3915,15 @@ function createDevilGuideModel() {
   group.add(tatteredWaist);
 
   addBodySegment(
-    new THREE.Vector3(0, 0.72, 0.42),
-    new THREE.Vector3(0, 0.96, 0.66),
+    new THREE.Vector3(0, 0.64, 0.64),
+    new THREE.Vector3(0, 0.78, 0.9),
     0.105
   );
 
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.29, 7, 6), silhouetteMat);
   head.scale.set(0.78, 1.08, 0.82);
-  head.position.set(0, 1.08, 0.79);
-  head.rotation.x = 0.18;
+  head.position.set(0, 0.88, 1.05);
+  head.rotation.x = 0.52;
   group.add(head);
 
   const wingShape = new THREE.Shape();
@@ -3945,31 +3945,31 @@ function createDevilGuideModel() {
 
   for (const side of [-1, 1]) {
     const hornBase = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.52, 5), hornMat);
-    hornBase.position.set(side * 0.2, 1.3, 0.7);
+    hornBase.position.set(side * 0.2, 1.07, 0.96);
     hornBase.rotation.x = 0.24;
     hornBase.rotation.z = side * -0.68;
     group.add(hornBase);
 
     const hornTip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.42, 5), hornMat);
-    hornTip.position.set(side * 0.42, 1.45, 0.7);
+    hornTip.position.set(side * 0.42, 1.19, 0.97);
     hornTip.rotation.x = 0.24;
     hornTip.rotation.z = side * -1.16;
     group.add(hornTip);
 
     const ear = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.3, 4), silhouetteMat);
-    ear.position.set(side * 0.31, 1.08, 0.76);
+    ear.position.set(side * 0.31, 0.9, 1.02);
     ear.rotation.x = 0.24;
     ear.rotation.z = side * -1.32;
     group.add(ear);
 
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 5, 3), eyeMat);
     eye.scale.set(1.7, 0.48, 0.48);
-    eye.position.set(side * 0.095, 1.07, 1.03);
+    eye.position.set(side * 0.095, 0.84, 1.3);
     group.add(eye);
 
-    const shoulderPoint = new THREE.Vector3(side * 0.4, 0.66, 0.4);
-    const elbowPoint = new THREE.Vector3(side * 0.7, 0.14, 0.5);
-    const wristPoint = new THREE.Vector3(side * 0.54, -0.38, 0.82);
+    const shoulderPoint = new THREE.Vector3(side * 0.4, 0.58, 0.62);
+    const elbowPoint = new THREE.Vector3(side * 0.7, 0.08, 0.72);
+    const wristPoint = new THREE.Vector3(side * 0.54, -0.4, 1.0);
     addBodySegment(shoulderPoint, elbowPoint, 0.075);
     addBodySegment(elbowPoint, wristPoint, 0.058);
     const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.085, 6, 4), silhouetteMat);
@@ -3981,7 +3981,7 @@ function createDevilGuideModel() {
       claw.position.set(
         side * (0.54 + clawIndex * 0.035),
         -0.53,
-        0.88 + clawIndex * 0.035
+        1.06 + clawIndex * 0.035
       );
       claw.rotation.x = -0.45;
       claw.rotation.z = side * 0.1;
@@ -4003,8 +4003,8 @@ function createDevilGuideModel() {
     group.add(talon);
 
     const wingRoot = new THREE.Group();
-    wingRoot.position.set(side * 0.28, 0.68, 0.26);
-    wingRoot.rotation.x = 0.34;
+    wingRoot.position.set(side * 0.28, 0.58, 0.48);
+    wingRoot.rotation.x = 0.48;
     const wing = new THREE.Mesh(wingGeometry, wingMat);
     wing.scale.x = side;
     wingRoot.add(wing);
