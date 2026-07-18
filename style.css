@@ -1124,6 +1124,60 @@ body.is-promo-mode #camera-capture {
   align-items: center;
   justify-content: center;
 }
+#devil-guide-navigation {
+  position: fixed;
+  left: 50%;
+  top: 58px;
+  z-index: 21;
+  display: none;
+  align-items: center;
+  gap: 14px;
+  transform: translateX(-50%);
+  min-width: min(360px, calc(100vw - 28px));
+  padding: 10px 10px 10px 16px;
+  border: 1px solid rgba(255, 92, 67, 0.2);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(31, 10, 12, 0.88), rgba(7, 7, 10, 0.9));
+  box-shadow: 0 12px 34px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.07);
+  color: #fff8f2;
+}
+#devil-guide-navigation.is-visible {
+  display: flex;
+}
+.devil-guide-navigation-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.devil-guide-navigation-text span {
+  color: rgba(255, 92, 67, 0.72);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+}
+.devil-guide-navigation-text strong {
+  overflow: hidden;
+  color: rgba(255, 248, 242, 0.92);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#devil-guide-navigation button {
+  flex: 0 0 auto;
+  padding: 8px 13px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.07);
+  color: rgba(255, 248, 242, 0.82);
+}
+body.devil-guide-navigating #speed-lock-panel,
+body.devil-guide-navigating #stick-area {
+  pointer-events: none;
+  opacity: 0.42;
+}
 #music-selector-overlay {
   position: fixed;
   inset: 0;
@@ -2083,6 +2137,19 @@ body.is-promo-mode #camera-capture {
     bottom: 56px;
     min-width: 112px;
     padding: 10px 12px;
+    font-size: 12px;
+  }
+  #devil-guide-navigation {
+    top: 54px;
+    min-width: calc(100vw - 20px);
+    gap: 10px;
+    padding: 9px 9px 9px 13px;
+  }
+  .devil-guide-navigation-text strong {
+    font-size: 11px;
+  }
+  #devil-guide-navigation button {
+    padding: 8px 11px;
     font-size: 12px;
   }
   #capture-panel {
