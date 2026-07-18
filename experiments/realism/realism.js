@@ -263,8 +263,9 @@ function createCurrentLikeBook() {
     group.add(cover);
   }
 
-  group.position.set(-1.2, 0.1, -0.5);
-  group.rotation.y = -0.32;
+  group.position.set(-1.2, 5.4, -0.8);
+  group.rotation.order = "YXZ";
+  group.rotation.set(Math.PI / 2 - 0.08, 0.34, -0.035);
   return group;
 }
 
@@ -356,14 +357,17 @@ function createRealisticBook() {
   sigil.position.set(0.6, 2.82, -0.2);
   group.add(sigil);
 
-  group.position.set(-1.2, 0.05, -0.5);
-  group.rotation.y = -0.32;
+  const root = new THREE.Group();
+  group.position.set(-1.2, 5.45, -0.8);
+  group.rotation.order = "YXZ";
+  group.rotation.set(Math.PI / 2 - 0.08, 0.34, -0.035);
+  root.add(group);
 
   if (settings.preset.shadowSize === 0) {
-    group.add(createFakeBookShadow());
+    root.add(createFakeBookShadow());
   }
 
-  return group;
+  return root;
 }
 
 function createRoundedSlabGeometry(width, depth, thickness, radius) {
@@ -462,9 +466,10 @@ function createFakeBookShadow() {
     depthWrite: false,
     opacity: 0.62,
   });
-  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(27, 18), material);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(21, 7.5), material);
   shadow.rotation.x = -Math.PI / 2;
-  shadow.position.set(1.1, 0.02, 0.6);
+  shadow.rotation.z = 0.34;
+  shadow.position.set(-1.2, -0.16, 0.2);
   return shadow;
 }
 
