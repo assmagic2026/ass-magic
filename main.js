@@ -1055,16 +1055,20 @@ const CAT_ROUTE_COMPANION_SCALE = 0.1512;
 const CAT_ROUTE_MOUNT_OFFSET = new THREE.Vector3(0.34, 0.02, 0.12);
 const DEVIL_GUIDE_STORAGE_KEY = 'ass-magic-devil-guide-v1';
 const DEVIL_GUIDE_SPAWN_DELAY = 5.0;
-const DEVIL_GUIDE_ENTRY_DURATION = 1.35;
-const DEVIL_GUIDE_ENTRY_FORWARD = 10.0;
-const DEVIL_GUIDE_ENTRY_SIDE = -34.0;
-const DEVIL_GUIDE_SPAWN_DISTANCE = 24.0;
-const DEVIL_GUIDE_SPAWN_SIDE = -3.0;
+const DEVIL_GUIDE_ENTRY_DURATION = 1.6;
+const DEVIL_GUIDE_ENTRY_FORWARD = 48.0;
+const DEVIL_GUIDE_ENTRY_SIDE = -52.0;
+const DEVIL_GUIDE_SPAWN_DISTANCE = 52.0;
+const DEVIL_GUIDE_SPAWN_SIDE = -10.0;
 const DEVIL_GUIDE_SPAWN_HEIGHT = 3.1;
+const DEVIL_GUIDE_NOTICE_RADIUS = 38.0;
+const DEVIL_GUIDE_NOTICE_GRACE = 0.65;
 const DEVIL_GUIDE_FLEE_SPEED_GAP = 10.0;
 const DEVIL_GUIDE_FLEE_MIN_SPEED = 28.0;
 const DEVIL_GUIDE_FLEE_MAX_SPEED = 110.0;
-const DEVIL_GUIDE_FLEE_TURN_RESPONSE = 1.6;
+const DEVIL_GUIDE_FLEE_TURN_RESPONSE = 2.8;
+const DEVIL_GUIDE_OUT_OF_VIEW_HOLD = 0.75;
+const DEVIL_GUIDE_RESPAWN_DELAY = 1.0;
 const DEVIL_GUIDE_CONTACT_RADIUS = 5.2;
 const DEVIL_GUIDE_REARM_EXIT_RADIUS = 8.5;
 const DEVIL_GUIDE_MODEL_SCALE = 1.5;
@@ -2047,10 +2051,10 @@ const devilGuideUp = new THREE.Vector3();
 const devilGuideRight = new THREE.Vector3();
 const devilGuideFaceDirection = new THREE.Vector3();
 const devilGuideBasePosition = new THREE.Vector3();
-const devilGuidePreviousPosition = new THREE.Vector3();
 const devilGuideAwayDirection = new THREE.Vector3();
 const devilGuideDesiredDirection = new THREE.Vector3();
 const devilGuideTravelAxis = new THREE.Vector3();
+const devilGuideScreenPosition = new THREE.Vector3();
 const updatePlayerPrevForwardScratch = new THREE.Vector3();
 const updatePlayerUpScratch = new THREE.Vector3();
 const updatePlayerRightScratch = new THREE.Vector3();
@@ -3617,8 +3621,12 @@ const devilGuideState = {
   ui: null,
   spawnTimer: 0,
   entryTime: 0,
+  noticeGrace: 0,
   flightRadius: 0,
   fleeing: false,
+  waiting: false,
+  hasBeenVisible: false,
+  outOfViewTime: 0,
   flightForward: new THREE.Vector3(),
   bobTime: 0,
   visible: false,
@@ -4084,10 +4092,14 @@ function placeDevilGuideAtPlayerOffset(forwardOffset, sideOffset) {
 
 function startDevilGuideEscape() {
   devilGuideState.fleeing = true;
+  devilGuideState.waiting = false;
   devilGuideState.entryTime = DEVIL_GUIDE_ENTRY_DURATION;
+  devilGuideState.noticeGrace = 0;
+  devilGuideState.hasBeenVisible = false;
+  devilGuideState.outOfViewTime = 0;
   placeDevilGuideAtPlayerOffset(DEVIL_GUIDE_ENTRY_FORWARD, DEVIL_GUIDE_ENTRY_SIDE);
-  devilGuideState.flightForward.copy(state.forward)
-    .addScaledVector(devilGuideState.anchorUp, -state.forward.dot(devilGuideState.anchorUp))
+  devilGuideState.flightForward.copy(devilGuideRight)
+    .addScaledVector(devilGuideState.anchorUp, -devilGuideRight.dot(devilGuideState.anchorUp))
     .normalize();
   writeBasisQuaternion(
     devilGuideState.model.quaternion,
@@ -4100,7 +4112,6 @@ function updateDevilGuideEscape(dt) {
   if (!devilGuideState.model || !devilGuideState.fleeing) return;
 
   if (devilGuideState.entryTime > 0) {
-    devilGuidePreviousPosition.copy(devilGuideState.anchorPosition);
     devilGuideState.entryTime = Math.max(0, devilGuideState.entryTime - dt);
     const progress = 1 - devilGuideState.entryTime / DEVIL_GUIDE_ENTRY_DURATION;
     const eased = progress * progress * (3 - 2 * progress);
@@ -4108,14 +4119,17 @@ function updateDevilGuideEscape(dt) {
       THREE.MathUtils.lerp(DEVIL_GUIDE_ENTRY_FORWARD, DEVIL_GUIDE_SPAWN_DISTANCE, eased),
       THREE.MathUtils.lerp(DEVIL_GUIDE_ENTRY_SIDE, DEVIL_GUIDE_SPAWN_SIDE, eased)
     );
-    devilGuideDesiredDirection.copy(devilGuideState.anchorPosition)
-      .sub(devilGuidePreviousPosition);
-    devilGuideDesiredDirection.addScaledVector(
+    devilGuideState.flightForward.copy(devilGuideRight);
+    devilGuideState.flightForward.addScaledVector(
       devilGuideState.anchorUp,
-      -devilGuideState.anchorUp.dot(devilGuideDesiredDirection)
+      -devilGuideState.anchorUp.dot(devilGuideState.flightForward)
     );
-    if (devilGuideDesiredDirection.lengthSq() > 0.0001) {
-      devilGuideState.flightForward.copy(devilGuideDesiredDirection).normalize();
+    if (devilGuideState.flightForward.lengthSq() > 0.0001) {
+      devilGuideState.flightForward.normalize();
+    }
+    if (devilGuideState.entryTime <= 0) {
+      devilGuideState.fleeing = false;
+      devilGuideState.waiting = true;
     }
     return;
   }
@@ -4164,6 +4178,54 @@ function updateDevilGuideEscape(dt) {
   devilGuideState.anchorPosition.copy(devilGuideUp).multiplyScalar(devilGuideState.flightRadius);
 }
 
+function beginDevilGuideFleeFromPlayer() {
+  devilGuideState.waiting = false;
+  devilGuideState.fleeing = true;
+  devilGuideState.noticeGrace = DEVIL_GUIDE_NOTICE_GRACE;
+}
+
+function queueDevilGuideRespawn() {
+  devilGuideState.visible = false;
+  devilGuideState.fleeing = false;
+  devilGuideState.waiting = false;
+  devilGuideState.entryTime = 0;
+  devilGuideState.noticeGrace = 0;
+  devilGuideState.hasBeenVisible = false;
+  devilGuideState.outOfViewTime = 0;
+  devilGuideState.spawnTimer = Math.max(0, DEVIL_GUIDE_SPAWN_DELAY - DEVIL_GUIDE_RESPAWN_DELAY);
+  devilGuideState.rearmRequired = false;
+  if (devilGuideState.model) {
+    devilGuideState.model.visible = false;
+  }
+}
+
+function updateDevilGuideVisibility(dt) {
+  if (
+    !devilGuideState.model ||
+    !devilGuideState.visible ||
+    devilGuideState.dialogOpen
+  ) {
+    return;
+  }
+  camera.updateMatrixWorld();
+  devilGuideScreenPosition.copy(devilGuideState.model.position).project(camera);
+  const inView =
+    devilGuideScreenPosition.z >= -1 &&
+    devilGuideScreenPosition.z <= 1 &&
+    Math.abs(devilGuideScreenPosition.x) <= 1.08 &&
+    Math.abs(devilGuideScreenPosition.y) <= 1.08;
+  if (inView) {
+    devilGuideState.hasBeenVisible = true;
+    devilGuideState.outOfViewTime = 0;
+    return;
+  }
+  if (!devilGuideState.hasBeenVisible) return;
+  devilGuideState.outOfViewTime += dt;
+  if (devilGuideState.outOfViewTime >= DEVIL_GUIDE_OUT_OF_VIEW_HOLD) {
+    queueDevilGuideRespawn();
+  }
+}
+
 function faceDevilGuideToPlayer() {
   if (!devilGuideState.model) return;
   devilGuideFaceDirection.copy(state.pos).sub(devilGuideState.model.position);
@@ -4178,7 +4240,11 @@ function summonDevilGuide(openDialog = false) {
   if (!DEVIL_GUIDE_ENABLED || devilGuideState.banished || !devilGuideState.model) return;
   devilGuideState.visible = true;
   devilGuideState.entryTime = 0;
+  devilGuideState.noticeGrace = 0;
   devilGuideState.fleeing = false;
+  devilGuideState.waiting = false;
+  devilGuideState.hasBeenVisible = false;
+  devilGuideState.outOfViewTime = 0;
   devilGuideState.dismissed = false;
   devilGuideState.summonVisible = false;
   devilGuideState.rearmRequired = false;
@@ -4196,7 +4262,9 @@ function openDevilGuideDialog() {
   if (!DEVIL_GUIDE_ENABLED || devilGuideState.banished || !devilGuideState.ui) return;
   clearFlightInputState();
   devilGuideState.fleeing = false;
+  devilGuideState.waiting = false;
   devilGuideState.entryTime = 0;
+  devilGuideState.noticeGrace = 0;
   devilGuideState.view = 'question';
   devilGuideState.dialogOpen = true;
   devilGuideState.lockActive = true;
@@ -4248,7 +4316,11 @@ function resetDevilGuideForDebug() {
   closeDevilGuideDialog();
   devilGuideState.spawnTimer = 0;
   devilGuideState.entryTime = 0;
+  devilGuideState.noticeGrace = 0;
   devilGuideState.fleeing = false;
+  devilGuideState.waiting = false;
+  devilGuideState.hasBeenVisible = false;
+  devilGuideState.outOfViewTime = 0;
   devilGuideState.visible = false;
   devilGuideState.dismissed = false;
   devilGuideState.banished = false;
@@ -4279,13 +4351,23 @@ function updateDevilGuide(dt, gameplayPaused) {
   }
 
   if (devilGuideState.visible) {
+    if (
+      devilGuideState.waiting &&
+      !gameplayPaused &&
+      state.pos.distanceToSquared(devilGuideState.anchorPosition) <= DEVIL_GUIDE_NOTICE_RADIUS * DEVIL_GUIDE_NOTICE_RADIUS
+    ) {
+      beginDevilGuideFleeFromPlayer();
+    }
     if (devilGuideState.fleeing && !gameplayPaused) {
       updateDevilGuideEscape(dt);
+    }
+    if (devilGuideState.noticeGrace > 0 && !gameplayPaused) {
+      devilGuideState.noticeGrace = Math.max(0, devilGuideState.noticeGrace - dt);
     }
     devilGuideState.bobTime += dt * DEVIL_GUIDE_BOB_SPEED;
     devilGuideState.model.position.copy(devilGuideState.anchorPosition)
       .addScaledVector(devilGuideState.anchorUp, Math.sin(devilGuideState.bobTime) * DEVIL_GUIDE_BOB_AMOUNT);
-    if (devilGuideState.dialogOpen || !devilGuideState.fleeing) {
+    if (devilGuideState.dialogOpen || (!devilGuideState.fleeing && !devilGuideState.waiting)) {
       faceDevilGuideToPlayer();
     } else {
       writeBasisQuaternion(
@@ -4302,6 +4384,9 @@ function updateDevilGuide(dt, gameplayPaused) {
     ) {
       devilGuideState.rearmRequired = false;
     }
+    if (!gameplayPaused) {
+      updateDevilGuideVisibility(dt);
+    }
   }
 }
 
@@ -4312,6 +4397,8 @@ function tryTriggerDevilGuideContact(start, end) {
     devilGuideState.dialogOpen ||
     devilGuideState.rearmRequired ||
     devilGuideState.entryTime > 0 ||
+    devilGuideState.waiting ||
+    devilGuideState.noticeGrace > 0 ||
     devilGuideState.banished ||
     !devilGuideState.model
   ) {
