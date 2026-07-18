@@ -1055,10 +1055,16 @@ const CAT_ROUTE_COMPANION_SCALE = 0.1512;
 const CAT_ROUTE_MOUNT_OFFSET = new THREE.Vector3(0.34, 0.02, 0.12);
 const DEVIL_GUIDE_STORAGE_KEY = 'ass-magic-devil-guide-v1';
 const DEVIL_GUIDE_SPAWN_DELAY = 5.0;
-const DEVIL_GUIDE_CHASE_DURATION = 3.2;
-const DEVIL_GUIDE_SPAWN_DISTANCE = 14.0;
-const DEVIL_GUIDE_SPAWN_SIDE = -2.2;
+const DEVIL_GUIDE_ENTRY_DURATION = 1.35;
+const DEVIL_GUIDE_ENTRY_FORWARD = 10.0;
+const DEVIL_GUIDE_ENTRY_SIDE = -34.0;
+const DEVIL_GUIDE_SPAWN_DISTANCE = 24.0;
+const DEVIL_GUIDE_SPAWN_SIDE = -3.0;
 const DEVIL_GUIDE_SPAWN_HEIGHT = 3.1;
+const DEVIL_GUIDE_FLEE_SPEED_GAP = 10.0;
+const DEVIL_GUIDE_FLEE_MIN_SPEED = 28.0;
+const DEVIL_GUIDE_FLEE_MAX_SPEED = 110.0;
+const DEVIL_GUIDE_FLEE_TURN_RESPONSE = 1.6;
 const DEVIL_GUIDE_CONTACT_RADIUS = 5.2;
 const DEVIL_GUIDE_REARM_EXIT_RADIUS = 8.5;
 const DEVIL_GUIDE_MODEL_SCALE = 1.5;
@@ -2041,6 +2047,10 @@ const devilGuideUp = new THREE.Vector3();
 const devilGuideRight = new THREE.Vector3();
 const devilGuideFaceDirection = new THREE.Vector3();
 const devilGuideBasePosition = new THREE.Vector3();
+const devilGuidePreviousPosition = new THREE.Vector3();
+const devilGuideAwayDirection = new THREE.Vector3();
+const devilGuideDesiredDirection = new THREE.Vector3();
+const devilGuideTravelAxis = new THREE.Vector3();
 const updatePlayerPrevForwardScratch = new THREE.Vector3();
 const updatePlayerUpScratch = new THREE.Vector3();
 const updatePlayerRightScratch = new THREE.Vector3();
@@ -3606,7 +3616,10 @@ const devilGuideState = {
   model: null,
   ui: null,
   spawnTimer: 0,
-  chaseTime: 0,
+  entryTime: 0,
+  flightRadius: 0,
+  fleeing: false,
+  flightForward: new THREE.Vector3(),
   bobTime: 0,
   visible: false,
   dialogOpen: false,
@@ -4046,6 +4059,111 @@ function positionDevilGuideNearPlayer() {
   faceDevilGuideToPlayer();
 }
 
+function placeDevilGuideAtPlayerOffset(forwardOffset, sideOffset) {
+  if (!devilGuideState.model) return;
+  devilGuideUp.copy(state.pos).normalize();
+  devilGuideFaceDirection.copy(state.forward)
+    .addScaledVector(devilGuideUp, -state.forward.dot(devilGuideUp));
+  if (devilGuideFaceDirection.lengthSq() < 0.0001) {
+    devilGuideFaceDirection.set(0, 0, 1)
+      .addScaledVector(devilGuideUp, -devilGuideUp.z);
+  }
+  devilGuideFaceDirection.normalize();
+  devilGuideRight.crossVectors(devilGuideUp, devilGuideFaceDirection).normalize();
+  const radius = state.pos.length() + DEVIL_GUIDE_SPAWN_HEIGHT;
+  devilGuideBasePosition.copy(devilGuideUp).multiplyScalar(radius)
+    .addScaledVector(devilGuideFaceDirection, forwardOffset)
+    .addScaledVector(devilGuideRight, sideOffset)
+    .normalize()
+    .multiplyScalar(radius);
+  devilGuideState.anchorPosition.copy(devilGuideBasePosition);
+  devilGuideState.anchorUp.copy(devilGuideBasePosition).normalize();
+  devilGuideState.flightRadius = radius;
+  devilGuideState.model.position.copy(devilGuideBasePosition);
+}
+
+function startDevilGuideEscape() {
+  devilGuideState.fleeing = true;
+  devilGuideState.entryTime = DEVIL_GUIDE_ENTRY_DURATION;
+  placeDevilGuideAtPlayerOffset(DEVIL_GUIDE_ENTRY_FORWARD, DEVIL_GUIDE_ENTRY_SIDE);
+  devilGuideState.flightForward.copy(state.forward)
+    .addScaledVector(devilGuideState.anchorUp, -state.forward.dot(devilGuideState.anchorUp))
+    .normalize();
+  writeBasisQuaternion(
+    devilGuideState.model.quaternion,
+    devilGuideState.flightForward,
+    devilGuideState.anchorUp
+  );
+}
+
+function updateDevilGuideEscape(dt) {
+  if (!devilGuideState.model || !devilGuideState.fleeing) return;
+
+  if (devilGuideState.entryTime > 0) {
+    devilGuidePreviousPosition.copy(devilGuideState.anchorPosition);
+    devilGuideState.entryTime = Math.max(0, devilGuideState.entryTime - dt);
+    const progress = 1 - devilGuideState.entryTime / DEVIL_GUIDE_ENTRY_DURATION;
+    const eased = progress * progress * (3 - 2 * progress);
+    placeDevilGuideAtPlayerOffset(
+      THREE.MathUtils.lerp(DEVIL_GUIDE_ENTRY_FORWARD, DEVIL_GUIDE_SPAWN_DISTANCE, eased),
+      THREE.MathUtils.lerp(DEVIL_GUIDE_ENTRY_SIDE, DEVIL_GUIDE_SPAWN_SIDE, eased)
+    );
+    devilGuideDesiredDirection.copy(devilGuideState.anchorPosition)
+      .sub(devilGuidePreviousPosition);
+    devilGuideDesiredDirection.addScaledVector(
+      devilGuideState.anchorUp,
+      -devilGuideState.anchorUp.dot(devilGuideDesiredDirection)
+    );
+    if (devilGuideDesiredDirection.lengthSq() > 0.0001) {
+      devilGuideState.flightForward.copy(devilGuideDesiredDirection).normalize();
+    }
+    return;
+  }
+
+  devilGuideUp.copy(devilGuideState.anchorPosition).normalize();
+  devilGuideAwayDirection.copy(devilGuideState.anchorPosition).sub(state.pos);
+  devilGuideAwayDirection.addScaledVector(
+    devilGuideUp,
+    -devilGuideUp.dot(devilGuideAwayDirection)
+  );
+  if (devilGuideAwayDirection.lengthSq() < 0.0001) {
+    devilGuideAwayDirection.copy(devilGuideState.flightForward);
+  } else {
+    devilGuideAwayDirection.normalize();
+  }
+  devilGuideDesiredDirection.copy(state.forward)
+    .addScaledVector(devilGuideUp, -state.forward.dot(devilGuideUp));
+  if (devilGuideDesiredDirection.lengthSq() < 0.0001) {
+    devilGuideDesiredDirection.copy(devilGuideState.flightForward);
+  } else {
+    devilGuideDesiredDirection.normalize();
+  }
+  devilGuideDesiredDirection.multiplyScalar(0.7)
+    .addScaledVector(devilGuideAwayDirection, 0.3)
+    .normalize();
+  const turnBlend = 1 - Math.exp(-DEVIL_GUIDE_FLEE_TURN_RESPONSE * dt);
+  devilGuideState.flightForward.lerp(devilGuideDesiredDirection, turnBlend)
+    .addScaledVector(devilGuideUp, -devilGuideState.flightForward.dot(devilGuideUp))
+    .normalize();
+  devilGuideTravelAxis.crossVectors(devilGuideUp, devilGuideState.flightForward).normalize();
+  const fleeSpeed = THREE.MathUtils.clamp(
+    state.currentSpeed - DEVIL_GUIDE_FLEE_SPEED_GAP,
+    DEVIL_GUIDE_FLEE_MIN_SPEED,
+    DEVIL_GUIDE_FLEE_MAX_SPEED
+  );
+  const moveAngle = (fleeSpeed * dt) / Math.max(devilGuideState.flightRadius, 1);
+  devilGuideUp.applyAxisAngle(devilGuideTravelAxis, moveAngle).normalize();
+  devilGuideState.flightForward.applyAxisAngle(devilGuideTravelAxis, moveAngle)
+    .addScaledVector(devilGuideUp, -devilGuideState.flightForward.dot(devilGuideUp))
+    .normalize();
+  devilGuideState.flightRadius = Math.max(
+    devilGuideState.flightRadius,
+    getSurfaceRadius(devilGuideUp) + PLAYER_CLEARANCE + DEVIL_GUIDE_SPAWN_HEIGHT
+  );
+  devilGuideState.anchorUp.copy(devilGuideUp);
+  devilGuideState.anchorPosition.copy(devilGuideUp).multiplyScalar(devilGuideState.flightRadius);
+}
+
 function faceDevilGuideToPlayer() {
   if (!devilGuideState.model) return;
   devilGuideFaceDirection.copy(state.pos).sub(devilGuideState.model.position);
@@ -4059,15 +4177,17 @@ function faceDevilGuideToPlayer() {
 function summonDevilGuide(openDialog = false) {
   if (!DEVIL_GUIDE_ENABLED || devilGuideState.banished || !devilGuideState.model) return;
   devilGuideState.visible = true;
-  devilGuideState.chaseTime = openDialog ? 0 : DEVIL_GUIDE_CHASE_DURATION;
+  devilGuideState.entryTime = 0;
+  devilGuideState.fleeing = false;
   devilGuideState.dismissed = false;
   devilGuideState.summonVisible = false;
   devilGuideState.rearmRequired = false;
-  positionDevilGuideNearPlayer();
   devilGuideState.model.visible = true;
   if (openDialog) {
+    positionDevilGuideNearPlayer();
     openDevilGuideDialog();
   } else {
+    startDevilGuideEscape();
     syncDevilGuideUi();
   }
 }
@@ -4075,6 +4195,8 @@ function summonDevilGuide(openDialog = false) {
 function openDevilGuideDialog() {
   if (!DEVIL_GUIDE_ENABLED || devilGuideState.banished || !devilGuideState.ui) return;
   clearFlightInputState();
+  devilGuideState.fleeing = false;
+  devilGuideState.entryTime = 0;
   devilGuideState.view = 'question';
   devilGuideState.dialogOpen = true;
   devilGuideState.lockActive = true;
@@ -4125,7 +4247,8 @@ function resetDevilGuideForDebug() {
   }
   closeDevilGuideDialog();
   devilGuideState.spawnTimer = 0;
-  devilGuideState.chaseTime = 0;
+  devilGuideState.entryTime = 0;
+  devilGuideState.fleeing = false;
   devilGuideState.visible = false;
   devilGuideState.dismissed = false;
   devilGuideState.banished = false;
@@ -4156,14 +4279,21 @@ function updateDevilGuide(dt, gameplayPaused) {
   }
 
   if (devilGuideState.visible) {
-    if (devilGuideState.chaseTime > 0 && !gameplayPaused) {
-      devilGuideState.chaseTime = Math.max(0, devilGuideState.chaseTime - dt);
-      positionDevilGuideNearPlayer();
+    if (devilGuideState.fleeing && !gameplayPaused) {
+      updateDevilGuideEscape(dt);
     }
     devilGuideState.bobTime += dt * DEVIL_GUIDE_BOB_SPEED;
     devilGuideState.model.position.copy(devilGuideState.anchorPosition)
       .addScaledVector(devilGuideState.anchorUp, Math.sin(devilGuideState.bobTime) * DEVIL_GUIDE_BOB_AMOUNT);
-    faceDevilGuideToPlayer();
+    if (devilGuideState.dialogOpen || !devilGuideState.fleeing) {
+      faceDevilGuideToPlayer();
+    } else {
+      writeBasisQuaternion(
+        devilGuideState.model.quaternion,
+        devilGuideState.flightForward,
+        devilGuideState.anchorUp
+      );
+    }
     devilGuideState.model.rotateZ(Math.sin(devilGuideState.bobTime * 0.74) * 0.08);
 
     if (
@@ -4181,7 +4311,7 @@ function tryTriggerDevilGuideContact(start, end) {
     !devilGuideState.visible ||
     devilGuideState.dialogOpen ||
     devilGuideState.rearmRequired ||
-    devilGuideState.chaseTime > 0 ||
+    devilGuideState.entryTime > 0 ||
     devilGuideState.banished ||
     !devilGuideState.model
   ) {
