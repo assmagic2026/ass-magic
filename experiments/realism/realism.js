@@ -33,14 +33,14 @@ scene.fog = settings.mode === "realism"
   : new THREE.Fog(0x23689a, 70, 145);
 
 const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 260);
-const cameraTarget = new THREE.Vector3(0, 2.4, 0);
+const cameraTarget = new THREE.Vector3(-1.2, 5.6, -0.6);
 const orbit = {
   yaw: 0.68,
   pitch: 0.3,
-  distance: 46,
+  distance: 50,
   desiredYaw: 0.68,
   desiredPitch: 0.3,
-  desiredDistance: 46,
+  desiredDistance: 50,
   dragging: false,
   pointerId: null,
   x: 0,
@@ -263,10 +263,7 @@ function createCurrentLikeBook() {
     group.add(cover);
   }
 
-  group.position.set(-1.2, 5.4, -0.8);
-  group.rotation.order = "YXZ";
-  group.rotation.set(Math.PI / 2 - 0.08, 0.34, -0.035);
-  return group;
+  return plantBook(group);
 }
 
 function createRealisticBook() {
@@ -275,28 +272,42 @@ function createRealisticBook() {
   const coverMaterial = new THREE.MeshStandardMaterial({
     map: coverMaps.color,
     bumpMap: coverMaps.bump,
-    bumpScale: 0.14,
+    bumpScale: 0.22,
     roughnessMap: coverMaps.roughness,
-    roughness: 0.72,
+    roughness: 0.84,
     metalness: 0.02,
   });
+  const pageMaps = createAgedPageTextures(settings.preset.textureSize);
   const pageMaterial = new THREE.MeshStandardMaterial({
-    color: 0xd8c8a7,
+    map: pageMaps.color,
+    bumpMap: pageMaps.bump,
+    bumpScale: 0.08,
+    color: 0xc9b58e,
     roughness: 0.96,
     metalness: 0,
   });
   const edgeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x8c765e,
-    roughness: 0.88,
+    color: 0x6f5a45,
+    roughness: 0.96,
   });
   const goldMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb48b42,
-    roughness: 0.42,
-    metalness: 0.36,
+    color: 0x8d6a30,
+    roughness: 0.68,
+    metalness: 0.18,
   });
 
   const coverGeometry = createRoundedSlabGeometry(21.5, 14.3, 0.52, 0.62);
-  const pageGeometry = new THREE.BoxGeometry(20.4, 1.75, 13.25, 1, 2, 1);
+  weatherBookGeometry(coverGeometry, 21.5, 14.3, 0.24);
+  const pageSegments = settings.quality === "high" ? [10, 3, 7] : [6, 2, 4];
+  const pageGeometry = new THREE.BoxGeometry(
+    20.4,
+    1.75,
+    13.25,
+    pageSegments[0],
+    pageSegments[1],
+    pageSegments[2],
+  );
+  weatherBookGeometry(pageGeometry, 20.4, 13.25, 0.16);
   const pages = new THREE.Mesh(pageGeometry, pageMaterial);
   pages.position.y = 1.38;
   pages.castShadow = true;
@@ -306,14 +317,14 @@ function createRealisticBook() {
   const lowerCover = new THREE.Mesh(coverGeometry, coverMaterial);
   lowerCover.position.y = 0.3;
   lowerCover.castShadow = true;
-  lowerCover.receiveShadow = true;
+  lowerCover.receiveShadow = false;
   group.add(lowerCover);
 
   const upperCover = new THREE.Mesh(coverGeometry, coverMaterial);
   upperCover.position.y = 2.48;
   upperCover.rotation.z = -0.018;
   upperCover.castShadow = true;
-  upperCover.receiveShadow = true;
+  upperCover.receiveShadow = false;
   group.add(upperCover);
 
   const edgeGeometry = new THREE.BoxGeometry(20.45, 0.025, 13.29);
@@ -325,7 +336,13 @@ function createRealisticBook() {
   const matrix = new THREE.Matrix4();
   for (let index = 0; index < settings.preset.pageLayers; index += 1) {
     const ratio = (index + 1) / (settings.preset.pageLayers + 1);
-    matrix.makeTranslation(0, 0.57 + ratio * 1.63, 0);
+    const unevenX = Math.sin(index * 4.17) * 0.055;
+    const unevenZ = Math.cos(index * 2.73) * 0.045;
+    matrix.compose(
+      new THREE.Vector3(unevenX, 0.57 + ratio * 1.63, unevenZ),
+      new THREE.Quaternion(),
+      new THREE.Vector3(1 - Math.abs(unevenX) * 0.012, 1, 1 - Math.abs(unevenZ) * 0.012),
+    );
     edgeLines.setMatrixAt(index, matrix);
   }
   edgeLines.instanceMatrix.needsUpdate = true;
@@ -334,8 +351,8 @@ function createRealisticBook() {
   const titlePanel = new THREE.Mesh(
     new THREE.PlaneGeometry(10.2, 6.2),
     new THREE.MeshStandardMaterial({
-      color: 0x361f21,
-      roughness: 0.58,
+      color: 0x271819,
+      roughness: 0.86,
       metalness: 0.03,
     }),
   );
@@ -346,22 +363,23 @@ function createRealisticBook() {
 
   const frame = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.PlaneGeometry(8.9, 5.05)),
-    new THREE.LineBasicMaterial({ color: 0xb48b42 }),
+    new THREE.LineBasicMaterial({ color: 0x81652f, transparent: true, opacity: 0.58 }),
   );
   frame.rotation.x = -Math.PI / 2;
   frame.position.set(0.6, 2.78, -0.15);
   group.add(frame);
 
-  const sigil = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.11, 8, 32), goldMaterial);
+  const sigil = new THREE.Mesh(
+    new THREE.TorusGeometry(1.2, 0.1, 7, 28, Math.PI * 1.62),
+    goldMaterial,
+  );
   sigil.rotation.x = Math.PI / 2;
   sigil.position.set(0.6, 2.82, -0.2);
   group.add(sigil);
+  addBookDamageDetails(group);
 
   const root = new THREE.Group();
-  group.position.set(-1.2, 5.45, -0.8);
-  group.rotation.order = "YXZ";
-  group.rotation.set(Math.PI / 2 - 0.08, 0.34, -0.035);
-  root.add(group);
+  root.add(plantBook(group));
 
   if (settings.preset.shadowSize === 0) {
     root.add(createFakeBookShadow());
@@ -377,12 +395,16 @@ function createRoundedSlabGeometry(width, depth, thickness, radius) {
   shape.moveTo(x + radius, y);
   shape.lineTo(x + width - radius, y);
   shape.quadraticCurveTo(x + width, y, x + width, y + radius);
-  shape.lineTo(x + width, y + depth - radius);
-  shape.quadraticCurveTo(x + width, y + depth, x + width - radius, y + depth);
+  shape.lineTo(x + width, y + depth - radius * 1.45);
+  shape.lineTo(x + width - radius * 0.42, y + depth - radius * 0.84);
+  shape.lineTo(x + width - radius * 0.1, y + depth - radius * 0.28);
+  shape.lineTo(x + width - radius * 1.25, y + depth);
   shape.lineTo(x + radius, y + depth);
   shape.quadraticCurveTo(x, y + depth, x, y + depth - radius);
-  shape.lineTo(x, y + radius);
-  shape.quadraticCurveTo(x, y, x + radius, y);
+  shape.lineTo(x, y + radius * 1.2);
+  shape.lineTo(x + radius * 0.3, y + radius * 0.66);
+  shape.lineTo(x + radius * 0.14, y + radius * 0.24);
+  shape.lineTo(x + radius, y);
 
   const geometry = new THREE.ExtrudeGeometry(shape, {
     depth: thickness,
@@ -394,8 +416,49 @@ function createRoundedSlabGeometry(width, depth, thickness, radius) {
   });
   geometry.center();
   geometry.rotateX(Math.PI / 2);
+  const positions = geometry.attributes.position;
+  const uvs = geometry.attributes.uv;
+  for (let index = 0; index < positions.count; index += 1) {
+    uvs.setXY(
+      index,
+      THREE.MathUtils.clamp(positions.getX(index) / width + 0.5, 0, 1),
+      THREE.MathUtils.clamp(positions.getZ(index) / depth + 0.5, 0, 1),
+    );
+  }
+  uvs.needsUpdate = true;
   geometry.computeVertexNormals();
   return geometry;
+}
+
+function weatherBookGeometry(geometry, width, depth, strength) {
+  const positions = geometry.attributes.position;
+  for (let index = 0; index < positions.count; index += 1) {
+    const x = positions.getX(index);
+    const y = positions.getY(index);
+    const z = positions.getZ(index);
+    const edgeX = THREE.MathUtils.smoothstep(Math.abs(x), width * 0.39, width * 0.51);
+    const edgeZ = THREE.MathUtils.smoothstep(Math.abs(z), depth * 0.37, depth * 0.51);
+    const edge = Math.max(edgeX, edgeZ);
+    if (edge <= 0) continue;
+
+    const warp = Math.sin(x * 1.37 + z * 0.83) * 0.58
+      + Math.sin(z * 2.21 - x * 0.31) * 0.42;
+    positions.setY(index, y + warp * strength * edge);
+    positions.setX(index, x + Math.sin(z * 1.71) * strength * edge * 0.16);
+    positions.setZ(index, z + Math.cos(x * 1.49) * strength * edge * 0.16);
+  }
+  positions.needsUpdate = true;
+  geometry.computeVertexNormals();
+}
+
+function plantBook(group) {
+  const planted = new THREE.Group();
+  planted.position.set(-2.35, 8.65, -1.35);
+  planted.rotation.y = -0.72;
+  group.rotation.order = "XYZ";
+  group.rotation.set(0.07, 0, -Math.PI / 2 + 0.13);
+  planted.add(group);
+  return planted;
 }
 
 function createCoverTextures(size) {
@@ -410,11 +473,11 @@ function createCoverTextures(size) {
   const color = colorCanvas.getContext("2d");
   const bump = bumpCanvas.getContext("2d");
   const roughness = roughnessCanvas.getContext("2d");
-  color.fillStyle = "#402326";
+  color.fillStyle = "#563528";
   color.fillRect(0, 0, size, size);
   bump.fillStyle = "#777";
   bump.fillRect(0, 0, size, size);
-  roughness.fillStyle = "#c8c8c8";
+  roughness.fillStyle = "#dddddd";
   roughness.fillRect(0, 0, size, size);
 
   let seed = 14053;
@@ -439,12 +502,152 @@ function createCoverTextures(size) {
     bump.stroke();
   }
 
+  for (let stain = 0; stain < 13; stain += 1) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    const x = (seed / 0x7fffffff) * size;
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    const y = (seed / 0x7fffffff) * size;
+    const radius = size * (0.035 + (seed % 19) / 230);
+    const stainGradient = color.createRadialGradient(x, y, 0, x, y, radius);
+    stainGradient.addColorStop(0, stain % 2 ? "rgba(8,4,2,.38)" : "rgba(174,119,62,.3)");
+    stainGradient.addColorStop(1, "rgba(20,8,4,0)");
+    color.fillStyle = stainGradient;
+    color.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+
+  color.strokeStyle = "rgba(218,168,101,.46)";
+  color.lineWidth = Math.max(5, size * 0.028);
+  color.strokeRect(size * 0.018, size * 0.018, size * 0.964, size * 0.964);
+  bump.strokeStyle = "#9a9a9a";
+  bump.lineWidth = Math.max(4, size * 0.02);
+  bump.strokeRect(size * 0.02, size * 0.02, size * 0.96, size * 0.96);
+
+  for (let scratch = 0; scratch < 34; scratch += 1) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    const x = (seed / 0x7fffffff) * size;
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    const y = (seed / 0x7fffffff) * size;
+    const length = size * (0.018 + (seed % 31) / 240);
+    const angle = (seed % 628) / 100;
+    color.strokeStyle = scratch % 4 === 0 ? "rgba(221,174,111,.38)" : "rgba(9,4,3,.32)";
+    color.lineWidth = Math.max(1, size / 700);
+    color.beginPath();
+    color.moveTo(x, y);
+    color.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+    color.stroke();
+    roughness.strokeStyle = scratch % 3 === 0 ? "#fafafa" : "#b8b8b8";
+    roughness.lineWidth = Math.max(1, size / 600);
+    roughness.beginPath();
+    roughness.moveTo(x, y);
+    roughness.lineTo(x + Math.cos(angle) * length, y + Math.sin(angle) * length);
+    roughness.stroke();
+  }
+
   const anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return {
     color: makeTexture(colorCanvas, true, 1, anisotropy),
     bump: makeTexture(bumpCanvas, false, 1, anisotropy),
     roughness: makeTexture(roughnessCanvas, false, 1, anisotropy),
   };
+}
+
+function createAgedPageTextures(size) {
+  const colorCanvas = document.createElement("canvas");
+  const bumpCanvas = document.createElement("canvas");
+  colorCanvas.width = size;
+  colorCanvas.height = size;
+  bumpCanvas.width = size;
+  bumpCanvas.height = size;
+  const color = colorCanvas.getContext("2d");
+  const bump = bumpCanvas.getContext("2d");
+  color.fillStyle = "#c5ad82";
+  color.fillRect(0, 0, size, size);
+  bump.fillStyle = "#7f7f7f";
+  bump.fillRect(0, 0, size, size);
+
+  for (let line = 0; line < 92; line += 1) {
+    const y = ((line + 0.4) / 92) * size;
+    const drift = Math.sin(line * 2.13) * size * 0.0025;
+    color.strokeStyle = line % 7 === 0 ? "rgba(73,48,29,.28)" : "rgba(88,61,36,.12)";
+    color.lineWidth = Math.max(1, size / 960);
+    color.beginPath();
+    color.moveTo(0, y);
+    color.lineTo(size, y + drift);
+    color.stroke();
+    bump.strokeStyle = line % 5 === 0 ? "#696969" : "#898989";
+    bump.lineWidth = Math.max(1, size / 1100);
+    bump.beginPath();
+    bump.moveTo(0, y);
+    bump.lineTo(size, y + drift);
+    bump.stroke();
+  }
+
+  const edgeShade = color.createLinearGradient(0, 0, size, 0);
+  edgeShade.addColorStop(0, "rgba(72,45,25,.48)");
+  edgeShade.addColorStop(0.12, "rgba(72,45,25,0)");
+  edgeShade.addColorStop(0.86, "rgba(72,45,25,0)");
+  edgeShade.addColorStop(1, "rgba(72,45,25,.42)");
+  color.fillStyle = edgeShade;
+  color.fillRect(0, 0, size, size);
+
+  const anisotropy = Math.min(6, renderer.capabilities.getMaxAnisotropy());
+  return {
+    color: makeTexture(colorCanvas, true, 1, anisotropy),
+    bump: makeTexture(bumpCanvas, false, 1, anisotropy),
+  };
+}
+
+function addBookDamageDetails(group) {
+  const wearMaterial = new THREE.MeshStandardMaterial({
+    color: 0x8b6540,
+    roughness: 1,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  const darkWearMaterial = new THREE.MeshStandardMaterial({
+    color: 0x4a2d22,
+    roughness: 1,
+    side: THREE.DoubleSide,
+  });
+  const tears = [
+    { points: [[-10.72, -7.04], [-8.62, -7.04], [-10.72, -5.28]], material: wearMaterial },
+    { points: [[10.72, 7.04], [8.88, 7.04], [10.72, 5.62]], material: darkWearMaterial },
+    { points: [[-10.72, 6.98], [-9.26, 6.98], [-10.72, 5.92]], material: darkWearMaterial },
+  ];
+
+  for (const tear of tears) {
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array(tear.points.flatMap(([x, z]) => [x, 0, z]));
+    geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+    geometry.computeVertexNormals();
+    const patch = new THREE.Mesh(geometry, tear.material);
+    patch.position.y = 2.805;
+    patch.renderOrder = 1;
+    group.add(patch);
+  }
+
+  const loosePageGeometry = new THREE.BoxGeometry(2.6, 0.035, 0.72);
+  const loosePageMaterial = new THREE.MeshStandardMaterial({
+    color: 0xa88d65,
+    roughness: 1,
+  });
+  const loosePages = new THREE.InstancedMesh(loosePageGeometry, loosePageMaterial, 4);
+  const matrix = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3(1, 1, 1);
+  const placements = [
+    [-7.1, 1.02, -6.83, -0.08],
+    [4.8, 1.7, 6.9, 0.06],
+    [8.0, 0.88, -6.84, 0.11],
+    [-2.4, 1.88, 6.88, -0.04],
+  ];
+  placements.forEach(([x, y, z, angle], index) => {
+    quaternion.setFromEuler(new THREE.Euler(0, angle, 0));
+    matrix.compose(new THREE.Vector3(x, y, z), quaternion, scale);
+    loosePages.setMatrixAt(index, matrix);
+  });
+  loosePages.instanceMatrix.needsUpdate = true;
+  group.add(loosePages);
 }
 
 function createFakeBookShadow() {
@@ -466,10 +669,10 @@ function createFakeBookShadow() {
     depthWrite: false,
     opacity: 0.62,
   });
-  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(21, 7.5), material);
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(16.5, 6.5), material);
   shadow.rotation.x = -Math.PI / 2;
-  shadow.rotation.z = 0.34;
-  shadow.position.set(-1.2, -0.16, 0.2);
+  shadow.rotation.z = -0.72;
+  shadow.position.set(-2.35, -0.16, -0.75);
   return shadow;
 }
 
@@ -519,7 +722,11 @@ function addLighting() {
     settings.mode === "realism" ? 0xffe1b3 : 0xffffff,
     settings.mode === "realism" ? 3.2 : 1.85,
   );
-  sun.position.set(-31, 42, 24);
+  sun.position.set(
+    settings.mode === "realism" ? 28 : -31,
+    42,
+    settings.mode === "realism" ? 30 : 24,
+  );
   sun.target.position.set(0, 0, 0);
   scene.add(sun, sun.target);
 
