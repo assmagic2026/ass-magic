@@ -1020,7 +1020,7 @@ const BLACK_BOX_REVEAL_IMAGE = Object.freeze({
 });
 const DEVIL_GUIDE_COPY = Object.freeze({
   question: '何が望みだ？',
-  escape: '昼のエリアに黒い球、夜のエリアに白い球がある。\n\nどちらかに触れた後、さらにもう一方の球に触れることで昼夜が逆転する。\n\nその後、白い球の近くの巨大な装置を起動させれば脱出の道標が現れる。',
+  escape: '昼のエリアに黒い球、夜のエリアに白い球がある。\n\nどちらかの球に触れた後、一度も他の物体に触れることなく、もう一方の球に触れることで昼夜が逆転する。\n\nその後、白い球の近くの巨大な装置を起動させれば脱出の道標が現れる。',
   routeUnavailable: '今はそこへの道を開けない。もう一度選べ。'
 });
 const DEVIL_GUIDE_DESTINATIONS = Object.freeze([
