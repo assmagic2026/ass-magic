@@ -1055,6 +1055,7 @@ const CAT_ROUTE_COMPANION_SCALE = 0.1512;
 const CAT_ROUTE_MOUNT_OFFSET = new THREE.Vector3(0.34, 0.02, 0.12);
 const DEVIL_GUIDE_STORAGE_KEY = 'ass-magic-devil-guide-v1';
 const DEVIL_GUIDE_SPAWN_DELAY = 5.0;
+const DEVIL_GUIDE_CHASE_DURATION = 3.2;
 const DEVIL_GUIDE_SPAWN_DISTANCE = 14.0;
 const DEVIL_GUIDE_SPAWN_SIDE = -2.2;
 const DEVIL_GUIDE_SPAWN_HEIGHT = 3.1;
@@ -3605,6 +3606,7 @@ const devilGuideState = {
   model: null,
   ui: null,
   spawnTimer: 0,
+  chaseTime: 0,
   bobTime: 0,
   visible: false,
   dialogOpen: false,
@@ -4057,6 +4059,7 @@ function faceDevilGuideToPlayer() {
 function summonDevilGuide(openDialog = false) {
   if (!DEVIL_GUIDE_ENABLED || devilGuideState.banished || !devilGuideState.model) return;
   devilGuideState.visible = true;
+  devilGuideState.chaseTime = openDialog ? 0 : DEVIL_GUIDE_CHASE_DURATION;
   devilGuideState.dismissed = false;
   devilGuideState.summonVisible = false;
   devilGuideState.rearmRequired = false;
@@ -4122,6 +4125,7 @@ function resetDevilGuideForDebug() {
   }
   closeDevilGuideDialog();
   devilGuideState.spawnTimer = 0;
+  devilGuideState.chaseTime = 0;
   devilGuideState.visible = false;
   devilGuideState.dismissed = false;
   devilGuideState.banished = false;
@@ -4152,6 +4156,10 @@ function updateDevilGuide(dt, gameplayPaused) {
   }
 
   if (devilGuideState.visible) {
+    if (devilGuideState.chaseTime > 0 && !gameplayPaused) {
+      devilGuideState.chaseTime = Math.max(0, devilGuideState.chaseTime - dt);
+      positionDevilGuideNearPlayer();
+    }
     devilGuideState.bobTime += dt * DEVIL_GUIDE_BOB_SPEED;
     devilGuideState.model.position.copy(devilGuideState.anchorPosition)
       .addScaledVector(devilGuideState.anchorUp, Math.sin(devilGuideState.bobTime) * DEVIL_GUIDE_BOB_AMOUNT);
@@ -4173,6 +4181,7 @@ function tryTriggerDevilGuideContact(start, end) {
     !devilGuideState.visible ||
     devilGuideState.dialogOpen ||
     devilGuideState.rearmRequired ||
+    devilGuideState.chaseTime > 0 ||
     devilGuideState.banished ||
     !devilGuideState.model
   ) {
