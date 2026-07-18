@@ -4206,7 +4206,7 @@ function renderDevilGuideDialog() {
   if (devilGuideState.view === 'destinations') {
     ui.message.textContent = 'どこへ行きたい？';
     for (const destination of DEVIL_GUIDE_DESTINATIONS) {
-      ui.actions.appendChild(makeDevilGuideButton(destination.label, () => {
+      ui.actions.appendChild(makeDevilGuideButton(getDevilGuideDestinationLabel(destination), () => {
         startDevilGuideNavigation(destination.id);
       }));
     }
@@ -4237,7 +4237,16 @@ function renderDevilGuideDialog() {
     devilGuideState.view = 'destinations';
     renderDevilGuideDialog();
   }));
-  ui.actions.appendChild(makeDevilGuideButton('消えろ', () => banishDevilGuide(), 'danger'));
+}
+
+function getDevilGuideDestinationLabel(destination) {
+  if (
+    destination?.id === 'black-box' &&
+    (blackBoxUiState.openedOnce || catRouteState.blackBoxOpened)
+  ) {
+    return '黒い箱';
+  }
+  return destination?.label ?? '';
 }
 
 function syncDevilGuideUi() {
@@ -4251,7 +4260,8 @@ function syncDevilGuideUi() {
   devilGuideState.ui.navigation.setAttribute('aria-hidden', navigationVisible ? 'false' : 'true');
   if (navigationVisible && devilGuideNavigationState.destination) {
     const suffix = devilGuideNavigationState.phase === 'black-box-wait' ? 'を待っている' : 'へ移動中';
-    devilGuideState.ui.navigationDestination.textContent = `${devilGuideNavigationState.destination.label}${suffix}`;
+    const destinationLabel = getDevilGuideDestinationLabel(devilGuideNavigationState.destination);
+    devilGuideState.ui.navigationDestination.textContent = `${destinationLabel}${suffix}`;
   }
 }
 
