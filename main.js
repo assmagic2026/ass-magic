@@ -1013,7 +1013,7 @@ const BLACK_BOX_REVEAL_IMAGE = Object.freeze({
 });
 const DEVIL_GUIDE_COPY = Object.freeze({
   question: '何が望みだ？',
-  escape: '黒い球か白い球に触れろ。世界が白黒になったら、別の物体に触れず反対側の球へ行け。昼夜が反転したら、リングを起動しろ。伸びた光の先に帰り道がある。',
+  escape: 'この星には、帰還の道が隠されている。黒い球か白い球に触れろ。世界が白黒になったら、何にも触れず反対側の球へ辿り着け。昼と夜が入れ替わったら、昼の大地にある巨大な円形装置「太陽光式集光遠達装置」へ行け。それに触れれば、光の道が宇宙へ伸びる。その先が、おまえの帰る場所だ。',
   routePending: 'その道案内は、次の段階でつなぐ。今は目印だけ覚えておけ。'
 });
 const DEVIL_GUIDE_DESTINATIONS = Object.freeze([
@@ -4049,7 +4049,7 @@ function createDevilGuideUi() {
 
   const kicker = document.createElement('div');
   kicker.className = 'devil-guide-kicker';
-  kicker.textContent = 'GUIDE';
+  kicker.textContent = '悪魔に遭遇';
   panel.appendChild(kicker);
 
   const message = document.createElement('div');
