@@ -34,7 +34,7 @@ const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerH
 const runtimeUrlParams = new URLSearchParams(window.location.search);
 const DEBUG_CAT_PREVIEW = runtimeUrlParams.get('catdebug') === '1';
 const DEBUG_SANCTUARY_START = runtimeUrlParams.get('sanctuarydebug') === '1';
-const DEVIL_GUIDE_ENABLED = runtimeUrlParams.get('devil') === '1';
+const DEVIL_GUIDE_ENABLED = runtimeUrlParams.get('devil') !== '0';
 const DEBUG_DEVIL_GUIDE = runtimeUrlParams.get('devildebug') === '1';
 const PROMO_CAPTURE_MODE = runtimeUrlParams.get('promo') === '1';
 const PROMO_CAPTURE_WIDTH = 1920;
