@@ -88,6 +88,11 @@ h1 {
   backdrop-filter: blur(8px);
 }
 
+a.isolation-badge {
+  text-decoration: none;
+  pointer-events: auto;
+}
+
 .perf-hud {
   position: fixed;
   z-index: 3;

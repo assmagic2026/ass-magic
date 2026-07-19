@@ -10,6 +10,8 @@ production site and does not modify the existing game.
 - Realism / standard: `?mode=realism&quality=standard`
 - Realism / high: `?mode=realism&quality=high`
 - Flight test: `?mode=realism&quality=high&view=flight`
+- Whole planet / orbit: `planet-full.html?mode=realism&quality=high&view=orbit`
+- Whole planet / flight: `planet-full.html?mode=realism&quality=high&view=flight`
 
 Serve the repository over HTTP because browser ES modules do not reliably load
 from a `file://` URL.
@@ -48,3 +50,29 @@ draw calls. Quality presets cap rock/crack/dust counts at `16/10/20` (low),
 startup and do not add binary assets to production. The HUD reports browser-side
 FPS trends, frame times, draw calls, triangles, pixel ratio, startup time, and
 renderer resource counts.
+
+## Whole-planet load study
+
+`planet-full.html` keeps the production planet radius (`340`) and uses the
+production sphere density (`IcosahedronGeometry` detail `4`) for current-like,
+low, and standard modes. High mode deliberately raises the planet to detail `5`.
+It distributes the realism layer around the complete sphere rather than only
+around the camera. The global rock and crack meshes remain single
+`InstancedMesh` draws, which intentionally makes every instance part of one
+conservative full-planet render batch.
+
+The current desktop-browser measurements at DPR `1.0` are:
+
+| Mode | Rocks | Cracks | Triangles | Draw calls |
+| --- | ---: | ---: | ---: | ---: |
+| Current-like | 210 | 0 | 9,996 | 6 |
+| Low | 600 | 360 | 25,476 | 8 |
+| Standard | 1,200 | 800 | 49,396 | 8 |
+| High | 2,200 | 1,400 | 89,712 | 8 |
+
+All four modes held the display's 75 FPS cap in this environment. A `390 x 844`
+viewport check also held 75 FPS, but it still used the desktop GPU and therefore
+is not an iPhone performance measurement. The scene measures the whole-planet
+terrain, atmosphere, clouds, dust, rocks, and cracks. It does not include every
+production landmark, event, audio path, collision check, or UI update, so it
+must not be read as a complete production-site benchmark.

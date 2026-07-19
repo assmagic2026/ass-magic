@@ -31,9 +31,13 @@ export class PerformanceHud {
       ? `REALISM / ${this.settings.preset.label}`
       : "CURRENT-LIKE";
     const viewLabel = this.settings.view === "flight" ? "FLIGHT" : "ORBIT";
+    const scopeLabel = this.settings.scopeLabel
+      ? `${this.settings.scopeLabel} / `
+      : "";
 
     const markup = [
-      `<strong>${modeLabel} / ${viewLabel}</strong>`,
+      `<strong>${scopeLabel}${modeLabel} / ${viewLabel}</strong>`,
+      ...(this.settings.loadLabel ? [this.settings.loadLabel] : []),
       `FPS AVG&nbsp;&nbsp;${(1000 / averageMs).toFixed(1)}`,
       `1% LOW&nbsp;&nbsp;${(1000 / p99Ms).toFixed(1)}`,
       `FRAME&nbsp;&nbsp;&nbsp;&nbsp;${averageMs.toFixed(1)} ms`,

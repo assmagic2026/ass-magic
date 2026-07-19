@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#182f34">
+    <title>ASS MAGIC / Whole Planet Study</title>
+    <link rel="stylesheet" href="./style.css">
+  </head>
+  <body>
+    <main id="stage">
+      <canvas id="scene" aria-label="惑星全体のリアル表現負荷試験"></canvas>
+
+      <header class="masthead">
+        <div>
+          <p class="eyebrow">ASS MAGIC / VISUAL STUDY 02</p>
+          <h1>THE WHOLE PLANET</h1>
+        </div>
+        <a class="isolation-badge" href="./?mode=realism&quality=high&view=flight">局所試作へ戻る</a>
+      </header>
+
+      <aside id="perf-hud" class="perf-hud" aria-live="polite"></aside>
+
+      <section class="controls" aria-label="比較設定">
+        <div class="mode-switch" role="group" aria-label="表示モード">
+          <a id="mode-current" href="?mode=current&quality=standard">現行風</a>
+          <a id="mode-realism" href="?mode=realism&quality=standard">リアル全周</a>
+        </div>
+        <div id="quality-switch" class="quality-switch" role="group" aria-label="画質設定">
+          <a data-quality="low" href="?mode=realism&quality=low">軽量</a>
+          <a data-quality="standard" href="?mode=realism&quality=standard">標準</a>
+          <a data-quality="high" href="?mode=realism&quality=high">高画質</a>
+        </div>
+        <div class="view-switch" role="group" aria-label="カメラ設定">
+          <a id="view-orbit" href="?mode=realism&quality=standard&view=orbit">全景</a>
+          <a id="view-flight" href="?mode=realism&quality=standard&view=flight">飛行</a>
+          <button id="flight-reset" type="button">戻る</button>
+        </div>
+      </section>
+
+      <p class="help">全景: ドラッグ・ホイール / 飛行: 右スティック・WASD・矢印</p>
+      <div id="flight-stick" class="flight-stick" aria-hidden="true"><span></span></div>
+      <label id="flight-speed-panel" class="flight-speed-panel">
+        <span>SPEED</span>
+        <output id="flight-speed-value">40</output>
+        <input id="flight-speed-slider" type="range" min="12" max="120" step="1" value="40" orient="vertical">
+      </label>
+      <div id="flight-readout" class="flight-readout" aria-live="polite"></div>
+      <div class="loading" id="loading">BUILDING THE WHOLE PLANET</div>
+    </main>
+
+    <script type="module" src="./planet-full.js"></script>
+  </body>
+</html>
