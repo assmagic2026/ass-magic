@@ -49,33 +49,52 @@ const orbit = {
 };
 const flightStick = document.querySelector("#flight-stick");
 const flightStickKnob = flightStick.querySelector("span");
+const flightSpeedSlider = document.querySelector("#flight-speed-slider");
+const flightSpeedValue = document.querySelector("#flight-speed-value");
 const flightReadout = document.querySelector("#flight-readout");
 const flightHelp = document.querySelector(".help");
 const flight = {
   position: new THREE.Vector3(),
   yaw: 0,
   pitch: 0,
-  speed: 7,
-  targetSpeed: 7,
-  cruiseAltitude: 8,
-  pointerId: null,
-  pointerX: 0,
-  pointerY: 0,
-  inputX: 0,
-  inputY: 0,
+  speed: 6,
+  speedSelection: 40,
+  boostSpeed: 0,
+  verticalSpeed: 0,
+  cruiseAltitude: 10,
+  stickId: null,
+  stickOffset: new THREE.Vector2(),
+  stickSmooth: new THREE.Vector2(),
+  keySmooth: new THREE.Vector2(),
+  directId: null,
+  directLastX: 0,
+  directLastY: 0,
+  directTurnX: 0,
+  directTurnY: 0,
+  accelPointers: new Set(),
   keys: new Set(),
   readoutElapsed: 0,
 };
+const flightStickTarget = new THREE.Vector2();
+const flightKeyTarget = new THREE.Vector2();
 const flightForward = new THREE.Vector3();
 const flightLookTarget = new THREE.Vector3();
 const bookFlightTarget = new THREE.Vector3(-2.35, 8.2, -1.35);
 const bookPassTarget = new THREE.Vector3(8.5, 5.8, -2.1);
+const FLIGHT_STICK_LIMIT = 50;
+const FLIGHT_STICK_DEADZONE = 0.12;
+const FLIGHT_STICK_SCALE = 0.5;
+const FLIGHT_STICK_RESPONSE = 5;
+const FLIGHT_STICK_RETURN = 3.2;
+const FLIGHT_VERTICAL_RELEASE = 12;
+const FLIGHT_ARROW_SCALE_X = 0.5;
 
 if (settings.view === "flight") {
+  document.body.classList.add("flight-mode");
   camera.fov = 56;
   camera.updateProjectionMatrix();
   flightReadout.classList.add("is-visible");
-  flightHelp.textContent = "ドラッグで旋回・上下移動 / ホイールまたは W・S で速度調整";
+  flightHelp.textContent = "右スティック・WASD・矢印で飛行 / 長押し・Spaceで加速";
   resetFlight();
 }
 
@@ -815,48 +834,93 @@ function updateOrbit(delta) {
 }
 
 function updateFlight(delta) {
-  const keyboardX = Number(flight.keys.has("ArrowRight") || flight.keys.has("KeyD"))
-    - Number(flight.keys.has("ArrowLeft") || flight.keys.has("KeyA"));
-  const keyboardY = Number(flight.keys.has("ArrowUp")) - Number(flight.keys.has("ArrowDown"));
-  const steerX = THREE.MathUtils.clamp(flight.inputX + keyboardX, -1, 1);
-  const steerY = THREE.MathUtils.clamp(flight.inputY + keyboardY, -1, 1);
-
-  flight.yaw += steerX * delta * 0.92;
-  flight.pitch = THREE.MathUtils.clamp(
-    flight.pitch + steerY * delta * 0.68,
-    -0.48,
-    0.48,
+  flightStickTarget.set(
+    -applyFlightDeadzone(flight.stickOffset.x / FLIGHT_STICK_LIMIT) * FLIGHT_STICK_SCALE,
+    -applyFlightDeadzone(flight.stickOffset.y / FLIGHT_STICK_LIMIT) * FLIGHT_STICK_SCALE,
   );
-  if (Math.abs(steerY) < 0.02) {
-    flight.pitch = THREE.MathUtils.lerp(
-      flight.pitch,
+  flightKeyTarget.set(
+    Number(flight.keys.has("KeyA"))
+      - Number(flight.keys.has("KeyD"))
+      + (Number(flight.keys.has("ArrowLeft")) - Number(flight.keys.has("ArrowRight")))
+        * FLIGHT_ARROW_SCALE_X,
+    Number(flight.keys.has("KeyW"))
+      - Number(flight.keys.has("KeyS"))
+      + Number(flight.keys.has("ArrowUp"))
+      - Number(flight.keys.has("ArrowDown")),
+  ).clampScalar(-1, 1);
+
+  const keyboardActive = flightKeyTarget.lengthSq() > 0.0001;
+  const stickBlend = 1 - Math.exp(
+    -(flight.stickId !== null ? FLIGHT_STICK_RESPONSE : FLIGHT_STICK_RETURN) * delta,
+  );
+  const keyBlend = 1 - Math.exp(
+    -((keyboardActive ? FLIGHT_STICK_RESPONSE : FLIGHT_STICK_RETURN) * 0.8) * delta,
+  );
+  flight.stickSmooth.lerp(flightStickTarget, stickBlend);
+  flight.keySmooth.lerp(flightKeyTarget, keyBlend);
+  if (flight.stickId === null) {
+    flight.stickSmooth.y = THREE.MathUtils.damp(
+      flight.stickSmooth.y,
       0,
-      1 - Math.exp(-delta * 0.72),
+      FLIGHT_VERTICAL_RELEASE,
+      delta,
+    );
+  }
+  if (!keyboardActive) {
+    flight.keySmooth.x = THREE.MathUtils.damp(
+      flight.keySmooth.x,
+      0,
+      FLIGHT_STICK_RETURN,
+      delta,
+    );
+    flight.keySmooth.y = THREE.MathUtils.damp(
+      flight.keySmooth.y,
+      0,
+      FLIGHT_VERTICAL_RELEASE,
+      delta,
     );
   }
 
-  if (flight.keys.has("KeyW")) flight.targetSpeed += delta * 5.5;
-  if (flight.keys.has("KeyS")) flight.targetSpeed -= delta * 5.5;
-  flight.targetSpeed = THREE.MathUtils.clamp(flight.targetSpeed, 3, 16);
-  flight.speed = THREE.MathUtils.lerp(
+  const dragYaw = -flight.directTurnX * 0.0021;
+  const dragLift = flight.directTurnY * 0.003;
+  const turnInput = THREE.MathUtils.clamp(
+    flight.stickSmooth.x + flight.keySmooth.x,
+    -1,
+    1,
+  );
+  const climbInput = THREE.MathUtils.clamp(
+    flight.stickSmooth.y + flight.keySmooth.y + dragLift,
+    -1,
+    1,
+  );
+  flight.yaw += dragYaw + turnInput * 0.0252 * delta * 60;
+  flight.directTurnX = 0;
+  flight.directTurnY = 0;
+
+  const accelerating = flight.keys.has("Space") || flight.accelPointers.size > 0;
+  flight.boostSpeed = THREE.MathUtils.damp(
+    flight.boostSpeed,
+    accelerating ? 5.5 : 0,
+    accelerating ? 3.2 : 1.4,
+    delta,
+  );
+  const baseSpeed = mapFlightSpeed(flight.speedSelection);
+  const speedTarget = baseSpeed + flight.boostSpeed;
+  flight.speed = THREE.MathUtils.damp(
     flight.speed,
-    flight.targetSpeed,
-    1 - Math.exp(-delta * 2.5),
+    speedTarget,
+    speedTarget > flight.speed ? 3.2 : 0.9,
+    delta,
   );
 
-  const cosPitch = Math.cos(flight.pitch);
-  flightForward.set(
-    Math.sin(flight.yaw) * cosPitch,
-    Math.sin(flight.pitch),
-    Math.cos(flight.yaw) * cosPitch,
-  );
+  flightForward.set(Math.sin(flight.yaw), 0, Math.cos(flight.yaw));
   flight.position.addScaledVector(flightForward, flight.speed * delta);
 
   const distanceToBook = Math.hypot(
     flight.position.x - bookFlightTarget.x,
     flight.position.z - bookFlightTarget.z,
   );
-  if (distanceToBook < 24 && Math.abs(steerX) < 0.18) {
+  if (distanceToBook < 24 && Math.abs(turnInput) < 0.18 && Math.abs(dragYaw) < 0.001) {
     const passYaw = Math.atan2(
       bookPassTarget.x - flight.position.x,
       bookPassTarget.z - flight.position.z,
@@ -870,7 +934,7 @@ function updateFlight(delta) {
   }
 
   const range = Math.hypot(flight.position.x, flight.position.z);
-  if (range > 48 && Math.abs(steerX) < 0.18) {
+  if (range > 48 && Math.abs(turnInput) < 0.18 && Math.abs(dragYaw) < 0.001) {
     const centerYaw = Math.atan2(-flight.position.x, -flight.position.z);
     const yawDifference = Math.atan2(
       Math.sin(centerYaw - flight.yaw),
@@ -885,26 +949,60 @@ function updateFlight(delta) {
   }
 
   const ground = getTerrainHeight(flight.position.x, flight.position.z);
-  if (Math.abs(steerY) < 0.02) {
-    const desiredY = ground + flight.cruiseAltitude;
-    flight.position.y = THREE.MathUtils.lerp(
-      flight.position.y,
-      desiredY,
-      1 - Math.exp(-delta * 0.58),
+  if (climbInput > 0) {
+    flight.verticalSpeed += climbInput * 11.5 * delta;
+  } else if (climbInput < 0) {
+    const descendStrength = Math.max(1.9, flight.speed * 0.3);
+    const descendTarget = climbInput * descendStrength;
+    flight.verticalSpeed += climbInput * 6.5 * delta;
+    flight.verticalSpeed = THREE.MathUtils.lerp(
+      flight.verticalSpeed,
+      descendTarget,
+      1 - Math.exp(-1.7 * delta),
+    );
+  } else {
+    const altitudeError = flight.position.y - ground - flight.cruiseAltitude;
+    const neutralTarget = THREE.MathUtils.clamp(-altitudeError * 0.42, -2.1, 1.6);
+    flight.verticalSpeed = THREE.MathUtils.damp(
+      flight.verticalSpeed,
+      neutralTarget,
+      Math.abs(flight.verticalSpeed) > Math.abs(neutralTarget) ? 2.4 : 1.05,
+      delta,
     );
   }
+  flight.verticalSpeed = THREE.MathUtils.clamp(flight.verticalSpeed, -5.5, 7.5);
+  flight.position.y += flight.verticalSpeed * delta;
   flight.position.y = Math.max(flight.position.y, ground + 2.2);
 
+  flight.pitch = THREE.MathUtils.damp(
+    flight.pitch,
+    THREE.MathUtils.clamp(flight.verticalSpeed / Math.max(flight.speed, 1) * 0.32, -0.16, 0.2),
+    2.8,
+    delta,
+  );
   camera.position.copy(flight.position);
   flightLookTarget.copy(flight.position).add(flightForward);
+  flightLookTarget.y += Math.sin(flight.pitch);
   camera.lookAt(flightLookTarget);
 
   flight.readoutElapsed += delta;
   if (flight.readoutElapsed >= 0.12) {
     const altitude = Math.max(0, flight.position.y - ground);
-    flightReadout.innerHTML = `SPEED ${flight.speed.toFixed(1)}<br>ALT ${altitude.toFixed(1)}`;
+    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>ALT ${altitude.toFixed(1)}`;
     flight.readoutElapsed = 0;
   }
+}
+
+function applyFlightDeadzone(value) {
+  const magnitude = Math.abs(value);
+  if (magnitude <= FLIGHT_STICK_DEADZONE) return 0;
+  const scaled = (magnitude - FLIGHT_STICK_DEADZONE) / (1 - FLIGHT_STICK_DEADZONE);
+  return Math.sign(value) * THREE.MathUtils.clamp(scaled, 0, 1);
+}
+
+function mapFlightSpeed(selection) {
+  const ratio = (selection - 12) / (120 - 12);
+  return THREE.MathUtils.lerp(3.2, 14.2, THREE.MathUtils.clamp(ratio, 0, 1));
 }
 
 function resetFlight() {
@@ -916,10 +1014,17 @@ function resetFlight() {
   flight.position.set(startX, startY, startZ);
   flight.yaw = Math.atan2(direction.x, direction.z);
   flight.pitch = Math.atan2(direction.y, Math.hypot(direction.x, direction.z));
-  flight.speed = 7;
-  flight.targetSpeed = 7;
-  flight.inputX = 0;
-  flight.inputY = 0;
+  flight.speedSelection = Number(flightSpeedSlider.value) || 40;
+  flight.speed = mapFlightSpeed(flight.speedSelection);
+  flight.boostSpeed = 0;
+  flight.verticalSpeed = 0;
+  flight.stickOffset.set(0, 0);
+  flight.stickSmooth.set(0, 0);
+  flight.keySmooth.set(0, 0);
+  flight.directTurnX = 0;
+  flight.directTurnY = 0;
+  flightStickKnob.style.transform = "translate(-50%, -50%)";
+  flightSpeedValue.value = String(Math.round(flight.speedSelection));
   flight.readoutElapsed = 1;
 }
 
@@ -970,57 +1075,119 @@ function setupInteraction() {
 }
 
 function setupFlightInteraction() {
+  flightStick.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (flight.stickId !== null) return;
+    flight.stickId = event.pointerId;
+    flight.stickOffset.set(0, 0);
+    flightStick.setPointerCapture(event.pointerId);
+  });
+
   canvas.addEventListener("pointerdown", (event) => {
-    flight.pointerId = event.pointerId;
-    flight.pointerX = event.clientX;
-    flight.pointerY = event.clientY;
-    flight.inputX = 0;
-    flight.inputY = 0;
-    flightStick.style.left = `${event.clientX}px`;
-    flightStick.style.top = `${event.clientY}px`;
-    flightStickKnob.style.transform = "translate(0px, 0px)";
-    flightStick.classList.add("is-visible");
+    event.preventDefault();
+    flight.accelPointers.add(event.pointerId);
+    if (
+      event.clientY >= window.innerHeight * 0.5
+      && event.clientX < window.innerWidth * 0.5
+      && flight.directId === null
+    ) {
+      flight.directId = event.pointerId;
+      flight.directLastX = event.clientX;
+      flight.directLastY = event.clientY;
+    }
     canvas.setPointerCapture(event.pointerId);
   });
 
-  canvas.addEventListener("pointermove", (event) => {
-    if (event.pointerId !== flight.pointerId) return;
-    const dx = event.clientX - flight.pointerX;
-    const dy = event.clientY - flight.pointerY;
-    flight.inputX = THREE.MathUtils.clamp(dx / 72, -1, 1);
-    flight.inputY = THREE.MathUtils.clamp(-dy / 72, -1, 1);
-    flightStickKnob.style.transform = `translate(${flight.inputX * 29}px, ${-flight.inputY * 29}px)`;
-  });
+  window.addEventListener("pointermove", (event) => {
+    if (event.pointerId === flight.stickId) {
+      event.preventDefault();
+      const rect = flightStick.getBoundingClientRect();
+      const dx = event.clientX - (rect.left + rect.width / 2);
+      const dy = event.clientY - (rect.top + rect.height / 2);
+      const length = Math.hypot(dx, dy);
+      const limit = Math.min(length, FLIGHT_STICK_LIMIT);
+      const nx = length > 0 ? dx / length : 0;
+      const ny = length > 0 ? dy / length : 0;
+      flight.stickOffset.set(nx * limit, ny * limit);
+      flightStickKnob.style.transform = `translate(calc(-50% + ${nx * limit}px), calc(-50% + ${ny * limit}px))`;
+    }
+
+    if (event.pointerId === flight.directId) {
+      event.preventDefault();
+      flight.directTurnX += event.clientX - flight.directLastX;
+      flight.directTurnY += event.clientY - flight.directLastY;
+      flight.directLastX = event.clientX;
+      flight.directLastY = event.clientY;
+    }
+  }, { passive: false });
 
   const releaseFlightPointer = (event) => {
-    if (event.pointerId !== flight.pointerId) return;
-    flight.pointerId = null;
-    flight.inputX = 0;
-    flight.inputY = 0;
-    flightStick.classList.remove("is-visible");
+    flight.accelPointers.delete(event.pointerId);
+    if (event.pointerId === flight.directId) {
+      flight.directId = null;
+    }
+    if (event.pointerId === flight.stickId) {
+      flight.stickId = null;
+      flight.stickOffset.set(0, 0);
+      flightStickKnob.style.transform = "translate(-50%, -50%)";
+    }
   };
-  canvas.addEventListener("pointerup", releaseFlightPointer);
-  canvas.addEventListener("pointercancel", releaseFlightPointer);
+  window.addEventListener("pointerup", releaseFlightPointer);
+  window.addEventListener("pointercancel", releaseFlightPointer);
 
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
-    flight.targetSpeed = THREE.MathUtils.clamp(
-      flight.targetSpeed - event.deltaY * 0.012,
-      3,
-      16,
+    flight.speedSelection = THREE.MathUtils.clamp(
+      flight.speedSelection - event.deltaY * 0.08,
+      12,
+      120,
     );
+    flightSpeedSlider.value = String(Math.round(flight.speedSelection));
+    flightSpeedValue.value = String(Math.round(flight.speedSelection));
   }, { passive: false });
 
   window.addEventListener("keydown", (event) => {
-    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.code)) {
+    if ([
+      "Space",
+      "KeyW",
+      "KeyA",
+      "KeyS",
+      "KeyD",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+    ].includes(event.code)) {
       event.preventDefault();
+      flight.keys.add(event.code);
     }
-    flight.keys.add(event.code);
   });
   window.addEventListener("keyup", (event) => {
     flight.keys.delete(event.code);
   });
-  window.addEventListener("blur", () => flight.keys.clear());
+  window.addEventListener("blur", () => {
+    flight.keys.clear();
+    flight.accelPointers.clear();
+  });
+  flightSpeedSlider.addEventListener("input", () => {
+    flight.speedSelection = Number(flightSpeedSlider.value);
+    flightSpeedValue.value = String(Math.round(flight.speedSelection));
+  });
+  flightSpeedSlider.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    let nextValue = Number(flightSpeedSlider.value);
+    if (event.code === "ArrowUp" || event.code === "ArrowRight") nextValue += 1;
+    else if (event.code === "ArrowDown" || event.code === "ArrowLeft") nextValue -= 1;
+    else return;
+    event.preventDefault();
+    flightSpeedSlider.value = String(THREE.MathUtils.clamp(nextValue, 12, 120));
+    flight.speedSelection = Number(flightSpeedSlider.value);
+    flightSpeedValue.value = String(Math.round(flight.speedSelection));
+  });
+  flightSpeedSlider.addEventListener("keyup", (event) => {
+    event.stopPropagation();
+  });
   document.querySelector("#flight-reset").addEventListener("click", resetFlight);
 }
 

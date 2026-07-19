@@ -199,20 +199,22 @@ h1 {
 
 .flight-stick {
   position: fixed;
-  z-index: 3;
+  z-index: 5;
+  right: 12px;
+  bottom: 14px;
   display: none;
-  width: 92px;
-  height: 92px;
-  margin: -46px 0 0 -46px;
-  border: 1px solid rgba(244, 240, 223, 0.38);
-  border-radius: 50%;
-  background: rgba(12, 20, 20, 0.28);
-  box-shadow: inset 0 0 24px rgba(244, 240, 223, 0.05);
-  pointer-events: none;
+  width: 140px;
+  height: 140px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: none;
+  pointer-events: auto;
+  touch-action: none;
   backdrop-filter: blur(4px);
 }
 
-.flight-stick.is-visible {
+body.flight-mode .flight-stick {
   display: block;
 }
 
@@ -220,12 +222,55 @@ h1 {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 24px;
-  height: 24px;
-  margin: -12px 0 0 -12px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
-  background: var(--ink);
-  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.38);
+  background: rgba(123, 228, 255, 0.92);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.flight-speed-panel {
+  position: fixed;
+  z-index: 5;
+  right: 12px;
+  bottom: 166px;
+  display: none;
+  width: 140px;
+  height: 190px;
+  padding: 12px 10px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(12, 20, 20, 0.34);
+  color: var(--ink);
+  text-align: center;
+  backdrop-filter: blur(6px);
+}
+
+body.flight-mode .flight-speed-panel {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+}
+
+.flight-speed-panel > span {
+  font-size: 8px;
+  letter-spacing: 0.22em;
+}
+
+.flight-speed-panel output {
+  margin: 2px 0 4px;
+  font: 24px/1 Georgia, "Times New Roman", serif;
+}
+
+.flight-speed-panel input {
+  width: 24px;
+  height: 130px;
+  margin: 0;
+  direction: rtl;
+  writing-mode: vertical-lr;
+  accent-color: #7be4ff;
 }
 
 .flight-readout {
@@ -243,6 +288,11 @@ h1 {
 
 .flight-readout.is-visible {
   display: block;
+}
+
+body.flight-mode .controls {
+  right: 164px;
+  justify-content: flex-start;
 }
 
 .loading {
@@ -290,6 +340,10 @@ h1 {
     align-items: stretch;
     flex-direction: column;
     gap: 6px;
+  }
+
+  body.flight-mode .controls {
+    right: 164px;
   }
 
   .mode-switch,

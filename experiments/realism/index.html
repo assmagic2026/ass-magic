@@ -40,6 +40,11 @@
 
       <p class="help">ドラッグで視点移動 / ホイールで距離調整</p>
       <div id="flight-stick" class="flight-stick" aria-hidden="true"><span></span></div>
+      <label id="flight-speed-panel" class="flight-speed-panel">
+        <span>SPEED</span>
+        <output id="flight-speed-value">40</output>
+        <input id="flight-speed-slider" type="range" min="12" max="120" step="1" value="40" orient="vertical">
+      </label>
       <div id="flight-readout" class="flight-readout" aria-live="polite"></div>
       <div class="loading" id="loading">BUILDING THE WORLD</div>
     </main>

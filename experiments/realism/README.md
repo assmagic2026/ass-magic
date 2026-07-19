@@ -22,11 +22,12 @@ Then open:
 
 `http://127.0.0.1:8765/experiments/realism/?mode=realism&quality=standard`
 
-The observation camera remains available with `view=orbit`. In `view=flight`,
-the camera moves forward automatically. Drag or swipe to steer, use the arrow
-keys as an alternative, and change speed with the mouse wheel or `W` / `S`.
-Releasing vertical input gradually restores level flight and the reference
-altitude above the procedural terrain.
+The observation camera remains available with `view=orbit`. The `view=flight`
+controls mirror the production experience: use the fixed lower-right stick,
+`WASD`, or the arrow keys to steer; hold the background or `Space` to accelerate;
+and use the speed slider to select cruise speed. Arrow-key horizontal input uses
+the same half-strength multiplier as production. Releasing vertical input
+gradually restores level flight near the reference altitude above the terrain.
 
 ## Isolation and rollback
 
