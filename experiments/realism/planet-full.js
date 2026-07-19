@@ -8,8 +8,8 @@ import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
 import {
   createFlightPlayer,
   updateFlightPlayer,
-} from "./whole-planet-player.js?v=realism-33";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js";
+} from "./whole-planet-player.js?v=realism-34";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-34";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -227,6 +227,7 @@ const flightVisualForward = new THREE.Vector3();
 const flightCameraForward = new THREE.Vector3();
 const flightCameraTarget = new THREE.Vector3();
 const flightCameraDesired = new THREE.Vector3();
+const flightTerrainAheadUp = new THREE.Vector3();
 const flightFogColor = new THREE.Color();
 const flightFogDay = new THREE.Color(0xaacbd4);
 const flightFogDusk = new THREE.Color(0xc58b73);
@@ -300,6 +301,11 @@ const FLIGHT_PHYSICS = Object.freeze({
   NEUTRAL_DESCEND_MAX: 2.1,
   NEUTRAL_RETURN: 1.1,
   NEUTRAL_ASCENT_BRAKE: 3,
+  NEUTRAL_ALTITUDE_DEADZONE: 0.55,
+  TERRAIN_LOOK_AHEAD_SECONDS: 1.15,
+  TERRAIN_FOLLOW_ASCENT_MAX: 6,
+  TERRAIN_FOLLOW_DESCENT_MAX: 3.2,
+  TERRAIN_FOLLOW_ALTITUDE_RETURN: 0.34,
   MAX_ASCENT_ANGLE: Math.PI / 4,
   CRUISE_BODY_PITCH: -0.12,
   DESCEND_INPUT_PITCH: 0.18,
@@ -1330,14 +1336,30 @@ function updateFlight(delta) {
       1 - Math.exp(-FLIGHT_PHYSICS.DESCEND_RESPONSE * delta),
     );
   } else if (!flight.onGround) {
-    const excessAltitude = Math.max(0, altitude - FLIGHT_PHYSICS.NEUTRAL_ALTITUDE);
-    const neutralTarget = excessAltitude > 0
-      ? -THREE.MathUtils.clamp(
-        FLIGHT_PHYSICS.NEUTRAL_DESCEND_MIN + excessAltitude * 0.12,
-        FLIGHT_PHYSICS.NEUTRAL_DESCEND_MIN,
-        FLIGHT_PHYSICS.NEUTRAL_DESCEND_MAX,
-      )
-      : 0;
+    flightRight.crossVectors(flightUp, flight.forward).normalize();
+    const lookAheadSeconds = FLIGHT_PHYSICS.TERRAIN_LOOK_AHEAD_SECONDS;
+    const lookAheadAngle = flight.speed * lookAheadSeconds / currentRadius;
+    flightTerrainAheadUp.copy(flightUp).applyAxisAngle(flightRight, lookAheadAngle).normalize();
+    const aheadSurface = getSurfaceRadius(flightTerrainAheadUp) + PLAYER_CLEARANCE;
+    const terrainFollowSpeed = THREE.MathUtils.clamp(
+      (aheadSurface - currentSurface) / lookAheadSeconds,
+      -FLIGHT_PHYSICS.TERRAIN_FOLLOW_DESCENT_MAX,
+      FLIGHT_PHYSICS.TERRAIN_FOLLOW_ASCENT_MAX,
+    );
+    const altitudeError = Math.abs(altitude - FLIGHT_PHYSICS.NEUTRAL_ALTITUDE)
+      <= FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_DEADZONE
+      ? 0
+      : altitude - FLIGHT_PHYSICS.NEUTRAL_ALTITUDE;
+    const altitudeReturnSpeed = THREE.MathUtils.clamp(
+      -altitudeError * FLIGHT_PHYSICS.TERRAIN_FOLLOW_ALTITUDE_RETURN,
+      -FLIGHT_PHYSICS.NEUTRAL_DESCEND_MAX,
+      FLIGHT_PHYSICS.TERRAIN_FOLLOW_ASCENT_MAX,
+    );
+    const neutralTarget = THREE.MathUtils.clamp(
+      terrainFollowSpeed + altitudeReturnSpeed,
+      -FLIGHT_PHYSICS.TERRAIN_FOLLOW_DESCENT_MAX,
+      FLIGHT_PHYSICS.TERRAIN_FOLLOW_ASCENT_MAX,
+    );
     const neutralResponse = flight.radialSpeed > neutralTarget
       ? FLIGHT_PHYSICS.NEUTRAL_ASCENT_BRAKE
       : FLIGHT_PHYSICS.NEUTRAL_RETURN;
@@ -1542,14 +1564,7 @@ function resetFlight() {
       .multiplyScalar(Math.cos(approachAngle))
       .addScaledVector(approach, -Math.sin(approachAngle))
       .normalize();
-  const featureStartAltitudes = {
-    mountain: 14,
-    crater: 34,
-    water: 14,
-    valley: 26,
-  };
-  const startAltitude = featureStartAltitudes[startPreset] || flight.cruiseAltitude;
-  const startRadius = getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + startAltitude;
+  const startRadius = getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + flight.cruiseAltitude;
   flight.position.copy(startDirection).multiplyScalar(startRadius);
   if (isSunsetStart) {
     flight.forward.copy(SUN_DIRECTION)

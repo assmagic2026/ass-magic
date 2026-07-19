@@ -2,6 +2,13 @@ import * as THREE from "../../three.module.js";
 import { GLTFLoader } from "./vendor/GLTFLoader.js";
 
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
+const poseBonePosition = new THREE.Vector3();
+const poseChildPosition = new THREE.Vector3();
+const poseDirection = new THREE.Vector3();
+const poseTarget = new THREE.Vector3();
+const poseDelta = new THREE.Quaternion();
+const poseWorldQuaternion = new THREE.Quaternion();
+const poseParentQuaternion = new THREE.Quaternion();
 
 export function createFlightPlayer(scene, options = {}) {
   const player = new THREE.Group();
@@ -67,6 +74,11 @@ export function createFlightPlayer(scene, options = {}) {
     visual.add(legRoot);
   }
 
+  // The fallback uses the same head-first horizontal silhouette as the GLB.
+  visual.rotation.x = Math.PI * 0.5;
+  armLeftRoot.rotation.z = Math.PI;
+  armRightRoot.rotation.z = Math.PI;
+
   const shadow = new THREE.Mesh(
     new THREE.CircleGeometry(1, 18),
     new THREE.MeshBasicMaterial({
@@ -109,6 +121,7 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
   return loader.loadAsync(modelUrl).then((gltf) => {
     const imported = gltf.scene;
     const modelVisual = new THREE.Group();
+    modelVisual.rotation.x = Math.PI * 0.5;
     modelVisual.add(imported);
     rig.player.add(modelVisual);
 
@@ -130,16 +143,43 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
       if (object.material?.map) object.material.map.anisotropy = 8;
     });
 
-    if (gltf.animations.length > 0) {
-      rig.mixer = new THREE.AnimationMixer(imported);
-      rig.mixer.clipAction(gltf.animations[0]).play();
-    }
+    poseSuperman(imported);
     rig.modelVisual = modelVisual;
     disposeVisual(rig.proceduralVisual);
   }).catch((error) => {
     console.warn("Realism human GLB could not be loaded; using the lightweight human.", error);
     throw error;
   });
+}
+
+function poseSuperman(imported) {
+  imported.updateWorldMatrix(true, true);
+  poseBoneToward(imported, "Skeleton_arm_joint_R", "Skeleton_arm_joint_R__2_", [0.12, 0.03, 1]);
+  poseBoneToward(imported, "Skeleton_arm_joint_R__2_", "Skeleton_arm_joint_R__3_", [0.04, -0.02, 1]);
+  poseBoneToward(imported, "Skeleton_arm_joint_L__4_", "Skeleton_arm_joint_L__3_", [-0.12, 0.03, 1]);
+  poseBoneToward(imported, "Skeleton_arm_joint_L__3_", "Skeleton_arm_joint_L__2_", [-0.04, -0.02, 1]);
+  poseBoneToward(imported, "leg_joint_R_1", "leg_joint_R_2", [0.1, -0.02, -1]);
+  poseBoneToward(imported, "leg_joint_R_2", "leg_joint_R_3", [0.04, -0.05, -1]);
+  poseBoneToward(imported, "leg_joint_L_1", "leg_joint_L_2", [-0.1, -0.02, -1]);
+  poseBoneToward(imported, "leg_joint_L_2", "leg_joint_L_3", [-0.04, -0.05, -1]);
+}
+
+function poseBoneToward(root, boneName, childName, target) {
+  const bone = root.getObjectByName(boneName);
+  const child = root.getObjectByName(childName);
+  if (!bone || !child || !bone.parent) return;
+
+  root.updateWorldMatrix(true, true);
+  bone.getWorldPosition(poseBonePosition);
+  child.getWorldPosition(poseChildPosition);
+  poseDirection.copy(poseChildPosition).sub(poseBonePosition).normalize();
+  poseTarget.set(...target).normalize();
+  poseDelta.setFromUnitVectors(poseDirection, poseTarget);
+  bone.getWorldQuaternion(poseWorldQuaternion);
+  poseWorldQuaternion.premultiply(poseDelta);
+  bone.parent.getWorldQuaternion(poseParentQuaternion).invert();
+  bone.quaternion.copy(poseParentQuaternion.multiply(poseWorldQuaternion));
+  root.updateWorldMatrix(true, true);
 }
 
 function disposeVisual(root) {

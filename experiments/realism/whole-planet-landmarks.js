@@ -367,6 +367,87 @@ function createSanctuary(realism) {
   return group;
 }
 
+function createNightGlowTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  const gradient = context.createRadialGradient(32, 32, 1, 32, 32, 31);
+  gradient.addColorStop(0, "rgba(255,255,255,1)");
+  gradient.addColorStop(0.16, "rgba(132,238,255,0.92)");
+  gradient.addColorStop(0.48, "rgba(48,164,230,0.34)");
+  gradient.addColorStop(1, "rgba(24,92,180,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createNightBeacons(night, axisA, axisB, getSurfaceRadius) {
+  const group = new THREE.Group();
+  const count = 22;
+  const crystalGeometry = new THREE.ConeGeometry(1.05, 7.4, 5);
+  crystalGeometry.translate(0, 3.7, 0);
+  const crystalMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    toneMapped: false,
+    fog: true,
+  });
+  const crystals = new THREE.InstancedMesh(crystalGeometry, crystalMaterial, count);
+  const glowPositions = new Float32Array(count * 3);
+  const direction = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+  const forward = new THREE.Vector3();
+  const glowPosition = new THREE.Vector3();
+  const cyan = new THREE.Color(0x72efff);
+  const blue = new THREE.Color(0x5e8dff);
+
+  for (let index = 0; index < count; index += 1) {
+    const angle = index / count * Math.PI * 2 + (index % 3) * 0.2;
+    const spread = 0.095 + (index % 5) * 0.045;
+    tangent.copy(axisA).multiplyScalar(Math.cos(angle)).addScaledVector(axisB, Math.sin(angle));
+    direction.copy(night).multiplyScalar(Math.cos(spread))
+      .addScaledVector(tangent, Math.sin(spread))
+      .normalize();
+    forward.copy(tangent).cross(direction).normalize();
+    placeOnSphere(dummy, direction, forward, 0.12, getSurfaceRadius, index * 0.31);
+    const heightScale = 0.72 + (index % 7) * 0.13;
+    dummy.scale.set(0.72 + (index % 2) * 0.2, heightScale, 0.72 + (index % 3) * 0.12);
+    dummy.updateMatrix();
+    crystals.setMatrixAt(index, dummy.matrix);
+    crystals.setColorAt(index, index % 4 === 0 ? blue : cyan);
+
+    glowPosition.copy(direction).multiplyScalar(getSurfaceRadius(direction) + 5.4 * heightScale);
+    glowPositions[index * 3] = glowPosition.x;
+    glowPositions[index * 3 + 1] = glowPosition.y;
+    glowPositions[index * 3 + 2] = glowPosition.z;
+  }
+  crystals.instanceMatrix.needsUpdate = true;
+  if (crystals.instanceColor) crystals.instanceColor.needsUpdate = true;
+
+  const glowGeometry = new THREE.BufferGeometry();
+  glowGeometry.setAttribute("position", new THREE.BufferAttribute(glowPositions, 3));
+  const glowMaterial = new THREE.PointsMaterial({
+    color: 0x8deeff,
+    map: createNightGlowTexture(),
+    size: 21,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    fog: true,
+  });
+  const glows = new THREE.Points(glowGeometry, glowMaterial);
+  glows.frustumCulled = false;
+  group.add(crystals, glows);
+  group.userData.glowMaterial = glowMaterial;
+  return group;
+}
+
 function createBlackBox(realism) {
   const group = new THREE.Group();
   const shell = createMaterial(0x050505, realism, { roughness: 0.4, metalness: 0.15 });
@@ -439,6 +520,9 @@ export function createSpecialLandmarks({
   placeOnSphere(whiteSphere, night, nightAxisA, 40, getSurfaceRadius);
   root.add(whiteSphere);
 
+  const nightBeacons = createNightBeacons(night, nightAxisA, nightAxisB, getSurfaceRadius);
+  root.add(nightBeacons);
+
   const compass = createCompass();
   compass.scale.setScalar(2.8);
   const compassForward = sun.clone().addScaledVector(compassDirection, -sun.dot(compassDirection)).normalize();
@@ -475,6 +559,8 @@ export function createSpecialLandmarks({
       recordPlayer.userData.recordDisc.rotation.y += delta * 1.55;
       compass.userData.rotor.rotation.y += delta * 0.42;
       for (const halo of sanctuary.userData.halos) halo.rotation.z += delta * halo.userData.spin;
+      nightBeacons.userData.glowMaterial.opacity = 0.62 + Math.sin(blackBoxAngle * 1.7) * 0.13;
+      nightBeacons.userData.glowMaterial.size = 20 + Math.sin(blackBoxAngle * 1.25) * 2.2;
 
       blackBoxAngle += delta * 0.54;
       blackBoxDirection.copy(sun).multiplyScalar(Math.cos(blackBoxAngle))

@@ -77,9 +77,10 @@ uses only the thin atmospheric rim, avoiding an unnecessary sky dome and its
 clipping artifact. Realism mode deliberately omits the old point-sprite cloud
 layer because it looked synthetic.
 
-The whole-planet flight scene now includes a production-scale human player and
-seven landmark types at production-derived directions: giant record player,
-giant book, black sphere, white sphere, floating compass, sanctuary, and moving
+The whole-planet flight scene now includes a production-scale human player in a
+head-first Superman flight pose and seven landmark types at production-derived
+directions: giant record player, giant book, black sphere, white sphere,
+floating compass, sanctuary, and moving
 black box. The default `start=dusk` route follows the terminator instead of
 crossing immediately into day, so twilight remains visible while flying. Other
 visual checkpoints can be opened with `start=recordPlayer`, `start=book`,
@@ -87,6 +88,17 @@ visual checkpoints can be opened with `start=recordPlayer`, `start=book`,
 `start=mountain`, `start=crater`, `start=water`, and `start=valley`; each begins
 far enough away to read the full landform. Use `start=sunset` to stand on the
 terminator and face the physically computed sun direction directly.
+
+The night hemisphere keeps its dark sky but adds 22 luminous crystal beacons
+around the white sphere. Their meshes are one `InstancedMesh` and their soft
+halos are one `Points` draw, so the installation costs two draw calls rather
+than one draw per light. They use emissive-looking unlit materials instead of
+shadow-casting point lights. Flight starts and neutral input use production's
+10-metre altitude target; the former terrain-checkpoint altitude overrides have
+been removed. Because this experiment's mountains and valleys are much steeper
+than production terrain, neutral flight samples the surface about one second
+ahead and gently follows its rise or fall. Manual vertical input always takes
+priority over this terrain-follow correction.
 
 High-quality flight mode replaces the procedural human with Khronos's
 `CesiumMan.glb` sample (about 479 KB), and replaces the giant
@@ -114,7 +126,7 @@ The current desktop-browser measurements at DPR `1.0` are:
 
 | Mode | Planet mesh | Rocks | Landmarks | Triangles | Draw calls | Startup |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| High flight | 256 x 128 | 2,200 | 7 types | 889,900-890,100 | 11-27 | 102-113 ms* |
+| High flight | 256 x 128 | 2,200 | 7 types | 889,100-893,300 | 11-30 | 94-113 ms* |
 
 The high-quality flight view held the display's 75 FPS cap in this desktop
 environment after enabling the local shadow pass and photographic PBR maps, with
