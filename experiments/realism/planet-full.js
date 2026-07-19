@@ -8,7 +8,7 @@ import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
 import {
   createFlightPlayer,
   updateFlightPlayer,
-} from "./whole-planet-player.js";
+} from "./whole-planet-player.js?v=realism-33";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js";
 
 const PLANET_RADIUS = 340;
@@ -19,6 +19,57 @@ const TERRAIN_DRY = new THREE.Color(0x827965);
 const TERRAIN_WET = new THREE.Color(0x46564b);
 const TERRAIN_ROCK = new THREE.Color(0x66635d);
 const TERRAIN_HIGH = new THREE.Color(0xaaa59a);
+const WATER_LEVEL = -9;
+const WATER_RADIUS = PLANET_RADIUS + WATER_LEVEL;
+const FEATURE_AXIS_A = new THREE.Vector3().crossVectors(WORLD_UP, SUN_DIRECTION).normalize();
+const FEATURE_AXIS_B = new THREE.Vector3().crossVectors(SUN_DIRECTION, FEATURE_AXIS_A).normalize();
+const MOUNTAIN_DIRECTION = FEATURE_AXIS_A.clone()
+  .multiplyScalar(0.9)
+  .addScaledVector(FEATURE_AXIS_B, 0.2)
+  .addScaledVector(SUN_DIRECTION, 0.38)
+  .normalize();
+const MOUNTAIN_TANGENT = new THREE.Vector3().crossVectors(WORLD_UP, MOUNTAIN_DIRECTION).normalize();
+const MOUNTAIN_PEAKS = [
+  { direction: MOUNTAIN_DIRECTION, height: 58, radius: 0.18, phase: 1.2 },
+  {
+    direction: MOUNTAIN_DIRECTION.clone()
+      .multiplyScalar(Math.cos(0.1))
+      .addScaledVector(MOUNTAIN_TANGENT, Math.sin(0.1))
+      .normalize(),
+    height: 38,
+    radius: 0.13,
+    phase: 3.7,
+  },
+  {
+    direction: MOUNTAIN_DIRECTION.clone()
+      .multiplyScalar(Math.cos(0.12))
+      .addScaledVector(MOUNTAIN_TANGENT, -Math.sin(0.12))
+      .normalize(),
+    height: 31,
+    radius: 0.11,
+    phase: 5.1,
+  },
+];
+const CRATER_DIRECTION = FEATURE_AXIS_A.clone()
+  .multiplyScalar(-0.75)
+  .addScaledVector(FEATURE_AXIS_B, 0.55)
+  .addScaledVector(SUN_DIRECTION, 0.36)
+  .normalize();
+const CRATER_APPROACH = SUN_DIRECTION.clone()
+  .addScaledVector(CRATER_DIRECTION, -SUN_DIRECTION.dot(CRATER_DIRECTION))
+  .normalize();
+const WATER_DIRECTION = FEATURE_AXIS_A.clone()
+  .multiplyScalar(-0.55)
+  .addScaledVector(FEATURE_AXIS_B, -0.75)
+  .addScaledVector(SUN_DIRECTION, 0.34)
+  .normalize();
+const VALLEY_DIRECTION = FEATURE_AXIS_A.clone()
+  .multiplyScalar(0.4)
+  .addScaledVector(FEATURE_AXIS_B, -0.85)
+  .addScaledVector(SUN_DIRECTION, 0.3)
+  .normalize();
+const VALLEY_TANGENT = new THREE.Vector3().crossVectors(WORLD_UP, VALLEY_DIRECTION).normalize();
+const VALLEY_NORMAL = new THREE.Vector3().crossVectors(VALLEY_DIRECTION, VALLEY_TANGENT).normalize();
 const PLANET_LOADS = Object.freeze({
   current: {
     planetDetail: 4,
@@ -114,6 +165,8 @@ const movingSurfaceLayers = [];
 const planet = createPlanet();
 planet.receiveShadow = realismShadowsEnabled;
 scene.add(planet);
+const water = settings.mode === "realism" ? createWaterSurface() : null;
+if (water) scene.add(water);
 const sky = settings.view === "flight" ? createSky() : null;
 if (sky) scene.add(sky);
 addLighting();
@@ -131,9 +184,15 @@ const specialLandmarks = createSpecialLandmarks({
   bookModelUrl: useGlbAssets ? "./assets/models/old-bible-1825.glb" : null,
   castShadow: realismShadowsEnabled,
 });
+Object.assign(specialLandmarks.directions, {
+  mountain: MOUNTAIN_DIRECTION,
+  crater: CRATER_DIRECTION,
+  water: WATER_DIRECTION,
+  valley: VALLEY_DIRECTION,
+});
 if (specialLandmarks.ready) externalTextureLoads.push(specialLandmarks.ready);
 const flightPlayer = createFlightPlayer(scene, {
-  modelUrl: useGlbAssets ? "./assets/models/flying-seagull.glb" : null,
+  modelUrl: useGlbAssets ? "./assets/models/cesium-man.glb" : null,
   castShadow: realismShadowsEnabled,
 });
 if (flightPlayer.ready) externalTextureLoads.push(flightPlayer.ready);
@@ -297,6 +356,9 @@ renderer.setAnimationLoop(() => {
   for (const layer of movingSurfaceLayers) {
     layer.object.rotation.y = elapsed * layer.speed;
   }
+  if (water?.material.normalMap) {
+    water.material.normalMap.offset.set(elapsed * 0.004, elapsed * -0.0025);
+  }
   if (atmosphere) atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
   if (sky) {
     sky.position.copy(camera.position);
@@ -358,11 +420,49 @@ function terrainHeightFromDirection(direction) {
   const productionSurface = ridge + swell + twist;
   if (settings.mode !== "realism") return productionSurface;
 
-  // Broad, low-frequency relief reads as real terrain without making the
-  // production-derived flight response feel like a sequence of small bumps.
-  const continentalRise = terrainSignal(direction, 2.15, 0.72) * 12.5;
-  const rollingHighland = terrainSignal(direction, 4.1, 2.38) * 6.0;
-  return productionSurface + continentalRise + rollingHighland;
+  const continentalRise = terrainSignal(direction, 2.15, 0.72) * 18;
+  const rollingHighland = terrainSignal(direction, 4.1, 2.38) * 10;
+  const ruggedGround = terrainSignal(direction, 10.5, 4.7) * 4.8;
+  return productionSurface
+    + continentalRise
+    + rollingHighland
+    + ruggedGround
+    + terrainFeatureHeight(direction);
+}
+
+function terrainFeatureHeight(direction) {
+  let height = 0;
+  for (const peak of MOUNTAIN_PEAKS) {
+    const distance = chordDistance(direction, peak.direction);
+    const profile = Math.exp(-Math.pow(distance / peak.radius, 1.7));
+    const erosion = 0.72 + Math.abs(terrainSignal(direction, 18, peak.phase)) * 0.38;
+    height += peak.height * profile * erosion;
+  }
+
+  const craterDistance = chordDistance(direction, CRATER_DIRECTION);
+  const craterRimVisibility = THREE.MathUtils.smoothstep(
+    direction.dot(CRATER_APPROACH),
+    -0.085,
+    0.035,
+  );
+  height -= 34 * Math.exp(-Math.pow(craterDistance / 0.105, 4));
+  height += 18
+    * Math.exp(-Math.pow((craterDistance - 0.14) / 0.027, 2))
+    * craterRimVisibility;
+
+  const basinDistance = chordDistance(direction, WATER_DIRECTION);
+  height -= 29 * Math.exp(-Math.pow(basinDistance / 0.24, 2));
+
+  const valleyCrossTrack = Math.abs(direction.dot(VALLEY_NORMAL));
+  const valleyAlongTrack = chordDistance(direction, VALLEY_DIRECTION);
+  const valleyLength = 1 - THREE.MathUtils.smoothstep(valleyAlongTrack, 0.28, 0.5);
+  height -= 31 * Math.exp(-Math.pow(valleyCrossTrack / 0.045, 2)) * valleyLength;
+  height += 11 * Math.exp(-Math.pow((valleyCrossTrack - 0.09) / 0.03, 2)) * valleyLength;
+  return height;
+}
+
+function chordDistance(first, second) {
+  return Math.sqrt(Math.max(0, 2 - 2 * THREE.MathUtils.clamp(first.dot(second), -1, 1)));
 }
 
 function terrainSignal(direction, frequency, phase) {
@@ -382,8 +482,13 @@ function terrainSignal(direction, frequency, phase) {
   return (first + second + third) / 3;
 }
 
-function getSurfaceRadius(direction) {
+function getTerrainRadius(direction) {
   return PLANET_RADIUS + terrainHeightFromDirection(direction);
+}
+
+function getSurfaceRadius(direction) {
+  const terrainRadius = getTerrainRadius(direction);
+  return settings.mode === "realism" ? Math.max(terrainRadius, WATER_RADIUS) : terrainRadius;
 }
 
 function getTerrainColor(direction, height, target) {
@@ -427,6 +532,62 @@ function createRealisticPlanetMaterial() {
     metalness: 0,
     vertexColors: true,
   });
+}
+
+function createWaterSurface() {
+  const widthSegments = Math.max(96, Math.round(planetLoad.planetWidthSegments * 0.75));
+  const heightSegments = Math.max(48, Math.round(planetLoad.planetHeightSegments * 0.75));
+  const normalMap = createWaterNormalTexture(settings.quality === "high" ? 256 : 128);
+  const material = new THREE.MeshPhysicalMaterial({
+    color: 0x2d7086,
+    roughness: 0.18,
+    metalness: 0.08,
+    clearcoat: 0.72,
+    clearcoatRoughness: 0.22,
+    normalMap,
+    normalScale: new THREE.Vector2(0.32, 0.32),
+    transparent: true,
+    opacity: 0.78,
+    depthWrite: false,
+  });
+  const waterSurface = new THREE.Mesh(
+    new THREE.SphereGeometry(WATER_RADIUS, widthSegments, heightSegments),
+    material,
+  );
+  waterSurface.renderOrder = 1;
+  return waterSurface;
+}
+
+function createWaterNormalTexture(size) {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = size;
+  textureCanvas.height = size;
+  const context = textureCanvas.getContext("2d");
+  const pixels = context.createImageData(size, size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const u = x / size;
+      const v = y / size;
+      const dx = Math.cos((u * 15 + v * 4) * Math.PI * 2) * 0.22
+        + Math.cos((u * 31 - v * 9) * Math.PI * 2) * 0.09;
+      const dy = Math.sin((v * 18 + u * 5) * Math.PI * 2) * 0.2
+        + Math.sin((v * 37 - u * 7) * Math.PI * 2) * 0.08;
+      const length = Math.hypot(dx, dy, 1);
+      const offset = (y * size + x) * 4;
+      pixels.data[offset] = 128 + (-dx / length) * 127;
+      pixels.data[offset + 1] = 128 + (-dy / length) * 127;
+      pixels.data[offset + 2] = 128 + (1 / length) * 127;
+      pixels.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(pixels, 0, 0);
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(24, 12);
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  textureDisposables.push(texture);
+  return texture;
 }
 
 function loadPbrTexture(path, isColor) {
@@ -599,7 +760,12 @@ function addRocks(random) {
   for (let index = 0; index < planetLoad.rockCount; index += 1) {
     sampleClusteredDirection(random, clusters, direction, jitter, 0.78);
     const size = 0.42 + Math.pow(random(), 1.82) * 3.2;
-    position.copy(direction).multiplyScalar(getSurfaceRadius(direction) + size * 0.4);
+    const terrainRadius = getTerrainRadius(direction);
+    if (settings.mode === "realism" && terrainRadius <= WATER_RADIUS + 0.2) {
+      rocks.setMatrixAt(index, matrix.makeScale(0, 0, 0));
+      continue;
+    }
+    position.copy(direction).multiplyScalar(terrainRadius + size * 0.4);
     orientation.setFromUnitVectors(WORLD_UP, direction);
     spin.setFromAxisAngle(direction, random() * Math.PI * 2);
     orientation.premultiply(spin);
@@ -660,7 +826,12 @@ function addPebbles(random) {
   for (let index = 0; index < planetLoad.pebbleCount; index += 1) {
     randomSphereDirection(random, direction);
     const size = 0.12 + Math.pow(random(), 2.2) * 0.72;
-    position.copy(direction).multiplyScalar(getSurfaceRadius(direction) + size * 0.2);
+    const terrainRadius = getTerrainRadius(direction);
+    if (terrainRadius <= WATER_RADIUS + 0.12) {
+      pebbles.setMatrixAt(index, matrix.makeScale(0, 0, 0));
+      continue;
+    }
+    position.copy(direction).multiplyScalar(terrainRadius + size * 0.2);
     orientation.setFromUnitVectors(WORLD_UP, direction);
     spin.setFromAxisAngle(direction, random() * Math.PI * 2);
     orientation.premultiply(spin);
@@ -708,7 +879,12 @@ function addCracks(random) {
   for (let index = 0; index < planetLoad.crackCount; index += 1) {
     sampleClusteredDirection(random, clusters, direction, jitter, 0.88);
     const length = 2.8 + random() * 7.5;
-    position.copy(direction).multiplyScalar(getSurfaceRadius(direction) + 0.08);
+    const terrainRadius = getTerrainRadius(direction);
+    if (terrainRadius <= WATER_RADIUS + 0.08) {
+      cracks.setMatrixAt(index, matrix.makeScale(0, 0, 0));
+      continue;
+    }
+    position.copy(direction).multiplyScalar(terrainRadius + 0.08);
     orientation.setFromUnitVectors(planeNormal, direction);
     spin.setFromAxisAngle(direction, random() * Math.PI * 2);
     orientation.premultiply(spin);
@@ -760,8 +936,13 @@ function createSurfacePointGeometry(count, random, minimumAltitude, maximumAltit
   const positions = new Float32Array(count * 3);
   const direction = new THREE.Vector3();
   for (let index = 0; index < count; index += 1) {
-    randomSphereDirection(random, direction);
-    const radius = getSurfaceRadius(direction)
+    let terrainRadius;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      randomSphereDirection(random, direction);
+      terrainRadius = getTerrainRadius(direction);
+      if (settings.mode !== "realism" || terrainRadius > WATER_RADIUS + 0.2) break;
+    }
+    const radius = terrainRadius
       + minimumAltitude
       + random() * (maximumAltitude - minimumAltitude);
     positions[index * 3] = direction.x * radius;
@@ -1345,16 +1526,30 @@ function resetFlight() {
       targetDirection,
       -SUN_DIRECTION.dot(targetDirection),
     );
+  if (startPreset === "valley") approach.copy(VALLEY_TANGENT);
   if (approach.lengthSq() < 0.0001) approach.crossVectors(WORLD_UP, targetDirection);
   approach.normalize();
-  const approachAngle = isDuskStart ? 0.42 : 0.18;
+  const featureApproachAngles = {
+    mountain: 0.48,
+    crater: 0.5,
+    water: 0.4,
+    valley: 0.4,
+  };
+  const approachAngle = featureApproachAngles[startPreset] || (isDuskStart ? 0.42 : 0.18);
   const startDirection = isSunsetStart
     ? targetDirection.clone()
     : targetDirection.clone()
       .multiplyScalar(Math.cos(approachAngle))
       .addScaledVector(approach, -Math.sin(approachAngle))
       .normalize();
-  const startRadius = getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + flight.cruiseAltitude;
+  const featureStartAltitudes = {
+    mountain: 14,
+    crater: 34,
+    water: 14,
+    valley: 26,
+  };
+  const startAltitude = featureStartAltitudes[startPreset] || flight.cruiseAltitude;
+  const startRadius = getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + startAltitude;
   flight.position.copy(startDirection).multiplyScalar(startRadius);
   if (isSunsetStart) {
     flight.forward.copy(SUN_DIRECTION)

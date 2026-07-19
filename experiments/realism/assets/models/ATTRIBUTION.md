@@ -1,5 +1,13 @@
 # Experiment model attribution
 
+## cesium-man.glb
+
+- Source: `https://github.com/KhronosGroup/glTF-Sample-Models/tree/master/2.0/CesiumMan`
+- Donor: Cesium
+- License: CC BY 4.0
+- Local change: copied without geometry, animation, or texture modification for
+  the isolated high-quality experiment
+
 ## old-bible-1825.glb
 
 - Source: `https://opengameart.org/content/old-bible-3d`
@@ -16,3 +24,5 @@
   isolated high-quality experiment
 - Before any production release, confirm the original asset provenance and
   redistribution terms.
+- This asset is retained only as an earlier experiment fallback and is no longer
+  loaded by the whole-planet study.

@@ -8,97 +8,64 @@ export function createFlightPlayer(scene, options = {}) {
   const visual = new THREE.Group();
   player.add(visual);
 
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0xf4f7f5,
-    roughness: 0.72,
+  const skinMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb98265,
+    roughness: 0.88,
     metalness: 0,
   });
-  const wingMaterial = new THREE.MeshStandardMaterial({
-    color: 0xe9efee,
-    roughness: 0.78,
+  const coatMaterial = new THREE.MeshStandardMaterial({
+    color: 0x26313b,
+    roughness: 0.82,
     metalness: 0,
   });
-  const beakMaterial = new THREE.MeshStandardMaterial({
-    color: 0xd89b42,
-    roughness: 0.7,
+  const trousersMaterial = new THREE.MeshStandardMaterial({
+    color: 0x151a20,
+    roughness: 0.86,
     metalness: 0,
   });
-  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x101318 });
 
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.18, 1.08, 8, 14), bodyMaterial);
-  body.rotation.x = Math.PI * 0.5;
-  body.scale.set(0.67, 0.6, 1.06);
-  body.position.z = -0.03;
-  visual.add(body);
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.7, 6, 10), coatMaterial);
+  torso.position.y = 0.34;
+  torso.scale.set(0.92, 1, 0.58);
+  visual.add(torso);
 
-  const back = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 10), bodyMaterial);
-  back.scale.set(0.8, 0.48, 1.78);
-  back.position.set(0, 0.06, -0.08);
-  visual.add(back);
+  const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), trousersMaterial);
+  pelvis.position.y = -0.25;
+  pelvis.scale.set(0.92, 0.62, 0.62);
+  visual.add(pelvis);
 
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 10), bodyMaterial);
-  belly.scale.set(0.58, 0.34, 1.28);
-  belly.position.set(0, -0.085, 0.05);
-  visual.add(belly);
+  const neck = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.12, 4, 8), skinMaterial);
+  neck.position.y = 0.86;
+  visual.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 12, 10), skinMaterial);
+  head.position.set(0, 1.13, 0.015);
+  head.scale.set(0.82, 1.04, 0.9);
+  visual.add(head);
 
-  const headRoot = new THREE.Group();
-  headRoot.position.set(0, 0.05, 0.9);
-  visual.add(headRoot);
+  const armLeftRoot = new THREE.Group();
+  const armRightRoot = new THREE.Group();
+  armLeftRoot.position.set(-0.36, 0.63, 0);
+  armRightRoot.position.set(0.36, 0.63, 0);
+  visual.add(armLeftRoot, armRightRoot);
+  for (const [root, side] of [[armLeftRoot, -1], [armRightRoot, 1]]) {
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.58, 4, 8), coatMaterial);
+    arm.position.y = -0.34;
+    arm.rotation.z = side * -0.13;
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 6), skinMaterial);
+    hand.position.set(side * 0.08, -0.72, 0);
+    root.add(arm, hand);
+  }
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 14, 10), bodyMaterial);
-  head.scale.set(0.82, 0.66, 1.06);
-  head.position.set(0, 0.02, 0.05);
-  headRoot.add(head);
-
-  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.38, 4), beakMaterial);
-  beak.rotation.x = Math.PI * 0.5;
-  beak.position.set(0, -0.02, 0.27);
-  headRoot.add(beak);
-
-  const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.03, 4, 4), eyeMaterial);
-  const rightEye = leftEye.clone();
-  leftEye.position.set(-0.085, 0.03, 0.07);
-  rightEye.position.set(0.085, 0.03, 0.07);
-  headRoot.add(leftEye, rightEye);
-
-  const wingLeftRoot = new THREE.Group();
-  const wingRightRoot = new THREE.Group();
-  wingLeftRoot.position.set(-0.18, 0.08, 0);
-  wingRightRoot.position.set(0.18, 0.08, 0);
-  visual.add(wingLeftRoot, wingRightRoot);
-
-  const wingMainGeometry = new THREE.CapsuleGeometry(0.17, 0.58, 3, 6);
-  wingMainGeometry.rotateZ(Math.PI * 0.5);
-  const wingTipGeometry = new THREE.CapsuleGeometry(0.13, 0.42, 3, 6);
-  wingTipGeometry.rotateZ(Math.PI * 0.5);
-
-  const leftWing = new THREE.Mesh(wingMainGeometry, wingMaterial);
-  const leftTip = new THREE.Mesh(wingTipGeometry, wingMaterial);
-  leftWing.position.x = -0.32;
-  leftWing.scale.set(0.7, 0.3, 0.62);
-  leftTip.scale.set(0.7, 0.28, 0.52);
-  leftTip.position.set(-0.69, -0.005, -0.03);
-  leftTip.rotation.y = 0.06;
-  wingLeftRoot.add(leftWing, leftTip);
-
-  const rightWing = leftWing.clone();
-  const rightTip = leftTip.clone();
-  rightWing.position.x = 0.32;
-  rightTip.position.set(0.69, -0.005, -0.03);
-  rightTip.rotation.y = -0.06;
-  wingRightRoot.add(rightWing, rightTip);
-
-  const tailGeometry = new THREE.CapsuleGeometry(0.08, 0.86, 5, 8);
-  tailGeometry.rotateX(Math.PI * 0.5);
-  const leftTail = new THREE.Mesh(tailGeometry, wingMaterial);
-  const rightTail = leftTail.clone();
-  leftTail.scale.set(0.78, 0.34, 1);
-  rightTail.scale.copy(leftTail.scale);
-  leftTail.position.set(-0.12, -0.04, -1.28);
-  rightTail.position.set(0.12, -0.04, -1.28);
-  leftTail.rotation.y = -0.06;
-  rightTail.rotation.y = 0.06;
-  visual.add(leftTail, rightTail);
+  for (const side of [-1, 1]) {
+    const legRoot = new THREE.Group();
+    legRoot.position.set(side * 0.17, -0.42, 0);
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.66, 4, 8), trousersMaterial);
+    leg.position.y = -0.39;
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.16, 0.43), trousersMaterial);
+    shoe.position.set(0, -0.82, 0.1);
+    legRoot.add(leg, shoe);
+    visual.add(legRoot);
+  }
 
   const shadow = new THREE.Mesh(
     new THREE.CircleGeometry(1, 18),
@@ -119,8 +86,8 @@ export function createFlightPlayer(scene, options = {}) {
     modelVisual: null,
     mixer: null,
     ready: null,
-    wingLeftRoot,
-    wingRightRoot,
+    armLeftRoot,
+    armRightRoot,
     bobPhase: 1.7,
     basis: new THREE.Matrix4(),
     quaternion: new THREE.Quaternion(),
@@ -148,11 +115,13 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
     imported.updateMatrixWorld(true);
     const bounds = new THREE.Box3().setFromObject(imported);
     const size = bounds.getSize(new THREE.Vector3());
-    const largestDimension = Math.max(size.x, size.y, size.z, 0.001);
-    imported.scale.setScalar(2.9 / largestDimension);
+    imported.scale.setScalar(2.6 / Math.max(size.y, 0.001));
     imported.updateMatrixWorld(true);
     bounds.setFromObject(imported);
-    imported.position.sub(bounds.getCenter(new THREE.Vector3()));
+    const center = bounds.getCenter(new THREE.Vector3());
+    imported.position.x -= center.x;
+    imported.position.z -= center.z;
+    imported.position.y -= bounds.min.y + 0.82;
 
     imported.traverse((object) => {
       if (!object.isMesh) return;
@@ -168,7 +137,7 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
     rig.modelVisual = modelVisual;
     disposeVisual(rig.proceduralVisual);
   }).catch((error) => {
-    console.warn("Realism seagull GLB could not be loaded; using the lightweight player.", error);
+    console.warn("Realism human GLB could not be loaded; using the lightweight human.", error);
     throw error;
   });
 }
@@ -215,16 +184,16 @@ export function updateFlightPlayer(rig, state) {
   rig.player.position.copy(position).addScaledVector(up, bob);
   if (rig.mixer) rig.mixer.update(delta);
 
-  const wingTarget = THREE.MathUtils.clamp(climbInput * 0.22 - Math.abs(turnInput) * 0.08, -0.24, 0.2);
-  rig.wingLeftRoot.rotation.z = THREE.MathUtils.damp(
-    rig.wingLeftRoot.rotation.z,
-    -wingTarget,
+  const armSwing = THREE.MathUtils.clamp(climbInput * 0.18 + turnInput * 0.08, -0.22, 0.22);
+  rig.armLeftRoot.rotation.x = THREE.MathUtils.damp(
+    rig.armLeftRoot.rotation.x,
+    armSwing,
     4.4,
     delta,
   );
-  rig.wingRightRoot.rotation.z = THREE.MathUtils.damp(
-    rig.wingRightRoot.rotation.z,
-    wingTarget,
+  rig.armRightRoot.rotation.x = THREE.MathUtils.damp(
+    rig.armRightRoot.rotation.x,
+    -armSwing,
     4.4,
     delta,
   );
