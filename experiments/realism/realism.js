@@ -99,11 +99,14 @@ if (settings.view === "flight") {
 }
 
 const textureDisposables = [];
+let groundDust = null;
+let surfaceTime = 0;
 const terrain = createTerrain();
 scene.add(terrain);
 scene.add(createBook());
 scene.add(createSkyDome());
 addLighting();
+addSurfaceDetails();
 addAtmosphere();
 
 const startupMs = performance.now() - bootStartedAt;
@@ -129,6 +132,7 @@ renderer.setAnimationLoop(() => {
   }
 
   if (adaptiveDpr.sample(delta)) resize();
+  updateSurfaceDetails(delta);
   renderer.render(scene, camera);
   perfHud.update(delta, adaptiveDpr.ratio);
 });
@@ -191,6 +195,223 @@ function getTerrainHeight(x, z) {
     ? Math.sin((x + z) * 0.48) * 0.18 + Math.sin(x * 0.91 - z * 0.37) * 0.12
     : Math.round((Math.sin(x * 0.16) + Math.cos(z * 0.12)) * 0.9) * 0.72;
   return radialCurve + broad + detail - 1.1;
+}
+
+function getTerrainNormal(x, z, target) {
+  const sample = 0.24;
+  const left = getTerrainHeight(x - sample, z);
+  const right = getTerrainHeight(x + sample, z);
+  const back = getTerrainHeight(x, z - sample);
+  const front = getTerrainHeight(x, z + sample);
+  return target.set(left - right, sample * 2, back - front).normalize();
+}
+
+function addSurfaceDetails() {
+  if (settings.mode !== "realism") return;
+
+  const random = createSeededRandom(28417);
+  addInstancedRocks(random);
+  addInstancedCracks(random);
+  groundDust = createGroundDust(random);
+  if (groundDust) scene.add(groundDust);
+}
+
+function addInstancedRocks(random) {
+  const count = settings.preset.rockCount;
+  if (!count) return;
+
+  const geometry = new THREE.DodecahedronGeometry(0.72, 0);
+  geometry.scale(1, 0.72, 0.88);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x6f6252,
+    roughness: 0.98,
+    metalness: 0,
+    flatShading: true,
+  });
+  const rocks = new THREE.InstancedMesh(geometry, material, count);
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const orientation = new THREE.Quaternion();
+  const tilt = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+
+  for (let index = 0; index < count; index += 1) {
+    const point = pickSurfacePoint(random, 11, 51);
+    const size = 0.38 + Math.pow(random(), 1.7) * 1.45;
+    getTerrainNormal(point.x, point.z, normal);
+    position.set(
+      point.x,
+      getTerrainHeight(point.x, point.z) + size * 0.25,
+      point.z,
+    );
+    orientation.setFromUnitVectors(up, normal);
+    tilt.setFromAxisAngle(normal, random() * Math.PI * 2);
+    orientation.premultiply(tilt);
+    scale.set(
+      size * (0.72 + random() * 0.62),
+      size * (0.58 + random() * 0.54),
+      size * (0.72 + random() * 0.62),
+    );
+    matrix.compose(position, orientation, scale);
+    rocks.setMatrixAt(index, matrix);
+  }
+
+  rocks.instanceMatrix.needsUpdate = true;
+  rocks.receiveShadow = settings.preset.shadowSize > 0;
+  scene.add(rocks);
+}
+
+function addInstancedCracks(random) {
+  const count = settings.preset.crackCount;
+  if (!count) return;
+
+  const texture = createCrackTexture();
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    color: 0x3f2f24,
+    transparent: true,
+    opacity: 0.58,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    side: THREE.DoubleSide,
+  });
+  const cracks = new THREE.InstancedMesh(geometry, material, count);
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const orientation = new THREE.Quaternion();
+  const yaw = new THREE.Quaternion();
+  const planeNormal = new THREE.Vector3(0, 0, 1);
+
+  for (let index = 0; index < count; index += 1) {
+    const point = pickSurfacePoint(random, 10, 50);
+    getTerrainNormal(point.x, point.z, normal);
+    position.set(point.x, getTerrainHeight(point.x, point.z) + 0.035, point.z);
+    orientation.setFromUnitVectors(planeNormal, normal);
+    yaw.setFromAxisAngle(normal, random() * Math.PI * 2);
+    orientation.premultiply(yaw);
+    const length = 2.8 + random() * 5.8;
+    scale.set(length, length * (0.35 + random() * 0.24), 1);
+    matrix.compose(position, orientation, scale);
+    cracks.setMatrixAt(index, matrix);
+  }
+
+  cracks.instanceMatrix.needsUpdate = true;
+  cracks.renderOrder = 1;
+  scene.add(cracks);
+}
+
+function createGroundDust(random) {
+  const count = settings.preset.groundDustCount;
+  if (!count) return null;
+
+  const positions = new Float32Array(count * 3);
+  for (let index = 0; index < count; index += 1) {
+    const point = pickSurfacePoint(random, 8, 50);
+    positions[index * 3] = point.x;
+    positions[index * 3 + 1] = getTerrainHeight(point.x, point.z) + 0.45 + random() * 2.4;
+    positions[index * 3 + 2] = point.z;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const material = new THREE.PointsMaterial({
+    map: createSoftParticleTexture(),
+    color: 0xd8b987,
+    size: settings.quality === "high" ? 1.35 : 1.05,
+    transparent: true,
+    opacity: 0.13,
+    alphaTest: 0.01,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+  return new THREE.Points(geometry, material);
+}
+
+function updateSurfaceDetails(delta) {
+  if (!groundDust) return;
+  surfaceTime += delta;
+  groundDust.position.x = Math.sin(surfaceTime * 0.11) * 0.46;
+  groundDust.position.z = Math.cos(surfaceTime * 0.08) * 0.32;
+  groundDust.material.opacity = 0.125 + Math.sin(surfaceTime * 0.31) * 0.012;
+}
+
+function pickSurfacePoint(random, minimumRadius, maximumRadius) {
+  let x;
+  let z;
+  do {
+    const angle = random() * Math.PI * 2;
+    const radius = Math.sqrt(
+      minimumRadius * minimumRadius
+        + random() * (maximumRadius * maximumRadius - minimumRadius * minimumRadius),
+    );
+    x = Math.cos(angle) * radius;
+    z = Math.sin(angle) * radius;
+  } while (Math.hypot(x + 2.35, z + 1.35) < 11);
+  return { x, z };
+}
+
+function createCrackTexture() {
+  const canvasElement = document.createElement("canvas");
+  canvasElement.width = 256;
+  canvasElement.height = 128;
+  const context = canvasElement.getContext("2d");
+  context.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  context.strokeStyle = "rgba(255,255,255,0.82)";
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  const branches = [
+    [[8, 72], [54, 61], [94, 69], [135, 48], [183, 53], [248, 32]],
+    [[94, 69], [82, 91], [58, 108]],
+    [[135, 48], [143, 25], [166, 9]],
+    [[183, 53], [204, 79], [231, 91]],
+  ];
+  branches.forEach((branch, index) => {
+    context.lineWidth = index === 0 ? 4 : 2.4;
+    context.beginPath();
+    branch.forEach(([x, y], pointIndex) => {
+      if (pointIndex === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.stroke();
+  });
+
+  const texture = new THREE.CanvasTexture(canvasElement);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  textureDisposables.push(texture);
+  return texture;
+}
+
+function createSoftParticleTexture() {
+  const canvasElement = document.createElement("canvas");
+  canvasElement.width = 64;
+  canvasElement.height = 64;
+  const context = canvasElement.getContext("2d");
+  const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 31);
+  gradient.addColorStop(0, "rgba(255,255,255,0.72)");
+  gradient.addColorStop(0.32, "rgba(255,255,255,0.3)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 64, 64);
+
+  const texture = new THREE.CanvasTexture(canvasElement);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  textureDisposables.push(texture);
+  return texture;
+}
+
+function createSeededRandom(initialSeed) {
+  let seed = initialSeed >>> 0;
+  return () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
 }
 
 function createTerrainTextures(size) {

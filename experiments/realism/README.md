@@ -40,7 +40,11 @@ gradually restores level flight near the reference altitude above the terrain.
 ## Scope
 
 The scene compares a small curved terrain patch, sky/haze, unified sunlight,
-contact shadow, and a giant book. PBR textures are generated at startup and do
-not add binary assets to production. The HUD reports browser-side FPS trends,
-frame times, draw calls, triangles, pixel ratio, startup time, and renderer
-resource counts.
+contact shadow, and a giant book. Realism mode also adds terrain-aligned rocks,
+cracks, and sparse ground dust. Rocks and cracks each use one `InstancedMesh`,
+while all dust uses one `Points` draw, so the surface layer adds at most three
+draw calls. Quality presets cap rock/crack/dust counts at `16/10/20` (low),
+`30/16/36` (standard), and `48/24/60` (high). PBR textures are generated at
+startup and do not add binary assets to production. The HUD reports browser-side
+FPS trends, frame times, draw calls, triangles, pixel ratio, startup time, and
+renderer resource counts.
