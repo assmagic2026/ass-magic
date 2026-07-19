@@ -30,9 +30,10 @@ controls mirror the production experience: use the fixed lower-right stick,
 and use the speed slider to select cruise speed. Arrow-key horizontal input uses
 the same half-strength multiplier as production. Releasing vertical input
 gradually restores level flight near the reference altitude above the terrain.
-The physical terrain-height function, ground repulsion, banking, body pitch,
-speed response, and chase-camera constants match production; extra surface
-detail is visual bump mapping and does not alter the flight collision surface.
+Ground repulsion, banking, body pitch, speed response, and chase-camera
+constants match production. Realism mode adds only broad, low-frequency hills
+and valleys to the physical terrain-height function, so the player follows the
+visible relief without inheriting noisy small-scale bumps.
 
 ## Isolation and rollback
 
@@ -59,7 +60,8 @@ renderer resource counts.
 `planet-full.html` keeps the production planet radius (`340`). Current-like mode
 retains `IcosahedronGeometry` detail `4`; realism mode uses a smooth-shaded
 `SphereGeometry` at `128 x 64` (low), `192 x 96` (standard), or `256 x 128`
-(high). The macro surface uses the production terrain function. CPU-generated
+(high). The macro surface combines the production terrain function with two
+low-frequency relief bands (up to roughly 18.5 metres combined). CPU-generated
 albedo, bump, and roughness maps add fine detail without shipping new binary
 production assets. Terrain color combines dry soil, damp ground, exposed rock,
 and highland bands.
@@ -78,7 +80,20 @@ giant book, black sphere, white sphere, floating compass, sanctuary, and moving
 black box. The default `start=dusk` route follows the terminator instead of
 crossing immediately into day, so twilight remains visible while flying. Other
 visual checkpoints can be opened with `start=recordPlayer`, `start=book`,
-`start=day`, `start=night`, or `start=sanctuary`.
+`start=day`, `start=night`, or `start=sanctuary`. Use `start=sunset` to stand
+on the terminator and face the physically computed sun direction directly.
+
+High-quality flight mode replaces the procedural bird with the existing
+project-owned `Flying seagull.glb` asset (about 54 KB), and replaces the giant
+book with a textured GLB derived from GGBotNet's 1825 real-Bible model (about
+2.0 MB, 60 triangles). The book source is CC-BY 4.0 and is available at
+`https://opengameart.org/content/old-bible-3d`; credit: GGBotNet. The local
+Three.js r163 `GLTFLoader` is vendored with the experiment, so neither model
+requires a runtime CDN request. Low and standard modes keep the procedural
+models, and high mode automatically falls back to them if a GLB cannot be
+decoded. The twilight sky is camera-centred so the sun direction remains
+geometrically correct at every point on the planet, and dusk uses separate
+horizon, middle, and zenith bands.
 
 High quality uses the 1K diffuse, OpenGL normal, and roughness maps from Poly
 Haven's `Rocks Ground 04` material (`https://polyhaven.com/a/rocks_ground_04`).
@@ -93,11 +108,11 @@ The current desktop-browser measurements at DPR `1.0` are:
 
 | Mode | Planet mesh | Rocks | Landmarks | Triangles | Draw calls | Startup |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| High flight | 256 x 128 | 2,200 | 7 types | 850,906-851,886 | 22-24 | 58-61 ms* |
+| High flight | 256 x 128 | 2,200 | 7 types | 849,220-851,556 | 10-27 | 59-67 ms* |
 
 The high-quality flight view held the display's 75 FPS cap in this desktop
 environment after enabling the local shadow pass and photographic PBR maps, with
-a measured 1% low of about `64 FPS` and a maximum frame time of about `15.8 ms`.
+a measured 1% low of about `65 FPS` and a maximum frame time of about `15.5 ms`.
 The `START` value marked with `*` measures synchronous scene construction; it does
 not include asynchronous JPEG transfer and decode. No mobile viewport result is
 claimed here. A real iPhone GPU,

@@ -1,8 +1,9 @@
 import * as THREE from "../../three.module.js";
+import { GLTFLoader } from "./vendor/GLTFLoader.js";
 
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
 
-export function createFlightPlayer(scene) {
+export function createFlightPlayer(scene, options = {}) {
   const player = new THREE.Group();
   const visual = new THREE.Group();
   player.add(visual);
@@ -111,9 +112,13 @@ export function createFlightPlayer(scene) {
   shadow.renderOrder = 2;
 
   scene.add(player, shadow);
-  return {
+  const rig = {
     player,
     shadow,
+    proceduralVisual: visual,
+    modelVisual: null,
+    mixer: null,
+    ready: null,
     wingLeftRoot,
     wingRightRoot,
     bobPhase: 1.7,
@@ -125,6 +130,62 @@ export function createFlightPlayer(scene) {
     visualForward: new THREE.Vector3(),
     shadowDirection: new THREE.Vector3(),
   };
+
+  if (options.modelUrl) {
+    rig.ready = loadPlayerModel(rig, options.modelUrl, options.castShadow === true);
+  }
+  return rig;
+}
+
+function loadPlayerModel(rig, modelUrl, castShadow) {
+  const loader = new GLTFLoader();
+  return loader.loadAsync(modelUrl).then((gltf) => {
+    const imported = gltf.scene;
+    const modelVisual = new THREE.Group();
+    modelVisual.add(imported);
+    rig.player.add(modelVisual);
+
+    imported.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(imported);
+    const size = bounds.getSize(new THREE.Vector3());
+    const largestDimension = Math.max(size.x, size.y, size.z, 0.001);
+    imported.scale.setScalar(2.9 / largestDimension);
+    imported.updateMatrixWorld(true);
+    bounds.setFromObject(imported);
+    imported.position.sub(bounds.getCenter(new THREE.Vector3()));
+
+    imported.traverse((object) => {
+      if (!object.isMesh) return;
+      object.castShadow = castShadow;
+      object.receiveShadow = false;
+      if (object.material?.map) object.material.map.anisotropy = 8;
+    });
+
+    if (gltf.animations.length > 0) {
+      rig.mixer = new THREE.AnimationMixer(imported);
+      rig.mixer.clipAction(gltf.animations[0]).play();
+    }
+    rig.modelVisual = modelVisual;
+    disposeVisual(rig.proceduralVisual);
+  }).catch((error) => {
+    console.warn("Realism seagull GLB could not be loaded; using the lightweight player.", error);
+    throw error;
+  });
+}
+
+function disposeVisual(root) {
+  const materials = new Set();
+  root.traverse((object) => {
+    if (!object.isMesh) return;
+    object.geometry?.dispose();
+    if (Array.isArray(object.material)) {
+      for (const material of object.material) materials.add(material);
+    } else if (object.material) {
+      materials.add(object.material);
+    }
+  });
+  for (const material of materials) material.dispose();
+  root.removeFromParent();
 }
 
 export function updateFlightPlayer(rig, state) {
@@ -152,6 +213,7 @@ export function updateFlightPlayer(rig, state) {
   rig.bobPhase += delta * 0.7;
   const bob = Math.sin(rig.bobPhase) * 0.16 + Math.sin(rig.bobPhase * 0.37 + 1.1) * 0.05;
   rig.player.position.copy(position).addScaledVector(up, bob);
+  if (rig.mixer) rig.mixer.update(delta);
 
   const wingTarget = THREE.MathUtils.clamp(climbInput * 0.22 - Math.abs(turnInput) * 0.08, -0.24, 0.2);
   rig.wingLeftRoot.rotation.z = THREE.MathUtils.damp(

@@ -120,13 +120,23 @@ addLighting();
 const atmosphere = settings.view === "orbit" ? createAtmosphere() : null;
 if (atmosphere) scene.add(atmosphere);
 addSurfaceDetails();
+const useGlbAssets = settings.mode === "realism"
+  && settings.quality === "high"
+  && settings.view === "flight";
 const specialLandmarks = createSpecialLandmarks({
   scene,
   sunDirection: SUN_DIRECTION,
   getSurfaceRadius,
   realism: settings.mode === "realism",
+  bookModelUrl: useGlbAssets ? "./assets/models/old-bible-1825.glb" : null,
+  castShadow: realismShadowsEnabled,
 });
-const flightPlayer = createFlightPlayer(scene);
+if (specialLandmarks.ready) externalTextureLoads.push(specialLandmarks.ready);
+const flightPlayer = createFlightPlayer(scene, {
+  modelUrl: useGlbAssets ? "./assets/models/flying-seagull.glb" : null,
+  castShadow: realismShadowsEnabled,
+});
+if (flightPlayer.ready) externalTextureLoads.push(flightPlayer.ready);
 flightPlayer.player.visible = settings.view === "flight";
 flightPlayer.shadow.visible = settings.view === "flight";
 if (realismShadowsEnabled) {
@@ -288,7 +298,10 @@ renderer.setAnimationLoop(() => {
     layer.object.rotation.y = elapsed * layer.speed;
   }
   if (atmosphere) atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
-  if (sky) sky.material.uniforms.cameraPos.value.copy(camera.position);
+  if (sky) {
+    sky.position.copy(camera.position);
+    sky.material.uniforms.cameraPos.value.copy(camera.position);
+  }
   if (adaptiveDpr.sample(delta)) resize();
   updateFlightShadow();
   renderer.render(scene, camera);
@@ -339,12 +352,17 @@ function createPlanet() {
 }
 
 function terrainHeightFromDirection(direction) {
-  // Keep the physical surface identical to production. Fine detail comes from
-  // the bump map, so realism does not change flight altitude or ground response.
   const ridge = Math.sin(direction.x * 7 + direction.z * 3.4) * 1.5;
   const swell = Math.cos(direction.y * 8.6 - direction.x * 2.4) * 1.0;
   const twist = Math.sin((direction.x - direction.z) * 10 + direction.y * 4.2) * 0.55;
-  return ridge + swell + twist;
+  const productionSurface = ridge + swell + twist;
+  if (settings.mode !== "realism") return productionSurface;
+
+  // Broad, low-frequency relief reads as real terrain without making the
+  // production-derived flight response feel like a sequence of small bumps.
+  const continentalRise = terrainSignal(direction, 2.15, 0.72) * 12.5;
+  const rollingHighland = terrainSignal(direction, 4.1, 2.38) * 6.0;
+  return productionSurface + continentalRise + rollingHighland;
 }
 
 function terrainSignal(direction, frequency, phase) {
@@ -848,10 +866,12 @@ function createSky() {
     uniforms: {
       cameraPos: { value: new THREE.Vector3() },
       sunDirection: { value: SUN_DIRECTION.clone() },
+      planetRadius: { value: PLANET_RADIUS },
       dayZenith: { value: new THREE.Color(0x65b7ff) },
       dayHorizon: { value: new THREE.Color(0xcbe8ff) },
       duskZenith: { value: new THREE.Color(0x382d50) },
-      duskHorizon: { value: new THREE.Color(0x9b5d60) },
+      duskMid: { value: new THREE.Color(0xb96670) },
+      duskHorizon: { value: new THREE.Color(0xf0a06f) },
       nightZenith: { value: new THREE.Color(0x06111f) },
       nightHorizon: { value: new THREE.Color(0x10233f) },
       sunColor: { value: new THREE.Color(0xffbd78) },
@@ -867,9 +887,11 @@ function createSky() {
     fragmentShader: `
       uniform vec3 cameraPos;
       uniform vec3 sunDirection;
+      uniform float planetRadius;
       uniform vec3 dayZenith;
       uniform vec3 dayHorizon;
       uniform vec3 duskZenith;
+      uniform vec3 duskMid;
       uniform vec3 duskHorizon;
       uniform vec3 nightZenith;
       uniform vec3 nightHorizon;
@@ -881,28 +903,41 @@ function createSky() {
         vec3 sun = normalize(sunDirection);
         float viewHeight = dot(ray, localUp);
         float sunHeight = dot(localUp, sun);
-        float horizon = exp(-abs(viewHeight) * 5.2);
-        float zenith = pow(smoothstep(-0.14, 0.68, viewHeight), 0.9);
+        float horizonDip = acos(clamp(planetRadius / length(cameraPos), 0.0, 1.0));
+        float visibleHorizonHeight = -sin(horizonDip);
+        float skyHeight = viewHeight - visibleHorizonHeight;
+        float horizon = exp(-abs(skyHeight) * 7.2);
+        float zenith = pow(smoothstep(-0.14, 0.68, skyHeight), 0.9);
         vec3 day = mix(dayHorizon, dayZenith, zenith);
-        vec3 dusk = mix(duskHorizon, duskZenith, zenith);
-        vec3 night = mix(nightHorizon, nightZenith, pow(smoothstep(-0.12, 0.62, viewHeight), 0.86));
+        float duskMiddleBlend = smoothstep(-0.08, 0.2, skyHeight);
+        float duskZenithBlend = smoothstep(0.12, 0.74, skyHeight);
+        vec3 dusk = mix(duskHorizon, duskMid, duskMiddleBlend);
+        dusk = mix(dusk, duskZenith, duskZenithBlend);
+        dusk = mix(dusk * 0.5, dusk, smoothstep(-0.3, -0.01, skyHeight));
+        vec3 night = mix(nightHorizon, nightZenith, pow(smoothstep(-0.12, 0.62, skyHeight), 0.86));
         float dayMix = smoothstep(-0.16, 0.18, sunHeight);
         float duskMix = 1.0 - smoothstep(0.035, 0.3, abs(sunHeight));
         vec3 color = mix(night, day, dayMix);
         color = mix(color, dusk, duskMix * 0.94);
         vec3 sunOnHorizon = normalize(sun - localUp * sunHeight + vec3(0.0001));
+        float visualSunElevation = asin(clamp(sunHeight, -1.0, 1.0)) - horizonDip;
+        vec3 visualSun = normalize(
+          sunOnHorizon * cos(visualSunElevation) + localUp * sin(visualSunElevation)
+        );
         vec3 rayOnHorizon = normalize(ray - localUp * viewHeight + vec3(0.0001));
-        float sunsetDirection = pow(max(dot(rayOnHorizon, sunOnHorizon), 0.0), 0.72);
-        color = mix(color, sunColor, duskMix * horizon * sunsetDirection * 0.78);
-        float sunAmount = max(dot(ray, sun), 0.0);
-        float sunVisibility = smoothstep(-0.08, 0.025, sunHeight);
-        color += sunColor * pow(sunAmount, 28.0) * 0.16 * sunVisibility;
-        color += sunColor * pow(sunAmount, 720.0) * 1.1 * sunVisibility;
+        float sunsetDirection = pow(max(dot(rayOnHorizon, sunOnHorizon), 0.0), 1.18);
+        color = mix(color, sunColor, duskMix * horizon * sunsetDirection * 0.7);
+        float sunAmount = max(dot(ray, visualSun), 0.0);
+        float sunVisibility = smoothstep(-0.055, 0.018, sunHeight);
+        color += sunColor * pow(sunAmount, 34.0) * 0.13 * sunVisibility;
+        color += sunColor * pow(sunAmount, 920.0) * 1.08 * sunVisibility;
         gl_FragColor = vec4(color, 1.0);
       }
     `,
   });
-  return new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  return mesh;
 }
 
 function createAtmosphere() {
@@ -1299,7 +1334,9 @@ function updateFlightEnvironment(up) {
 
 function resetFlight() {
   const startPreset = new URLSearchParams(window.location.search).get("start") || "dusk";
-  const targetDirection = specialLandmarks.directions[startPreset]
+  const isSunsetStart = startPreset === "sunset";
+  const targetDirection = (isSunsetStart ? specialLandmarks.directions.dusk : null)
+    || specialLandmarks.directions[startPreset]
     || specialLandmarks.directions.dusk;
   const isDuskStart = startPreset === "dusk";
   const approach = isDuskStart
@@ -1311,15 +1348,23 @@ function resetFlight() {
   if (approach.lengthSq() < 0.0001) approach.crossVectors(WORLD_UP, targetDirection);
   approach.normalize();
   const approachAngle = isDuskStart ? 0.42 : 0.18;
-  const startDirection = targetDirection.clone()
-    .multiplyScalar(Math.cos(approachAngle))
-    .addScaledVector(approach, -Math.sin(approachAngle))
-    .normalize();
+  const startDirection = isSunsetStart
+    ? targetDirection.clone()
+    : targetDirection.clone()
+      .multiplyScalar(Math.cos(approachAngle))
+      .addScaledVector(approach, -Math.sin(approachAngle))
+      .normalize();
   const startRadius = getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + flight.cruiseAltitude;
   flight.position.copy(startDirection).multiplyScalar(startRadius);
-  flight.forward.copy(targetDirection)
-    .addScaledVector(startDirection, -targetDirection.dot(startDirection))
-    .normalize();
+  if (isSunsetStart) {
+    flight.forward.copy(SUN_DIRECTION)
+      .addScaledVector(startDirection, -SUN_DIRECTION.dot(startDirection))
+      .normalize();
+  } else {
+    flight.forward.copy(targetDirection)
+      .addScaledVector(startDirection, -targetDirection.dot(startDirection))
+      .normalize();
+  }
   flight.speedSelection = Number(flightSpeedSlider.value) || 40;
   flight.speed = flight.speedSelection;
   flight.holdAccel = 0;

@@ -1,4 +1,5 @@
 import * as THREE from "../../three.module.js";
+import { GLTFLoader } from "./vendor/GLTFLoader.js";
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const basisMatrix = new THREE.Matrix4();
@@ -174,7 +175,64 @@ function createBook(realism) {
   for (const y of [-4.6, -1.55, 1.55, 4.6]) {
     addBox([0.42, 1.04, 3.08], [-5.05, y, 0], wear, [0, 0, -0.04]);
   }
+  group.userData.proceduralVisual = pivot;
   return group;
+}
+
+function loadBookModel(book, modelUrl, castShadow) {
+  const loader = new GLTFLoader();
+  return loader.loadAsync(modelUrl).then((gltf) => {
+    const imported = gltf.scene;
+    const modelRoot = new THREE.Group();
+    const axisMatrix = new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(1, 0, 0),
+    );
+    modelRoot.quaternion.setFromRotationMatrix(axisMatrix);
+    modelRoot.add(imported);
+    modelRoot.updateMatrixWorld(true);
+
+    const bounds = new THREE.Box3().setFromObject(modelRoot);
+    const size = bounds.getSize(new THREE.Vector3());
+    imported.scale.setScalar(13.8 / Math.max(size.y, 0.001));
+    modelRoot.updateMatrixWorld(true);
+    bounds.setFromObject(modelRoot);
+    const center = bounds.getCenter(new THREE.Vector3());
+    modelRoot.worldToLocal(center);
+    imported.position.sub(center);
+    modelRoot.scale.set(1.18, 1, 0.73);
+
+    imported.traverse((object) => {
+      if (!object.isMesh) return;
+      object.castShadow = castShadow;
+      object.receiveShadow = true;
+      if (object.material?.map) object.material.map.anisotropy = 8;
+    });
+
+    const mount = book.userData.proceduralVisual;
+    for (const object of [...mount.children]) disposeVisual(object);
+    mount.add(modelRoot);
+    book.userData.glbVisual = modelRoot;
+  }).catch((error) => {
+    console.warn("Realism book GLB could not be loaded; using the procedural book.", error);
+    throw error;
+  });
+}
+
+function disposeVisual(root) {
+  const materials = new Set();
+  root.traverse((object) => {
+    if (!object.isMesh) return;
+    object.geometry?.dispose();
+    if (Array.isArray(object.material)) {
+      for (const material of object.material) materials.add(material);
+    } else if (object.material) {
+      materials.add(object.material);
+    }
+  });
+  for (const material of materials) material.dispose();
+  root.removeFromParent();
 }
 
 function createRecordPlayer(realism) {
@@ -320,7 +378,14 @@ function createBlackBox(realism) {
   return group;
 }
 
-export function createSpecialLandmarks({ scene, sunDirection, getSurfaceRadius, realism }) {
+export function createSpecialLandmarks({
+  scene,
+  sunDirection,
+  getSurfaceRadius,
+  realism,
+  bookModelUrl = null,
+  castShadow = false,
+}) {
   const root = new THREE.Group();
   const sun = sunDirection.clone().normalize();
   const night = sun.clone().multiplyScalar(-1);
@@ -363,6 +428,7 @@ export function createSpecialLandmarks({ scene, sunDirection, getSurfaceRadius, 
   const bookShadow = createContactShadow(8.8, 0.24);
   placeOnSphere(bookShadow, bookDirection, bookForward, 0.075, getSurfaceRadius, 0.06);
   root.add(bookShadow);
+  const bookReady = bookModelUrl ? loadBookModel(book, bookModelUrl, castShadow) : null;
 
   const blackSphere = createSphere(18, 0x090909, realism);
   const blackForward = compassDirection.clone().addScaledVector(sun, -compassDirection.dot(sun)).normalize();
@@ -395,6 +461,7 @@ export function createSpecialLandmarks({ scene, sunDirection, getSurfaceRadius, 
   scene.add(root);
   return {
     root,
+    ready: bookReady,
     compassDirection,
     directions: {
       day: sun,
