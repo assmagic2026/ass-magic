@@ -5,6 +5,11 @@ import {
   getExperimentSettings,
 } from "./quality.js";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
+import {
+  createFlightPlayer,
+  updateFlightPlayer,
+} from "./whole-planet-player.js";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -66,7 +71,7 @@ const meshLabel = baseSettings.mode === "realism"
 const settings = {
   ...baseSettings,
   scopeLabel: "WHOLE PLANET",
-  loadLabel: `R340 ${meshLabel} / ROCK ${planetLoad.rockCount.toLocaleString()} / PEBBLE ${planetLoad.pebbleCount.toLocaleString()}`,
+  loadLabel: `R340 ${meshLabel} / LANDMARK 7 / ROCK ${planetLoad.rockCount.toLocaleString()}`,
 };
 configureLinks(settings);
 
@@ -85,6 +90,7 @@ renderer.toneMappingExposure = settings.mode === "realism" ? 1.04 : 1;
 
 const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset);
 const scene = new THREE.Scene();
+let twilightFillLight = null;
 scene.background = new THREE.Color(0x091317);
 if (settings.mode === "realism" && settings.view === "flight") {
   scene.fog = new THREE.FogExp2(0xaacbd4, 0.0036);
@@ -106,6 +112,15 @@ addLighting();
 const atmosphere = settings.view === "orbit" ? createAtmosphere() : null;
 if (atmosphere) scene.add(atmosphere);
 addSurfaceDetails();
+const specialLandmarks = createSpecialLandmarks({
+  scene,
+  sunDirection: SUN_DIRECTION,
+  getSurfaceRadius,
+  realism: settings.mode === "realism",
+});
+const flightPlayer = createFlightPlayer(scene);
+flightPlayer.player.visible = settings.view === "flight";
+flightPlayer.shadow.visible = settings.view === "flight";
 
 const flightStick = document.querySelector("#flight-stick");
 const flightStickKnob = flightStick.querySelector("span");
@@ -119,14 +134,28 @@ const flightUp = new THREE.Vector3();
 const flightRight = new THREE.Vector3();
 const flightNextUp = new THREE.Vector3();
 const flightLookTarget = new THREE.Vector3();
+const flightPreviousForward = new THREE.Vector3();
+const flightCross = new THREE.Vector3();
+const flightVisualForward = new THREE.Vector3();
+const flightCameraForward = new THREE.Vector3();
+const flightCameraTarget = new THREE.Vector3();
+const flightCameraDesired = new THREE.Vector3();
+const flightFogColor = new THREE.Color();
+const flightFogDay = new THREE.Color(0xaacbd4);
+const flightFogDusk = new THREE.Color(0xc58b73);
+const flightFogNight = new THREE.Color(0x111c2c);
 const flight = {
   position: new THREE.Vector3(),
   forward: new THREE.Vector3(),
   speed: 40,
   speedSelection: 40,
-  boostSpeed: 0,
+  holdAccel: 0,
   radialSpeed: 0,
   cruiseAltitude: 10,
+  bodyPitch: -0.12,
+  roll: 0,
+  cameraLift: 0,
+  onGround: false,
   stickId: null,
   stickOffset: new THREE.Vector2(),
   stickSmooth: new THREE.Vector2(),
@@ -160,6 +189,48 @@ const FLIGHT_STICK_RESPONSE = 5;
 const FLIGHT_STICK_RETURN = 3.2;
 const FLIGHT_VERTICAL_RELEASE = 12;
 const FLIGHT_ARROW_SCALE_X = 0.5;
+const FLIGHT_PHYSICS = Object.freeze({
+  GROUND_SPEED: 7,
+  MIN_FORWARD_SPEED: 9,
+  GLIDE_DRAG: 0.03,
+  HOLD_ACCEL_RATE: 7.5,
+  LOCK_ACCEL_DECAY: 1.4,
+  LOCK_SPEED_ACCEL: 3.2,
+  LOCK_SPEED_SETTLE: 0.9,
+  STICK_BOOST: 1.7,
+  STICK_CLIMB: 11.5,
+  STICK_DESCEND: 6.5,
+  DESCEND_RESPONSE: 1.7,
+  DESCEND_TARGET_RATIO: 0.3,
+  DESCEND_TARGET_MIN: 1.9,
+  SOFT_GROUND_RANGE: 2.4,
+  SOFT_GROUND_FORCE: 28,
+  SOFT_GROUND_DAMP: 7.5,
+  SOFT_GROUND_MIN_ALT: 0.32,
+  SOFT_GROUND_LAND_ALT: 0.08,
+  NEUTRAL_ALTITUDE: 10,
+  NEUTRAL_DESCEND_MIN: 0.55,
+  NEUTRAL_DESCEND_MAX: 2.1,
+  NEUTRAL_RETURN: 1.1,
+  NEUTRAL_ASCENT_BRAKE: 3,
+  MAX_ASCENT_ANGLE: Math.PI / 4,
+  CRUISE_BODY_PITCH: -0.12,
+  DESCEND_INPUT_PITCH: 0.18,
+  MAX_BODY_PITCH: Math.PI / 9,
+  BODY_PITCH_RESPONSE: 6,
+  BODY_DESCEND_PITCH_RESPONSE: 1.5,
+  MAX_BANK: 0.9,
+  BANK_FROM_TURN: 3.4,
+  ROLL_RESPONSE: 4.8,
+  CAMERA_DISTANCE: 11,
+  CAMERA_HEIGHT: 2.8,
+  CAMERA_DISTANCE_SPEED: 0.08,
+  CAMERA_SMOOTH: 0.12,
+  CAMERA_PITCH_SMOOTH: 3.4,
+  CAMERA_DESCEND_PITCH_SMOOTH: 0.85,
+  BASE_FOV: 70,
+  SPEED_FOV: 7,
+});
 
 if (settings.view === "flight") {
   document.body.classList.add("flight-mode");
@@ -186,6 +257,7 @@ let elapsed = 0;
 renderer.setAnimationLoop(() => {
   const delta = Math.min(clock.getDelta(), 0.1);
   elapsed += delta;
+  specialLandmarks.update(delta);
   if (settings.view === "flight") updateFlight(delta);
   else updateOrbit(delta);
 
@@ -243,19 +315,12 @@ function createPlanet() {
 }
 
 function terrainHeightFromDirection(direction) {
-  if (settings.mode !== "realism") {
-    const ridge = Math.sin(direction.x * 7 + direction.z * 3.4) * 1.5;
-    const swell = Math.cos(direction.y * 8.6 - direction.x * 2.4) * 1.0;
-    const twist = Math.sin((direction.x - direction.z) * 10 + direction.y * 4.2) * 0.55;
-    return ridge + swell + twist;
-  }
-
-  const continental = terrainSignal(direction, 2.6, 0.35);
-  const hill = terrainSignal(direction, 7.8, 1.7);
-  const erosion = terrainSignal(direction, 15.5, 3.1);
-  const ridge = Math.pow(1 - Math.abs(erosion), 3.2);
-  const fine = terrainSignal(direction, 34, 4.7);
-  return continental * 2.75 + hill * 1.35 + ridge * 3.4 - 0.72 + fine * 0.34;
+  // Keep the physical surface identical to production. Fine detail comes from
+  // the bump map, so realism does not change flight altitude or ground response.
+  const ridge = Math.sin(direction.x * 7 + direction.z * 3.4) * 1.5;
+  const swell = Math.cos(direction.y * 8.6 - direction.x * 2.4) * 1.0;
+  const twist = Math.sin((direction.x - direction.z) * 10 + direction.y * 4.2) * 0.55;
+  return ridge + swell + twist;
 }
 
 function terrainSignal(direction, frequency, phase) {
@@ -719,12 +784,13 @@ function createSky() {
     uniforms: {
       cameraPos: { value: new THREE.Vector3() },
       sunDirection: { value: SUN_DIRECTION.clone() },
-      dayZenith: { value: new THREE.Color(0x28678f) },
-      dayHorizon: { value: new THREE.Color(0xb9d8e2) },
-      dusk: { value: new THREE.Color(0xdd8f61) },
-      nightZenith: { value: new THREE.Color(0x06111b) },
-      nightHorizon: { value: new THREE.Color(0x152936) },
-      sunColor: { value: new THREE.Color(0xffdda8) },
+      dayZenith: { value: new THREE.Color(0x65b7ff) },
+      dayHorizon: { value: new THREE.Color(0xcbe8ff) },
+      duskZenith: { value: new THREE.Color(0x382d50) },
+      duskHorizon: { value: new THREE.Color(0x9b5d60) },
+      nightZenith: { value: new THREE.Color(0x06111f) },
+      nightHorizon: { value: new THREE.Color(0x10233f) },
+      sunColor: { value: new THREE.Color(0xffbd78) },
     },
     vertexShader: `
       varying vec3 vWorldPosition;
@@ -739,7 +805,8 @@ function createSky() {
       uniform vec3 sunDirection;
       uniform vec3 dayZenith;
       uniform vec3 dayHorizon;
-      uniform vec3 dusk;
+      uniform vec3 duskZenith;
+      uniform vec3 duskHorizon;
       uniform vec3 nightZenith;
       uniform vec3 nightHorizon;
       uniform vec3 sunColor;
@@ -750,17 +817,23 @@ function createSky() {
         vec3 sun = normalize(sunDirection);
         float viewHeight = dot(ray, localUp);
         float sunHeight = dot(localUp, sun);
-        float dayMix = smoothstep(-0.12, 0.08, sunHeight);
         float horizon = exp(-abs(viewHeight) * 5.2);
         float zenith = pow(smoothstep(-0.14, 0.68, viewHeight), 0.9);
         vec3 day = mix(dayHorizon, dayZenith, zenith);
-        vec3 night = mix(nightHorizon, nightZenith, pow(clamp(viewHeight, 0.0, 1.0), 0.7));
-        float duskMix = 1.0 - smoothstep(0.015, 0.26, abs(sunHeight));
+        vec3 dusk = mix(duskHorizon, duskZenith, zenith);
+        vec3 night = mix(nightHorizon, nightZenith, pow(smoothstep(-0.12, 0.62, viewHeight), 0.86));
+        float dayMix = smoothstep(-0.16, 0.18, sunHeight);
+        float duskMix = 1.0 - smoothstep(0.035, 0.3, abs(sunHeight));
         vec3 color = mix(night, day, dayMix);
-        color = mix(color, dusk, horizon * duskMix * 0.72);
+        color = mix(color, dusk, duskMix * 0.94);
+        vec3 sunOnHorizon = normalize(sun - localUp * sunHeight + vec3(0.0001));
+        vec3 rayOnHorizon = normalize(ray - localUp * viewHeight + vec3(0.0001));
+        float sunsetDirection = pow(max(dot(rayOnHorizon, sunOnHorizon), 0.0), 0.72);
+        color = mix(color, sunColor, duskMix * horizon * sunsetDirection * 0.78);
         float sunAmount = max(dot(ray, sun), 0.0);
-        color += sunColor * pow(sunAmount, 28.0) * 0.16 * dayMix;
-        color += sunColor * pow(sunAmount, 720.0) * 1.1 * dayMix;
+        float sunVisibility = smoothstep(-0.08, 0.025, sunHeight);
+        color += sunColor * pow(sunAmount, 28.0) * 0.16 * sunVisibility;
+        color += sunColor * pow(sunAmount, 720.0) * 1.1 * sunVisibility;
         gl_FragColor = vec4(color, 1.0);
       }
     `,
@@ -814,6 +887,8 @@ function createAtmosphere() {
 function addLighting() {
   if (settings.mode === "realism") {
     scene.add(new THREE.HemisphereLight(0xaec9cf, 0x332822, 0.78));
+    twilightFillLight = new THREE.AmbientLight(0xf2a479, 0.08);
+    scene.add(twilightFillLight);
   } else {
     scene.add(new THREE.AmbientLight(0x5c6e89, 0.55));
   }
@@ -841,6 +916,7 @@ function updateOrbit(delta) {
 }
 
 function updateFlight(delta) {
+  flightPreviousForward.copy(flight.forward);
   flightStickTarget.set(
     -applyDeadzone(flight.stickOffset.x / FLIGHT_STICK_LIMIT) * FLIGHT_STICK_SCALE,
     -applyDeadzone(flight.stickOffset.y / FLIGHT_STICK_LIMIT) * FLIGHT_STICK_SCALE,
@@ -911,43 +987,70 @@ function updateFlight(delta) {
   flight.forward.addScaledVector(flightUp, -flight.forward.dot(flightUp)).normalize();
 
   const accelerating = flight.keys.has("Space") || flight.accelPointers.size > 0;
-  flight.boostSpeed = THREE.MathUtils.damp(
-    flight.boostSpeed,
-    accelerating ? 22 : 0,
-    accelerating ? 3.2 : 1.4,
-    delta,
+  if (accelerating) {
+    flight.holdAccel += FLIGHT_PHYSICS.HOLD_ACCEL_RATE * delta;
+  } else {
+    flight.holdAccel = Math.max(
+      0,
+      flight.holdAccel - FLIGHT_PHYSICS.LOCK_ACCEL_DECAY * delta,
+    );
+  }
+  const speedTarget = Math.max(
+    FLIGHT_PHYSICS.MIN_FORWARD_SPEED,
+    flight.speedSelection
+      + Math.max(0, climbInput) * FLIGHT_PHYSICS.STICK_BOOST
+      + flight.holdAccel,
   );
+  const speedResponse = speedTarget > flight.speed
+    ? FLIGHT_PHYSICS.LOCK_SPEED_ACCEL
+    : FLIGHT_PHYSICS.LOCK_SPEED_SETTLE;
   flight.speed = THREE.MathUtils.damp(
     flight.speed,
-    flight.speedSelection + flight.boostSpeed,
-    2.8,
+    speedTarget,
+    speedResponse,
     delta,
   );
 
   const currentRadius = flight.position.length();
   const currentSurface = getSurfaceRadius(flightUp) + PLAYER_CLEARANCE;
   const altitude = currentRadius - currentSurface;
-  if (climbInput > 0) {
-    flight.radialSpeed += climbInput * 11.5 * delta;
-  } else if (climbInput < 0) {
-    const target = climbInput * Math.max(1.9, flight.speed * 0.3);
-    flight.radialSpeed += climbInput * 6.5 * delta;
+  const descendInput = Math.max(0, -climbInput);
+  if (!flight.onGround && climbInput > 0) {
+    flight.radialSpeed += climbInput * FLIGHT_PHYSICS.STICK_CLIMB * delta;
+  } else if (!flight.onGround && climbInput < 0) {
+    const descendTarget = -descendInput * Math.max(
+      FLIGHT_PHYSICS.DESCEND_TARGET_MIN,
+      flight.speed * FLIGHT_PHYSICS.DESCEND_TARGET_RATIO,
+    );
+    flight.radialSpeed += climbInput * FLIGHT_PHYSICS.STICK_DESCEND * delta;
     flight.radialSpeed = THREE.MathUtils.lerp(
       flight.radialSpeed,
-      target,
-      1 - Math.exp(-1.7 * delta),
+      descendTarget,
+      1 - Math.exp(-FLIGHT_PHYSICS.DESCEND_RESPONSE * delta),
     );
-  } else {
-    const excessAltitude = altitude - flight.cruiseAltitude;
-    const neutralTarget = THREE.MathUtils.clamp(-excessAltitude * 0.18, -2.1, 1.5);
-    flight.radialSpeed = THREE.MathUtils.damp(
+  } else if (!flight.onGround) {
+    const excessAltitude = Math.max(0, altitude - FLIGHT_PHYSICS.NEUTRAL_ALTITUDE);
+    const neutralTarget = excessAltitude > 0
+      ? -THREE.MathUtils.clamp(
+        FLIGHT_PHYSICS.NEUTRAL_DESCEND_MIN + excessAltitude * 0.12,
+        FLIGHT_PHYSICS.NEUTRAL_DESCEND_MIN,
+        FLIGHT_PHYSICS.NEUTRAL_DESCEND_MAX,
+      )
+      : 0;
+    const neutralResponse = flight.radialSpeed > neutralTarget
+      ? FLIGHT_PHYSICS.NEUTRAL_ASCENT_BRAKE
+      : FLIGHT_PHYSICS.NEUTRAL_RETURN;
+    flight.radialSpeed = THREE.MathUtils.lerp(
       flight.radialSpeed,
       neutralTarget,
-      flight.radialSpeed > neutralTarget ? 3 : 1.1,
-      delta,
+      1 - Math.exp(-neutralResponse * delta),
     );
+  } else {
+    flight.radialSpeed = 0;
   }
-  flight.radialSpeed = THREE.MathUtils.clamp(flight.radialSpeed, -8, 12);
+  flight.radialSpeed *= 1 - FLIGHT_PHYSICS.GLIDE_DRAG * delta;
+  const maxAscentSpeed = flight.speed * Math.tan(FLIGHT_PHYSICS.MAX_ASCENT_ANGLE);
+  flight.radialSpeed = Math.min(flight.radialSpeed, maxAscentSpeed);
 
   flightRight.crossVectors(flightUp, flight.forward).normalize();
   const moveAngle = (flight.speed * delta) / currentRadius;
@@ -955,20 +1058,91 @@ function updateFlight(delta) {
   flight.forward.applyAxisAngle(flightRight, moveAngle).normalize();
   flight.forward.addScaledVector(flightNextUp, -flight.forward.dot(flightNextUp)).normalize();
   const nextSurface = getSurfaceRadius(flightNextUp) + PLAYER_CLEARANCE;
-  const nextRadius = Math.max(
-    currentRadius + flight.radialSpeed * delta,
-    nextSurface + 0.32,
-  );
+  let nextRadius = currentRadius + flight.radialSpeed * delta;
+  let surfaceGap = nextRadius - nextSurface;
+  if (!flight.onGround && surfaceGap < FLIGHT_PHYSICS.SOFT_GROUND_RANGE) {
+    const repel = THREE.MathUtils.clamp(
+      1 - surfaceGap / FLIGHT_PHYSICS.SOFT_GROUND_RANGE,
+      0,
+      1,
+    );
+    const repelSquared = repel * repel;
+    flight.radialSpeed += repelSquared * FLIGHT_PHYSICS.SOFT_GROUND_FORCE * delta;
+    if (flight.radialSpeed < 0) {
+      flight.radialSpeed = THREE.MathUtils.lerp(
+        flight.radialSpeed,
+        0,
+        repelSquared * FLIGHT_PHYSICS.SOFT_GROUND_DAMP * delta,
+      );
+    }
+    nextRadius = Math.max(
+      nextRadius,
+      nextSurface + FLIGHT_PHYSICS.SOFT_GROUND_MIN_ALT,
+    );
+    surfaceGap = nextRadius - nextSurface;
+  }
+
+  const canLand = !accelerating
+    && Math.abs(climbInput) < 0.08
+    && flight.speed < FLIGHT_PHYSICS.GROUND_SPEED + 0.45
+    && surfaceGap <= FLIGHT_PHYSICS.SOFT_GROUND_LAND_ALT;
+  if (canLand) {
+    nextRadius = nextSurface;
+    flight.radialSpeed = 0;
+    flight.onGround = true;
+  } else {
+    flight.onGround = false;
+  }
   flight.position.copy(flightNextUp).multiplyScalar(nextRadius);
 
-  camera.up.copy(flightNextUp);
-  camera.position.copy(flight.position);
-  flightLookTarget.copy(flight.position).addScaledVector(flight.forward, 36);
-  flightLookTarget.addScaledVector(
-    flightNextUp,
-    THREE.MathUtils.clamp(flight.radialSpeed / Math.max(flight.speed, 1) * 18, -4, 5),
+  const signedTurn = Math.atan2(
+    flightCross.crossVectors(flightPreviousForward, flight.forward).dot(flightNextUp),
+    THREE.MathUtils.clamp(flightPreviousForward.dot(flight.forward), -1, 1),
   );
-  camera.lookAt(flightLookTarget);
+  const bankTarget = THREE.MathUtils.clamp(
+    -(signedTurn / Math.max(delta, 0.001)) * FLIGHT_PHYSICS.BANK_FROM_TURN,
+    -FLIGHT_PHYSICS.MAX_BANK,
+    FLIGHT_PHYSICS.MAX_BANK,
+  );
+  flight.roll = THREE.MathUtils.damp(
+    flight.roll,
+    bankTarget,
+    FLIGHT_PHYSICS.ROLL_RESPONSE,
+    delta,
+  );
+
+  const bodyPitchTarget = THREE.MathUtils.clamp(
+    Math.atan2(flight.radialSpeed, Math.max(flight.speed, 1))
+      - descendInput * FLIGHT_PHYSICS.DESCEND_INPUT_PITCH
+      + FLIGHT_PHYSICS.CRUISE_BODY_PITCH,
+    -Math.PI * 0.5,
+    FLIGHT_PHYSICS.MAX_BODY_PITCH,
+  );
+  const bodyPitchResponse = bodyPitchTarget < flight.bodyPitch
+    ? FLIGHT_PHYSICS.BODY_DESCEND_PITCH_RESPONSE
+    : FLIGHT_PHYSICS.BODY_PITCH_RESPONSE;
+  flight.bodyPitch = THREE.MathUtils.damp(
+    flight.bodyPitch,
+    bodyPitchTarget,
+    bodyPitchResponse,
+    delta,
+  );
+
+  flightRight.crossVectors(flightNextUp, flight.forward).normalize();
+  updateFlightPlayer(flightPlayer, {
+    position: flight.position,
+    forward: flight.forward,
+    up: flightNextUp,
+    bodyPitch: flight.bodyPitch,
+    roll: flight.roll,
+    turnInput,
+    climbInput,
+    altitude: Math.max(0, nextRadius - nextSurface),
+    surfaceRadius: nextSurface - PLAYER_CLEARANCE,
+    delta,
+  });
+  updateFlightCamera(delta);
+  updateFlightEnvironment(flightNextUp);
 
   flight.readoutElapsed += delta;
   if (flight.readoutElapsed >= 0.12) {
@@ -978,16 +1152,97 @@ function updateFlight(delta) {
   }
 }
 
+function updateFlightCamera(delta, snap = false) {
+  flightUp.copy(flight.position).normalize();
+  flightRight.crossVectors(flightUp, flight.forward).normalize();
+  flightVisualForward.copy(flight.forward)
+    .applyAxisAngle(flightRight, -flight.bodyPitch)
+    .normalize();
+  const targetLift = THREE.MathUtils.clamp(flightVisualForward.dot(flightUp), -0.5, 0.5);
+  const pitchResponse = targetLift < flight.cameraLift
+    ? FLIGHT_PHYSICS.CAMERA_DESCEND_PITCH_SMOOTH
+    : FLIGHT_PHYSICS.CAMERA_PITCH_SMOOTH;
+  flight.cameraLift = THREE.MathUtils.lerp(
+    flight.cameraLift,
+    targetLift,
+    1 - Math.exp(-pitchResponse * delta),
+  );
+
+  flightCameraForward.copy(flight.forward)
+    .addScaledVector(flightUp, flight.cameraLift)
+    .normalize();
+  const distance = FLIGHT_PHYSICS.CAMERA_DISTANCE
+    + flight.speed * FLIGHT_PHYSICS.CAMERA_DISTANCE_SPEED;
+  flightCameraTarget.copy(flight.position)
+    .addScaledVector(flightUp, FLIGHT_PHYSICS.CAMERA_HEIGHT);
+  flightCameraDesired.copy(flightCameraTarget)
+    .addScaledVector(flightCameraForward, -distance)
+    .addScaledVector(flightUp, 1.6);
+
+  const smooth = snap
+    ? 1
+    : 1 - Math.pow(1 - FLIGHT_PHYSICS.CAMERA_SMOOTH, delta * 60);
+  camera.position.lerp(flightCameraDesired, smooth);
+  camera.up.lerp(flightUp, smooth).normalize();
+  const speedFactor = THREE.MathUtils.clamp(
+    (flight.speed - FLIGHT_PHYSICS.MIN_FORWARD_SPEED) / 5.75,
+    0,
+    1,
+  );
+  const targetFov = FLIGHT_PHYSICS.BASE_FOV + speedFactor * FLIGHT_PHYSICS.SPEED_FOV;
+  camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, smooth);
+  camera.updateProjectionMatrix();
+  camera.lookAt(flightCameraTarget);
+}
+
+function updateFlightEnvironment(up) {
+  if (!scene.fog) return;
+  const sunHeight = up.dot(SUN_DIRECTION);
+  const dayMix = THREE.MathUtils.smoothstep(sunHeight, -0.16, 0.18);
+  const duskMix = 1 - THREE.MathUtils.smoothstep(Math.abs(sunHeight), 0.035, 0.3);
+  flightFogColor.copy(flightFogNight).lerp(flightFogDay, dayMix);
+  flightFogColor.lerp(flightFogDusk, duskMix * 0.9);
+  scene.fog.color.lerp(flightFogColor, 0.08);
+  if (twilightFillLight) {
+    twilightFillLight.intensity = THREE.MathUtils.lerp(
+      twilightFillLight.intensity,
+      0.05 + dayMix * 0.1 + duskMix * 0.62,
+      0.08,
+    );
+  }
+}
+
 function resetFlight() {
-  const startDirection = new THREE.Vector3(0.62, 0.35, 0.7).normalize();
+  const startPreset = new URLSearchParams(window.location.search).get("start") || "dusk";
+  const targetDirection = specialLandmarks.directions[startPreset]
+    || specialLandmarks.directions.dusk;
+  const isDuskStart = startPreset === "dusk";
+  const approach = isDuskStart
+    ? new THREE.Vector3().crossVectors(SUN_DIRECTION, targetDirection).normalize()
+    : SUN_DIRECTION.clone().addScaledVector(
+      targetDirection,
+      -SUN_DIRECTION.dot(targetDirection),
+    );
+  if (approach.lengthSq() < 0.0001) approach.crossVectors(WORLD_UP, targetDirection);
+  approach.normalize();
+  const approachAngle = isDuskStart ? 0.42 : 0.18;
+  const startDirection = targetDirection.clone()
+    .multiplyScalar(Math.cos(approachAngle))
+    .addScaledVector(approach, -Math.sin(approachAngle))
+    .normalize();
   const startRadius = getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + flight.cruiseAltitude;
   flight.position.copy(startDirection).multiplyScalar(startRadius);
-  flight.forward.set(-startDirection.z, 0.08, startDirection.x);
-  flight.forward.addScaledVector(startDirection, -flight.forward.dot(startDirection)).normalize();
+  flight.forward.copy(targetDirection)
+    .addScaledVector(startDirection, -targetDirection.dot(startDirection))
+    .normalize();
   flight.speedSelection = Number(flightSpeedSlider.value) || 40;
   flight.speed = flight.speedSelection;
-  flight.boostSpeed = 0;
+  flight.holdAccel = 0;
   flight.radialSpeed = 0;
+  flight.bodyPitch = FLIGHT_PHYSICS.CRUISE_BODY_PITCH;
+  flight.roll = 0;
+  flight.cameraLift = 0;
+  flight.onGround = false;
   flight.stickOffset.set(0, 0);
   flight.stickSmooth.set(0, 0);
   flight.keySmooth.set(0, 0);
@@ -996,6 +1251,22 @@ function resetFlight() {
   flightStickKnob.style.transform = "translate(-50%, -50%)";
   flightSpeedValue.value = String(Math.round(flight.speedSelection));
   flight.readoutElapsed = 1;
+  flightUp.copy(startDirection);
+  flightNextUp.copy(startDirection);
+  updateFlightPlayer(flightPlayer, {
+    position: flight.position,
+    forward: flight.forward,
+    up: startDirection,
+    bodyPitch: flight.bodyPitch,
+    roll: 0,
+    turnInput: 0,
+    climbInput: 0,
+    altitude: flight.cruiseAltitude,
+    surfaceRadius: startRadius - PLAYER_CLEARANCE - flight.cruiseAltitude,
+    delta: 0,
+  });
+  updateFlightCamera(1 / 60, true);
+  updateFlightEnvironment(startDirection);
 }
 
 function applyDeadzone(value) {
