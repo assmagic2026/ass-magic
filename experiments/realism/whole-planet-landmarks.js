@@ -7,6 +7,72 @@ const basisUp = new THREE.Vector3();
 const placementUp = new THREE.Vector3();
 const placementForward = new THREE.Vector3();
 const dummy = new THREE.Object3D();
+let surfaceTextures = null;
+
+function textureNoise(x, y, seed) {
+  let value = Math.imul(x + seed, 374761393) ^ Math.imul(y + seed * 3, 668265263);
+  value = Math.imul(value ^ (value >>> 13), 1274126177);
+  return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
+}
+
+function createSurfaceTexture(kind, size = 256) {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  const pixels = context.createImageData(size, size);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const offset = (y * size + x) * 4;
+      const noise = textureNoise(x, y, kind === "wood" ? 709 : kind === "leather" ? 1879 : 3491);
+      let red;
+      let green;
+      let blue;
+      if (kind === "wood") {
+        const grain = Math.sin(y * 0.17 + Math.sin(x * 0.035) * 2.4) * 0.5 + 0.5;
+        const knot = Math.sin(Math.hypot(x - 72, y - 156) * 0.2) * 0.5 + 0.5;
+        const tone = grain * 24 + knot * 9 + noise * 12;
+        red = 116 + tone;
+        green = 69 + tone * 0.58;
+        blue = 38 + tone * 0.3;
+      } else if (kind === "leather") {
+        const pore = Math.sin(x * 0.43 + noise * 3) * Math.cos(y * 0.39 - noise * 2);
+        const wear = Math.min(x, y, size - x, size - y) < 9 ? 26 : 0;
+        red = 91 + noise * 28 + pore * 7 + wear;
+        green = 53 + noise * 17 + pore * 4 + wear * 0.7;
+        blue = 38 + noise * 13 + pore * 3 + wear * 0.45;
+      } else {
+        const fiber = Math.sin(y * 0.31 + noise * 2.2) * 5;
+        const foxing = noise > 0.974 ? 24 : 0;
+        red = 214 + noise * 22 + fiber - foxing * 0.25;
+        green = 198 + noise * 20 + fiber - foxing * 0.52;
+        blue = 164 + noise * 17 + fiber - foxing;
+      }
+      pixels.data[offset] = red;
+      pixels.data[offset + 1] = green;
+      pixels.data[offset + 2] = blue;
+      pixels.data[offset + 3] = 255;
+    }
+  }
+  context.putImageData(pixels, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(kind === "wood" ? 2.8 : 1.4, kind === "wood" ? 2.8 : 1.4);
+  return texture;
+}
+
+function getSurfaceTextures() {
+  if (!surfaceTextures) {
+    surfaceTextures = {
+      wood: createSurfaceTexture("wood"),
+      leather: createSurfaceTexture("leather"),
+      paper: createSurfaceTexture("paper"),
+    };
+  }
+  return surfaceTextures;
+}
 
 function createSurfaceQuaternion(forward, up, target = new THREE.Quaternion()) {
   basisRight.crossVectors(up, forward).normalize();
@@ -27,7 +93,15 @@ function placeOnSphere(object, direction, forward, altitude, getSurfaceRadius, r
 }
 
 function createMaterial(color, realism, options = {}) {
-  if (!realism) return new THREE.MeshLambertMaterial({ color, flatShading: true, ...options });
+  if (!realism) {
+    return new THREE.MeshLambertMaterial({
+      color,
+      flatShading: true,
+      transparent: options.transparent ?? false,
+      opacity: options.opacity ?? 1,
+      map: options.map ?? null,
+    });
+  }
   return new THREE.MeshStandardMaterial({
     color,
     roughness: options.roughness ?? 0.78,
@@ -36,7 +110,26 @@ function createMaterial(color, realism, options = {}) {
     opacity: options.opacity ?? 1,
     emissive: options.emissive ?? 0x000000,
     emissiveIntensity: options.emissiveIntensity ?? 0,
+    map: options.map ?? null,
   });
+}
+
+function createContactShadow(radius, opacity) {
+  const geometry = new THREE.CircleGeometry(radius, 28);
+  geometry.rotateX(-Math.PI * 0.5);
+  const shadow = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({
+      color: 0x080604,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    }),
+  );
+  shadow.renderOrder = 1;
+  return shadow;
 }
 
 function createBook(realism) {
@@ -45,9 +138,16 @@ function createBook(realism) {
   pivot.position.y = 2.45;
   pivot.rotation.set(-0.22, 0.08, -0.68);
   group.add(pivot);
-  const cover = createMaterial(0x442b37, realism, { roughness: 0.92 });
-  const page = createMaterial(0xd8c7a5, realism, { roughness: 0.96 });
-  const edge = createMaterial(0xb39d7a, realism, { roughness: 0.98 });
+  const textures = realism ? getSurfaceTextures() : {};
+  const cover = createMaterial(0xd2c0b1, realism, {
+    roughness: 0.94,
+    map: textures.leather,
+    emissive: 0x160b06,
+    emissiveIntensity: 0.2,
+  });
+  const page = createMaterial(0xe3d4b5, realism, { roughness: 0.97, map: textures.paper });
+  const edge = createMaterial(0xb8a180, realism, { roughness: 0.99, map: textures.paper });
+  const wear = createMaterial(0xad855c, realism, { roughness: 0.9 });
 
   const addBox = (size, position, material, rotation = [0, 0, 0]) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
@@ -65,12 +165,22 @@ function createBook(realism) {
   addBox([0.32, 12.2, 2.86], [4.44, -0.02, 0], edge);
   addBox([8.6, 0.24, 2.92], [0.38, 6.82, 0], edge);
   addBox([8.4, 0.24, 2.9], [0.34, -6.72, 0], edge);
+  for (const z of [-2.38, 2.44]) {
+    addBox([7.9, 0.2, 0.09], [0.18, 5.72, z], wear);
+    addBox([7.9, 0.2, 0.09], [0.18, -5.72, z], wear);
+    addBox([0.2, 11.6, 0.09], [-3.78, 0, z], wear);
+    addBox([0.2, 11.6, 0.09], [4.12, 0, z], wear);
+  }
+  for (const y of [-4.6, -1.55, 1.55, 4.6]) {
+    addBox([0.42, 1.04, 3.08], [-5.05, y, 0], wear, [0, 0, -0.04]);
+  }
   return group;
 }
 
 function createRecordPlayer(realism) {
   const group = new THREE.Group();
-  const wood = createMaterial(0x9a6c43, realism, { roughness: 0.8 });
+  const textures = realism ? getSurfaceTextures() : {};
+  const wood = createMaterial(0xc2ae9c, realism, { roughness: 0.84, map: textures.wood });
   const metal = createMaterial(0xb7bec2, realism, { roughness: 0.35, metalness: 0.65 });
   const vinyl = createMaterial(0x111111, realism, { roughness: 0.48 });
   const label = createMaterial(0xe0c58d, realism, { roughness: 0.74 });
@@ -242,11 +352,17 @@ export function createSpecialLandmarks({ scene, sunDirection, getSurfaceRadius, 
   const recordPlayer = createRecordPlayer(realism);
   placeOnSphere(recordPlayer, dayObjectDirection, nightAxisB, 0.45, getSurfaceRadius);
   root.add(recordPlayer);
+  const recordShadow = createContactShadow(28, 0.22);
+  placeOnSphere(recordShadow, dayObjectDirection, nightAxisB, 0.08, getSurfaceRadius);
+  root.add(recordShadow);
 
   const book = createBook(realism);
   const bookForward = sun.clone().addScaledVector(bookDirection, -sun.dot(bookDirection)).normalize();
   placeOnSphere(book, bookDirection, bookForward, 0.04, getSurfaceRadius, 0.06);
   root.add(book);
+  const bookShadow = createContactShadow(8.8, 0.24);
+  placeOnSphere(bookShadow, bookDirection, bookForward, 0.075, getSurfaceRadius, 0.06);
+  root.add(bookShadow);
 
   const blackSphere = createSphere(18, 0x090909, realism);
   const blackForward = compassDirection.clone().addScaledVector(sun, -compassDirection.dot(sun)).normalize();
@@ -266,6 +382,9 @@ export function createSpecialLandmarks({ scene, sunDirection, getSurfaceRadius, 
   const sanctuary = createSanctuary(realism);
   placeOnSphere(sanctuary, sanctuaryDirection, nightAxisA, 0.9, getSurfaceRadius, 0.24);
   root.add(sanctuary);
+  const sanctuaryShadow = createContactShadow(29, 0.27);
+  placeOnSphere(sanctuaryShadow, sanctuaryDirection, nightAxisA, 0.09, getSurfaceRadius, 0.24);
+  root.add(sanctuaryShadow);
 
   const blackBox = createBlackBox(realism);
   root.add(blackBox);

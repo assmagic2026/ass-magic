@@ -15,10 +15,10 @@ const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const SUN_DIRECTION = new THREE.Vector3(0.82, 0.33, 0.46).normalize();
-const TERRAIN_DRY = new THREE.Color(0x927d61);
-const TERRAIN_WET = new THREE.Color(0x4c665b);
-const TERRAIN_ROCK = new THREE.Color(0x76736d);
-const TERRAIN_HIGH = new THREE.Color(0xa9a497);
+const TERRAIN_DRY = new THREE.Color(0x827965);
+const TERRAIN_WET = new THREE.Color(0x46564b);
+const TERRAIN_ROCK = new THREE.Color(0x66635d);
+const TERRAIN_HIGH = new THREE.Color(0xaaa59a);
 const PLANET_LOADS = Object.freeze({
   current: {
     planetDetail: 4,
@@ -82,15 +82,21 @@ const renderer = new THREE.WebGLRenderer({
   alpha: false,
   powerPreference: "high-performance",
 });
+const realismShadowsEnabled = settings.mode === "realism"
+  && settings.view === "flight"
+  && settings.preset.shadowSize > 0;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = settings.mode === "realism"
   ? THREE.ACESFilmicToneMapping
   : THREE.NoToneMapping;
 renderer.toneMappingExposure = settings.mode === "realism" ? 1.04 : 1;
+renderer.shadowMap.enabled = realismShadowsEnabled;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset);
 const scene = new THREE.Scene();
 let twilightFillLight = null;
+let flightShadowLight = null;
 scene.background = new THREE.Color(0x091317);
 if (settings.mode === "realism" && settings.view === "flight") {
   scene.fog = new THREE.FogExp2(0xaacbd4, 0.0036);
@@ -103,8 +109,10 @@ const camera = new THREE.PerspectiveCamera(
 );
 
 const textureDisposables = [];
+const externalTextureLoads = [];
 const movingSurfaceLayers = [];
 const planet = createPlanet();
+planet.receiveShadow = realismShadowsEnabled;
 scene.add(planet);
 const sky = settings.view === "flight" ? createSky() : null;
 if (sky) scene.add(sky);
@@ -121,6 +129,16 @@ const specialLandmarks = createSpecialLandmarks({
 const flightPlayer = createFlightPlayer(scene);
 flightPlayer.player.visible = settings.view === "flight";
 flightPlayer.shadow.visible = settings.view === "flight";
+if (realismShadowsEnabled) {
+  flightPlayer.player.traverse((object) => {
+    if (object.isMesh) object.castShadow = true;
+  });
+  specialLandmarks.root.traverse((object) => {
+    if (!object.isMesh || object.material?.transparent) return;
+    object.castShadow = true;
+    object.receiveShadow = true;
+  });
+}
 
 const flightStick = document.querySelector("#flight-stick");
 const flightStickKnob = flightStick.querySelector("span");
@@ -250,7 +268,12 @@ const perfHud = new PerformanceHud(
 setupInteraction();
 resize();
 window.addEventListener("resize", resize, { passive: true });
-document.querySelector("#loading").classList.add("is-hidden");
+const loadingElement = document.querySelector("#loading");
+if (externalTextureLoads.length) {
+  Promise.allSettled(externalTextureLoads).then(() => loadingElement.classList.add("is-hidden"));
+} else {
+  loadingElement.classList.add("is-hidden");
+}
 
 const clock = new THREE.Clock();
 let elapsed = 0;
@@ -267,6 +290,7 @@ renderer.setAnimationLoop(() => {
   if (atmosphere) atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
   if (sky) sky.material.uniforms.cameraPos.value.copy(camera.position);
   if (adaptiveDpr.sample(delta)) resize();
+  updateFlightShadow();
   renderer.render(scene, camera);
   perfHud.update(delta, adaptiveDpr.ratio);
 });
@@ -362,16 +386,53 @@ function getTerrainColor(direction, height, target) {
 }
 
 function createRealisticPlanetMaterial() {
+  if (settings.quality === "high") {
+    const color = loadPbrTexture("./assets/rocks-ground-04-diff-1k.jpg", true);
+    const normal = loadPbrTexture("./assets/rocks-ground-04-normal-gl-1k.jpg", false);
+    const roughness = loadPbrTexture("./assets/rocks-ground-04-rough-1k.jpg", false);
+    return new THREE.MeshStandardMaterial({
+      map: color,
+      normalMap: normal,
+      normalScale: new THREE.Vector2(0.82, 0.82),
+      roughnessMap: roughness,
+      roughness: 0.9,
+      metalness: 0,
+    });
+  }
   const maps = createPlanetTextures(settings.preset.textureSize);
   return new THREE.MeshStandardMaterial({
     map: maps.color,
     bumpMap: maps.height,
-    bumpScale: 0.42,
+    bumpScale: settings.quality === "high" ? 0.78 : 0.52,
     roughnessMap: maps.roughness,
     roughness: 0.93,
     metalness: 0,
     vertexColors: true,
   });
+}
+
+function loadPbrTexture(path, isColor) {
+  let resolveLoad;
+  const loadComplete = new Promise((resolve) => {
+    resolveLoad = resolve;
+  });
+  const texture = new THREE.TextureLoader().load(
+    path,
+    () => resolveLoad(),
+    undefined,
+    (error) => {
+      console.warn(`PBR texture failed to load: ${path}`, error);
+      resolveLoad();
+    },
+  );
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(72, 36);
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
+  textureDisposables.push(texture);
+  externalTextureLoads.push(loadComplete);
+  return texture;
 }
 
 function createPlanetTextures(size) {
@@ -396,10 +457,11 @@ function createPlanetTextures(size) {
     const y = Math.floor(index / size);
     const u = x / size;
     const v = y / size;
-    const middle = tiledValueNoise(u, v, 48, 24, 911);
-    const fine = tiledValueNoise(u, v, 160, 80, 3571);
-    const grain = tiledValueNoise(u, v, 320, 160, 7187);
-    heights[index] = middle * 0.52 + fine * 0.34 + grain * 0.14;
+    const broad = tiledValueNoise(u, v, 18, 9, 1207);
+    const middle = tiledValueNoise(u, v, 52, 26, 911);
+    const fine = tiledValueNoise(u, v, 176, 88, 3571);
+    const grain = tiledValueNoise(u, v, 352, 176, 7187);
+    heights[index] = broad * 0.24 + middle * 0.38 + fine * 0.26 + grain * 0.12;
   }
 
   for (let index = 0; index < heights.length; index += 1) {
@@ -407,22 +469,24 @@ function createPlanetTextures(size) {
     const y = Math.floor(index / size);
     const height = heights[index];
     const mineral = noiseHash(x, y, 11239);
+    const vein = tiledValueNoise(x / size, y / size, 30, 15, 17021);
     const offset = index * 4;
-    let tone = 203 + height * 50;
-    if (mineral > 0.965) tone += 14;
-    if (mineral < 0.035) tone -= 17;
-    colorData.data[offset] = tone;
-    colorData.data[offset + 1] = tone - 5;
-    colorData.data[offset + 2] = tone - 12;
+    const tone = 174 + height * 62;
+    const damp = THREE.MathUtils.smoothstep(vein, 0.58, 0.84);
+    const rust = mineral > 0.972 ? (mineral - 0.972) * 680 : 0;
+    const pale = mineral < 0.026 ? (0.026 - mineral) * 540 : 0;
+    colorData.data[offset] = tone + 10 - damp * 13 + rust + pale;
+    colorData.data[offset + 1] = tone + 3 - damp * 5 + rust * 0.28 + pale;
+    colorData.data[offset + 2] = tone - 9 + damp * 3 - rust * 0.2 + pale * 0.82;
     colorData.data[offset + 3] = 255;
 
-    const relief = 68 + height * 174;
+    const relief = 38 + height * 208;
     heightData.data[offset] = relief;
     heightData.data[offset + 1] = relief;
     heightData.data[offset + 2] = relief;
     heightData.data[offset + 3] = 255;
 
-    const roughness = 211 + height * 34;
+    const roughness = 188 + height * 54 + Math.abs(vein - 0.5) * 20;
     roughnessData.data[offset] = roughness;
     roughnessData.data[offset + 1] = roughness;
     roughnessData.data[offset + 2] = roughness;
@@ -437,9 +501,9 @@ function createPlanetTextures(size) {
     renderer.capabilities.getMaxAnisotropy(),
   );
   return {
-    color: makeTexture(colorCanvas, true, anisotropy, 4, 2),
-    height: makeTexture(heightCanvas, false, anisotropy, 10, 5),
-    roughness: makeTexture(roughnessCanvas, false, anisotropy, 10, 5),
+    color: makeTexture(colorCanvas, true, anisotropy, 7, 3.5),
+    height: makeTexture(heightCanvas, false, anisotropy, 14, 7),
+    roughness: makeTexture(roughnessCanvas, false, anisotropy, 14, 7),
   };
 }
 
@@ -886,7 +950,7 @@ function createAtmosphere() {
 
 function addLighting() {
   if (settings.mode === "realism") {
-    scene.add(new THREE.HemisphereLight(0xaec9cf, 0x332822, 0.78));
+    scene.add(new THREE.HemisphereLight(0xaec9cf, 0x2b2521, 0.46));
     twilightFillLight = new THREE.AmbientLight(0xf2a479, 0.08);
     scene.add(twilightFillLight);
   } else {
@@ -895,7 +959,28 @@ function addLighting() {
   const sun = new THREE.DirectionalLight(0xffe0b0, settings.mode === "realism" ? 3.8 : 1.7);
   sun.position.copy(SUN_DIRECTION).multiplyScalar(620);
   sun.target.position.set(0, 0, 0);
+  if (realismShadowsEnabled) {
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(settings.preset.shadowSize, settings.preset.shadowSize);
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 320;
+    sun.shadow.camera.left = -72;
+    sun.shadow.camera.right = 72;
+    sun.shadow.camera.top = 72;
+    sun.shadow.camera.bottom = -72;
+    sun.shadow.bias = -0.00015;
+    sun.shadow.normalBias = 0.22;
+    sun.shadow.radius = 2.2;
+    flightShadowLight = sun;
+  }
   scene.add(sun, sun.target);
+}
+
+function updateFlightShadow() {
+  if (!flightShadowLight || settings.view !== "flight") return;
+  flightShadowLight.position.copy(flight.position).addScaledVector(SUN_DIRECTION, 180);
+  flightShadowLight.target.position.copy(flight.position);
+  flightShadowLight.target.updateMatrixWorld();
 }
 
 function updateOrbit(delta) {
@@ -1206,7 +1291,7 @@ function updateFlightEnvironment(up) {
   if (twilightFillLight) {
     twilightFillLight.intensity = THREE.MathUtils.lerp(
       twilightFillLight.intensity,
-      0.05 + dayMix * 0.1 + duskMix * 0.62,
+      0.04 + dayMix * 0.08 + duskMix * 0.34,
       0.08,
     );
   }

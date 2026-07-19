@@ -80,17 +80,27 @@ crossing immediately into day, so twilight remains visible while flying. Other
 visual checkpoints can be opened with `start=recordPlayer`, `start=book`,
 `start=day`, `start=night`, or `start=sanctuary`.
 
+High quality uses the 1K diffuse, OpenGL normal, and roughness maps from Poly
+Haven's `Rocks Ground 04` material (`https://polyhaven.com/a/rocks_ground_04`).
+The source is CC0 and the three local JPEGs
+add about 2.1 MB. Low and standard quality keep the generated maps so the mobile
+comparison does not inherit the extra transfer or texture memory cost. The maps
+remain uncompressed RGBA on the GPU, so mipmapped texture memory is estimated at
+about 16 MB. The 2048 shadow map adds further GPU memory in high quality. The
+loading cover now stays visible until all three files have loaded or failed.
+
 The current desktop-browser measurements at DPR `1.0` are:
 
 | Mode | Planet mesh | Rocks | Landmarks | Triangles | Draw calls | Startup |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| High flight | 256 x 128 | 2,200 | 7 types | 850,918 | 21-23 | 103 ms |
+| High flight | 256 x 128 | 2,200 | 7 types | 850,906-851,886 | 22-24 | 58-61 ms* |
 
 The high-quality flight view held the display's 75 FPS cap in this desktop
-environment, with a measured 1% low of about `64 FPS` and a maximum frame time of
-about `16.2 ms`. A later compass-on-screen sample measured a 1% low of about
-`66 FPS`; its two visible needle meshes account for the `21-23` draw-call range.
-No mobile viewport result is claimed here. A real iPhone GPU,
+environment after enabling the local shadow pass and photographic PBR maps, with
+a measured 1% low of about `64 FPS` and a maximum frame time of about `15.8 ms`.
+The `START` value marked with `*` measures synchronous scene construction; it does
+not include asynchronous JPEG transfer and decode. No mobile viewport result is
+claimed here. A real iPhone GPU,
 thermal, and battery test is still required.
 
 This scene measures the whole-planet terrain, atmosphere or sky, dust, rocks,
