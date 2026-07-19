@@ -53,26 +53,36 @@ renderer resource counts.
 
 ## Whole-planet load study
 
-`planet-full.html` keeps the production planet radius (`340`) and uses the
-production sphere density (`IcosahedronGeometry` detail `4`) for current-like,
-low, and standard modes. High mode deliberately raises the planet to detail `5`.
-It distributes the realism layer around the complete sphere rather than only
-around the camera. The global rock and crack meshes remain single
-`InstancedMesh` draws, which intentionally makes every instance part of one
-conservative full-planet render batch.
+`planet-full.html` keeps the production planet radius (`340`). Current-like mode
+retains `IcosahedronGeometry` detail `4`; realism mode uses a displaced,
+smooth-shaded `SphereGeometry` at `128 x 64` (low), `192 x 96` (standard), or
+`256 x 128` (high). The CPU-generated albedo, bump, and roughness maps avoid
+shipping new binary production assets. Terrain color combines dry soil, damp
+ground, exposed rock, and highland bands.
+
+Rocks, pebbles, and cracks are distributed around the complete sphere with
+clustered rather than even placement. Each layer stays in a single
+`InstancedMesh` draw. Flight view uses a blue sky shader and light distance fog;
+orbit view omits the ground sky and uses only the thin atmospheric rim, avoiding
+an unnecessary sky dome and its clipping artifact. Realism mode deliberately
+omits the old point-sprite cloud layer because it looked synthetic.
 
 The current desktop-browser measurements at DPR `1.0` are:
 
-| Mode | Rocks | Cracks | Triangles | Draw calls |
-| --- | ---: | ---: | ---: | ---: |
-| Current-like | 210 | 0 | 9,996 | 6 |
-| Low | 600 | 360 | 25,476 | 8 |
-| Standard | 1,200 | 800 | 49,396 | 8 |
-| High | 2,200 | 1,400 | 89,712 | 8 |
+| Mode | Planet mesh | Rocks | Pebbles | Cracks | Triangles | Draw calls | Startup |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Current-like | Ico D4 | 210 | 0 | 0 | 9,276 | 5 | 14 ms |
+| Low | 128 x 64 | 600 | 2,500 | 360 | 116,784 | 7 | 46 ms |
+| Standard | 192 x 96 | 1,200 | 9,000 | 800 | 316,896 | 7 | 92 ms |
+| High | 256 x 128 | 2,200 | 30,000 | 1,400 | 847,840 | 7 | 109 ms |
 
-All four modes held the display's 75 FPS cap in this environment. A `390 x 844`
-viewport check also held 75 FPS, but it still used the desktop GPU and therefore
-is not an iPhone performance measurement. The scene measures the whole-planet
-terrain, atmosphere, clouds, dust, rocks, and cracks. It does not include every
-production landmark, event, audio path, collision check, or UI update, so it
-must not be read as a complete production-site benchmark.
+All four flight-view modes held the display's 75 FPS cap in this desktop
+environment. High orbit measured `849,600` triangles and `7` draw calls at the
+same cap. The browser viewport override remained at `1280 x 720`, so no mobile
+viewport result is claimed here. A real iPhone GPU, thermal, and battery test is
+still required.
+
+This scene measures the whole-planet terrain, atmosphere or sky, dust, rocks,
+pebbles, and cracks. It does not include every production landmark, event,
+audio path, collision check, or UI update, so it must not be read as a complete
+production-site benchmark.

@@ -10,35 +10,45 @@ const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const SUN_DIRECTION = new THREE.Vector3(0.82, 0.33, 0.46).normalize();
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+const TERRAIN_DRY = new THREE.Color(0x927d61);
+const TERRAIN_WET = new THREE.Color(0x4c665b);
+const TERRAIN_ROCK = new THREE.Color(0x76736d);
+const TERRAIN_HIGH = new THREE.Color(0xa9a497);
 const PLANET_LOADS = Object.freeze({
   current: {
     planetDetail: 4,
     rockCount: 210,
+    pebbleCount: 0,
     crackCount: 0,
     dustCount: 600,
     cloudCount: 210,
     atmosphereSegments: 24,
   },
   low: {
-    planetDetail: 4,
+    planetWidthSegments: 128,
+    planetHeightSegments: 64,
     rockCount: 600,
+    pebbleCount: 2500,
     crackCount: 360,
     dustCount: 250,
     cloudCount: 120,
     atmosphereSegments: 24,
   },
   standard: {
-    planetDetail: 4,
+    planetWidthSegments: 192,
+    planetHeightSegments: 96,
     rockCount: 1200,
+    pebbleCount: 9000,
     crackCount: 800,
     dustCount: 500,
     cloudCount: 260,
     atmosphereSegments: 32,
   },
   high: {
-    planetDetail: 5,
+    planetWidthSegments: 256,
+    planetHeightSegments: 128,
     rockCount: 2200,
+    pebbleCount: 30000,
     crackCount: 1400,
     dustCount: 900,
     cloudCount: 480,
@@ -50,10 +60,13 @@ const bootStartedAt = performance.now();
 const baseSettings = getExperimentSettings();
 const loadKey = baseSettings.mode === "current" ? "current" : baseSettings.quality;
 const planetLoad = PLANET_LOADS[loadKey];
+const meshLabel = baseSettings.mode === "realism"
+  ? `${planetLoad.planetWidthSegments}x${planetLoad.planetHeightSegments}`
+  : `D${planetLoad.planetDetail}`;
 const settings = {
   ...baseSettings,
   scopeLabel: "WHOLE PLANET",
-  loadLabel: `R340 D${planetLoad.planetDetail} / ROCK ${planetLoad.rockCount.toLocaleString()} / CRACK ${planetLoad.crackCount.toLocaleString()}`,
+  loadLabel: `R340 ${meshLabel} / ROCK ${planetLoad.rockCount.toLocaleString()} / PEBBLE ${planetLoad.pebbleCount.toLocaleString()}`,
 };
 configureLinks(settings);
 
@@ -73,6 +86,9 @@ renderer.toneMappingExposure = settings.mode === "realism" ? 1.04 : 1;
 const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x091317);
+if (settings.mode === "realism" && settings.view === "flight") {
+  scene.fog = new THREE.FogExp2(0xaacbd4, 0.0036);
+}
 const camera = new THREE.PerspectiveCamera(
   settings.view === "flight" ? 70 : 46,
   1,
@@ -84,10 +100,11 @@ const textureDisposables = [];
 const movingSurfaceLayers = [];
 const planet = createPlanet();
 scene.add(planet);
-scene.add(createSky());
+const sky = settings.view === "flight" ? createSky() : null;
+if (sky) scene.add(sky);
 addLighting();
-const atmosphere = createAtmosphere();
-scene.add(atmosphere);
+const atmosphere = settings.view === "orbit" ? createAtmosphere() : null;
+if (atmosphere) scene.add(atmosphere);
 addSurfaceDetails();
 
 const flightStick = document.querySelector("#flight-stick");
@@ -124,12 +141,12 @@ const flight = {
   readoutElapsed: 0,
 };
 const orbit = {
-  yaw: 0.72,
-  pitch: 0.24,
-  distance: 820,
-  desiredYaw: 0.72,
-  desiredPitch: 0.24,
-  desiredDistance: 820,
+  yaw: -0.46,
+  pitch: 0.2,
+  distance: 960,
+  desiredYaw: -0.46,
+  desiredPitch: 0.2,
+  desiredDistance: 960,
   dragging: false,
   pointerId: null,
   x: 0,
@@ -175,16 +192,24 @@ renderer.setAnimationLoop(() => {
   for (const layer of movingSurfaceLayers) {
     layer.object.rotation.y = elapsed * layer.speed;
   }
-  atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
+  if (atmosphere) atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
+  if (sky) sky.material.uniforms.cameraPos.value.copy(camera.position);
   if (adaptiveDpr.sample(delta)) resize();
   renderer.render(scene, camera);
   perfHud.update(delta, adaptiveDpr.ratio);
 });
 
 function createPlanet() {
-  const geometry = new THREE.IcosahedronGeometry(PLANET_RADIUS, planetLoad.planetDetail);
+  const geometry = settings.mode === "realism"
+    ? new THREE.SphereGeometry(
+      PLANET_RADIUS,
+      planetLoad.planetWidthSegments,
+      planetLoad.planetHeightSegments,
+    )
+    : new THREE.IcosahedronGeometry(PLANET_RADIUS, planetLoad.planetDetail);
   const positions = geometry.attributes.position;
   const colors = new Float32Array(positions.count * 3);
+  const normals = new Float32Array(positions.count * 3);
   const direction = new THREE.Vector3();
   const color = new THREE.Color();
 
@@ -197,10 +222,17 @@ function createPlanet() {
     colors[index * 3] = color.r;
     colors[index * 3 + 1] = color.g;
     colors[index * 3 + 2] = color.b;
+    normals[index * 3] = direction.x;
+    normals[index * 3 + 1] = direction.y;
+    normals[index * 3 + 2] = direction.z;
   }
 
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
+  if (settings.mode === "realism") {
+    geometry.computeVertexNormals();
+  } else {
+    geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  }
   const material = settings.mode === "realism"
     ? createRealisticPlanetMaterial()
     : new THREE.MeshLambertMaterial({
@@ -211,13 +243,36 @@ function createPlanet() {
 }
 
 function terrainHeightFromDirection(direction) {
-  const ridge = Math.sin(direction.x * 7 + direction.z * 3.4) * 1.5;
-  const swell = Math.cos(direction.y * 8.6 - direction.x * 2.4) * 1.0;
-  const twist = Math.sin((direction.x - direction.z) * 10 + direction.y * 4.2) * 0.55;
-  const fine = settings.mode === "realism"
-    ? Math.sin(direction.x * 31 + direction.y * 19 - direction.z * 23) * 0.28
-    : 0;
-  return ridge + swell + twist + fine;
+  if (settings.mode !== "realism") {
+    const ridge = Math.sin(direction.x * 7 + direction.z * 3.4) * 1.5;
+    const swell = Math.cos(direction.y * 8.6 - direction.x * 2.4) * 1.0;
+    const twist = Math.sin((direction.x - direction.z) * 10 + direction.y * 4.2) * 0.55;
+    return ridge + swell + twist;
+  }
+
+  const continental = terrainSignal(direction, 2.6, 0.35);
+  const hill = terrainSignal(direction, 7.8, 1.7);
+  const erosion = terrainSignal(direction, 15.5, 3.1);
+  const ridge = Math.pow(1 - Math.abs(erosion), 3.2);
+  const fine = terrainSignal(direction, 34, 4.7);
+  return continental * 2.75 + hill * 1.35 + ridge * 3.4 - 0.72 + fine * 0.34;
+}
+
+function terrainSignal(direction, frequency, phase) {
+  const first = Math.sin(
+    (direction.x * 0.73 + direction.y * 0.41 + direction.z * 0.57) * frequency + phase,
+  );
+  const second = Math.sin(
+    (direction.x * 0.31 - direction.y * 0.82 + direction.z * 0.47)
+      * frequency * 1.37
+      - phase * 0.71,
+  );
+  const third = Math.cos(
+    (-direction.x * 0.61 + direction.y * 0.36 + direction.z * 0.69)
+      * frequency * 0.83
+      + phase * 1.31,
+  );
+  return (first + second + third) / 3;
 }
 
 function getSurfaceRadius(direction) {
@@ -233,11 +288,12 @@ function getTerrainColor(direction, height, target) {
     return target.setHex(bands[patch]);
   }
 
-  const moisture = Math.sin(direction.x * 5.8 + direction.z * 3.2)
-    + Math.cos(direction.y * 7.4 - direction.x * 2.1);
-  const low = new THREE.Color(moisture > 0.25 ? 0x627b69 : 0x8d7255);
-  const high = new THREE.Color(height > 0.7 ? 0xb49a72 : 0x765d48);
-  return target.copy(low).lerp(high, THREE.MathUtils.clamp(height * 0.12 + 0.46, 0.08, 0.92));
+  const moisture = terrainSignal(direction, 4.6, 2.2) - Math.abs(direction.y) * 0.18;
+  const exposedRock = THREE.MathUtils.smoothstep(height, 1.0, 4.4);
+  const highland = THREE.MathUtils.smoothstep(height, 3.5, 6.2);
+  target.copy(TERRAIN_DRY).lerp(TERRAIN_WET, THREE.MathUtils.smoothstep(moisture, -0.18, 0.36));
+  target.lerp(TERRAIN_ROCK, exposedRock * 0.72);
+  return target.lerp(TERRAIN_HIGH, highland * 0.68);
 }
 
 function createRealisticPlanetMaterial() {
@@ -245,9 +301,9 @@ function createRealisticPlanetMaterial() {
   return new THREE.MeshStandardMaterial({
     map: maps.color,
     bumpMap: maps.height,
-    bumpScale: 0.72,
+    bumpScale: 0.42,
     roughnessMap: maps.roughness,
-    roughness: 0.94,
+    roughness: 0.93,
     metalness: 0,
     vertexColors: true,
   });
@@ -268,26 +324,40 @@ function createPlanetTextures(size) {
   const colorData = colorContext.createImageData(size, size);
   const heightData = heightContext.createImageData(size, size);
   const roughnessData = roughnessContext.createImageData(size, size);
-  let seed = 481516;
+  const heights = new Float32Array(size * size);
 
-  for (let index = 0; index < size * size; index += 1) {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    const random = seed / 4294967295;
+  for (let index = 0; index < heights.length; index += 1) {
     const x = index % size;
     const y = Math.floor(index / size);
-    const broad = (Math.sin(x * 0.028) + Math.cos(y * 0.035) + 2) * 0.25;
-    const grain = random * 0.55 + broad * 0.45;
+    const u = x / size;
+    const v = y / size;
+    const middle = tiledValueNoise(u, v, 48, 24, 911);
+    const fine = tiledValueNoise(u, v, 160, 80, 3571);
+    const grain = tiledValueNoise(u, v, 320, 160, 7187);
+    heights[index] = middle * 0.52 + fine * 0.34 + grain * 0.14;
+  }
+
+  for (let index = 0; index < heights.length; index += 1) {
+    const x = index % size;
+    const y = Math.floor(index / size);
+    const height = heights[index];
+    const mineral = noiseHash(x, y, 11239);
     const offset = index * 4;
-    colorData.data[offset] = 118 + grain * 64;
-    colorData.data[offset + 1] = 105 + grain * 56;
-    colorData.data[offset + 2] = 79 + grain * 44;
+    let tone = 203 + height * 50;
+    if (mineral > 0.965) tone += 14;
+    if (mineral < 0.035) tone -= 17;
+    colorData.data[offset] = tone;
+    colorData.data[offset + 1] = tone - 5;
+    colorData.data[offset + 2] = tone - 12;
     colorData.data[offset + 3] = 255;
-    const height = 72 + grain * 132;
-    heightData.data[offset] = height;
-    heightData.data[offset + 1] = height;
-    heightData.data[offset + 2] = height;
+
+    const relief = 68 + height * 174;
+    heightData.data[offset] = relief;
+    heightData.data[offset + 1] = relief;
+    heightData.data[offset + 2] = relief;
     heightData.data[offset + 3] = 255;
-    const roughness = 202 + grain * 46;
+
+    const roughness = 211 + height * 34;
     roughnessData.data[offset] = roughness;
     roughnessData.data[offset + 1] = roughness;
     roughnessData.data[offset + 2] = roughness;
@@ -302,17 +372,43 @@ function createPlanetTextures(size) {
     renderer.capabilities.getMaxAnisotropy(),
   );
   return {
-    color: makeTexture(colorCanvas, true, anisotropy),
-    height: makeTexture(heightCanvas, false, anisotropy),
-    roughness: makeTexture(roughnessCanvas, false, anisotropy),
+    color: makeTexture(colorCanvas, true, anisotropy, 4, 2),
+    height: makeTexture(heightCanvas, false, anisotropy, 10, 5),
+    roughness: makeTexture(roughnessCanvas, false, anisotropy, 10, 5),
   };
 }
 
-function makeTexture(canvasElement, isColor, anisotropy = 1) {
+function tiledValueNoise(u, v, cellsX, cellsY, seed) {
+  const x = u * cellsX;
+  const y = v * cellsY;
+  const xFloor = Math.floor(x);
+  const yFloor = Math.floor(y);
+  const x0 = xFloor % cellsX;
+  const y0 = yFloor % cellsY;
+  const x1 = (x0 + 1) % cellsX;
+  const y1 = (y0 + 1) % cellsY;
+  const tx = smoothNoiseStep(x - xFloor);
+  const ty = smoothNoiseStep(y - yFloor);
+  const top = THREE.MathUtils.lerp(noiseHash(x0, y0, seed), noiseHash(x1, y0, seed), tx);
+  const bottom = THREE.MathUtils.lerp(noiseHash(x0, y1, seed), noiseHash(x1, y1, seed), tx);
+  return THREE.MathUtils.lerp(top, bottom, ty);
+}
+
+function noiseHash(x, y, seed) {
+  let value = Math.imul(x + seed, 374761393) ^ Math.imul(y + seed * 3, 668265263);
+  value = Math.imul(value ^ (value >>> 13), 1274126177);
+  return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
+}
+
+function smoothNoiseStep(value) {
+  return value * value * (3 - 2 * value);
+}
+
+function makeTexture(canvasElement, isColor, anisotropy, repeatX, repeatY) {
   const texture = new THREE.CanvasTexture(canvasElement);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(7, 4);
+  texture.repeat.set(repeatX, repeatY);
   texture.anisotropy = anisotropy;
   if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
   textureDisposables.push(texture);
@@ -322,20 +418,23 @@ function makeTexture(canvasElement, isColor, anisotropy = 1) {
 function addSurfaceDetails() {
   const random = createSeededRandom(89173);
   addRocks(random);
+  if (planetLoad.pebbleCount) addPebbles(random);
   if (planetLoad.crackCount) addCracks(random);
   addDust(random);
-  addClouds(random);
+  if (settings.mode !== "realism") addClouds(random);
 }
 
 function addRocks(random) {
-  const geometry = new THREE.DodecahedronGeometry(0.8, 0);
+  const geometry = settings.mode === "realism"
+    ? createRockGeometry()
+    : new THREE.DodecahedronGeometry(0.8, 0);
   geometry.scale(1, 0.72, 0.86);
   const material = settings.mode === "realism"
     ? new THREE.MeshStandardMaterial({
-      color: 0x6b6255,
+      color: 0xffffff,
       roughness: 0.98,
       metalness: 0,
-      flatShading: true,
+      flatShading: false,
     })
     : new THREE.MeshLambertMaterial({ color: 0xdde8ff, flatShading: true });
   const rocks = new THREE.InstancedMesh(geometry, material, planetLoad.rockCount);
@@ -345,11 +444,15 @@ function addRocks(random) {
   const scale = new THREE.Vector3();
   const orientation = new THREE.Quaternion();
   const spin = new THREE.Quaternion();
+  const jitter = new THREE.Vector3();
+  const rockColor = new THREE.Color();
+  const rockPalette = [0x5c554b, 0x746956, 0x4e514c, 0x85755d, 0x665b50];
+  const clusters = createDirectionClusters(random, 18);
 
   for (let index = 0; index < planetLoad.rockCount; index += 1) {
-    fibonacciDirection(index, planetLoad.rockCount, random, direction);
-    const size = 0.5 + Math.pow(random(), 1.65) * 2.7;
-    position.copy(direction).multiplyScalar(getSurfaceRadius(direction) + size * 0.34);
+    sampleClusteredDirection(random, clusters, direction, jitter, 0.78);
+    const size = 0.42 + Math.pow(random(), 1.82) * 3.2;
+    position.copy(direction).multiplyScalar(getSurfaceRadius(direction) + size * 0.4);
     orientation.setFromUnitVectors(WORLD_UP, direction);
     spin.setFromAxisAngle(direction, random() * Math.PI * 2);
     orientation.premultiply(spin);
@@ -360,10 +463,74 @@ function addRocks(random) {
     );
     matrix.compose(position, orientation, scale);
     rocks.setMatrixAt(index, matrix);
+    if (settings.mode === "realism") {
+      rockColor.setHex(rockPalette[Math.floor(random() * rockPalette.length)]);
+      rockColor.offsetHSL((random() - 0.5) * 0.025, (random() - 0.5) * 0.06, (random() - 0.5) * 0.08);
+      rocks.setColorAt(index, rockColor);
+    }
   }
 
   rocks.instanceMatrix.needsUpdate = true;
+  if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
   scene.add(rocks);
+}
+
+function createRockGeometry() {
+  const geometry = new THREE.IcosahedronGeometry(0.82, 1);
+  const positions = geometry.attributes.position;
+  const vertex = new THREE.Vector3();
+  for (let index = 0; index < positions.count; index += 1) {
+    vertex.fromBufferAttribute(positions, index);
+    const direction = vertex.clone().normalize();
+    const deformation = 0.88
+      + Math.sin(direction.x * 8.7 + direction.y * 4.1 - direction.z * 6.3) * 0.08
+      + Math.sin(direction.x * 17.2 - direction.y * 9.4 + direction.z * 11.1) * 0.035;
+    vertex.multiplyScalar(deformation);
+    positions.setXYZ(index, vertex.x, vertex.y, vertex.z);
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addPebbles(random) {
+  const geometry = new THREE.IcosahedronGeometry(0.5, 0);
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.97,
+    metalness: 0,
+    flatShading: false,
+  });
+  const pebbles = new THREE.InstancedMesh(geometry, material, planetLoad.pebbleCount);
+  const matrix = new THREE.Matrix4();
+  const direction = new THREE.Vector3();
+  const position = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const orientation = new THREE.Quaternion();
+  const spin = new THREE.Quaternion();
+  const pebbleColor = new THREE.Color();
+  const pebblePalette = [0x514b43, 0x696054, 0x80725e, 0x454945];
+
+  for (let index = 0; index < planetLoad.pebbleCount; index += 1) {
+    randomSphereDirection(random, direction);
+    const size = 0.12 + Math.pow(random(), 2.2) * 0.72;
+    position.copy(direction).multiplyScalar(getSurfaceRadius(direction) + size * 0.2);
+    orientation.setFromUnitVectors(WORLD_UP, direction);
+    spin.setFromAxisAngle(direction, random() * Math.PI * 2);
+    orientation.premultiply(spin);
+    scale.set(
+      size * (0.75 + random() * 0.55),
+      size * (0.42 + random() * 0.38),
+      size * (0.72 + random() * 0.58),
+    );
+    matrix.compose(position, orientation, scale);
+    pebbles.setMatrixAt(index, matrix);
+    pebbleColor.setHex(pebblePalette[Math.floor(random() * pebblePalette.length)]);
+    pebbles.setColorAt(index, pebbleColor);
+  }
+
+  pebbles.instanceMatrix.needsUpdate = true;
+  if (pebbles.instanceColor) pebbles.instanceColor.needsUpdate = true;
+  scene.add(pebbles);
 }
 
 function addCracks(random) {
@@ -373,7 +540,7 @@ function addCracks(random) {
     map: texture,
     color: 0x2c211b,
     transparent: true,
-    opacity: 0.48,
+    opacity: 0.16,
     alphaTest: 0.02,
     depthWrite: false,
     polygonOffset: true,
@@ -388,10 +555,12 @@ function addCracks(random) {
   const orientation = new THREE.Quaternion();
   const spin = new THREE.Quaternion();
   const planeNormal = new THREE.Vector3(0, 0, 1);
+  const jitter = new THREE.Vector3();
+  const clusters = createDirectionClusters(random, 14);
 
   for (let index = 0; index < planetLoad.crackCount; index += 1) {
-    fibonacciDirection(index, planetLoad.crackCount, random, direction);
-    const length = 4 + random() * 11;
+    sampleClusteredDirection(random, clusters, direction, jitter, 0.88);
+    const length = 2.8 + random() * 7.5;
     position.copy(direction).multiplyScalar(getSurfaceRadius(direction) + 0.08);
     orientation.setFromUnitVectors(planeNormal, direction);
     spin.setFromAxisAngle(direction, random() * Math.PI * 2);
@@ -444,7 +613,7 @@ function createSurfacePointGeometry(count, random, minimumAltitude, maximumAltit
   const positions = new Float32Array(count * 3);
   const direction = new THREE.Vector3();
   for (let index = 0; index < count; index += 1) {
-    fibonacciDirection(index, count, random, direction);
+    randomSphereDirection(random, direction);
     const radius = getSurfaceRadius(direction)
       + minimumAltitude
       + random() * (maximumAltitude - minimumAltitude);
@@ -457,11 +626,27 @@ function createSurfacePointGeometry(count, random, minimumAltitude, maximumAltit
   return geometry;
 }
 
-function fibonacciDirection(index, count, random, target) {
-  const y = 1 - ((index + 0.5) / count) * 2;
+function createDirectionClusters(random, count) {
+  const clusters = [];
+  for (let index = 0; index < count; index += 1) {
+    clusters.push(randomSphereDirection(random, new THREE.Vector3()).clone());
+  }
+  return clusters;
+}
+
+function sampleClusteredDirection(random, clusters, target, jitter, clusterChance) {
+  if (random() > clusterChance) return randomSphereDirection(random, target);
+  const center = clusters[Math.floor(random() * clusters.length)];
+  const spread = 0.035 + Math.pow(random(), 1.5) * 0.18;
+  jitter.set(random() - 0.5, random() - 0.5, random() - 0.5).multiplyScalar(spread);
+  return target.copy(center).add(jitter).normalize();
+}
+
+function randomSphereDirection(random, target) {
+  const y = random() * 2 - 1;
   const radius = Math.sqrt(Math.max(0, 1 - y * y));
-  const angle = index * GOLDEN_ANGLE + (random() - 0.5) * 0.08;
-  return target.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius).normalize();
+  const angle = random() * Math.PI * 2;
+  return target.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius);
 }
 
 function createCrackTexture() {
@@ -532,36 +717,50 @@ function createSky() {
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
+      cameraPos: { value: new THREE.Vector3() },
       sunDirection: { value: SUN_DIRECTION.clone() },
-      dayZenith: { value: new THREE.Color(0x3e7180) },
-      dayHorizon: { value: new THREE.Color(0xb7b9a5) },
-      dusk: { value: new THREE.Color(0xd18460) },
-      night: { value: new THREE.Color(0x07131d) },
+      dayZenith: { value: new THREE.Color(0x28678f) },
+      dayHorizon: { value: new THREE.Color(0xb9d8e2) },
+      dusk: { value: new THREE.Color(0xdd8f61) },
+      nightZenith: { value: new THREE.Color(0x06111b) },
+      nightHorizon: { value: new THREE.Color(0x152936) },
+      sunColor: { value: new THREE.Color(0xffdda8) },
     },
     vertexShader: `
-      varying vec3 vDirection;
+      varying vec3 vWorldPosition;
       void main() {
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vDirection = normalize(worldPosition.xyz);
+        vWorldPosition = worldPosition.xyz;
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
       }
     `,
     fragmentShader: `
+      uniform vec3 cameraPos;
       uniform vec3 sunDirection;
       uniform vec3 dayZenith;
       uniform vec3 dayHorizon;
       uniform vec3 dusk;
-      uniform vec3 night;
-      varying vec3 vDirection;
+      uniform vec3 nightZenith;
+      uniform vec3 nightHorizon;
+      uniform vec3 sunColor;
+      varying vec3 vWorldPosition;
       void main() {
-        vec3 direction = normalize(vDirection);
-        float lightAmount = dot(direction, normalize(sunDirection));
-        float dayMix = smoothstep(-0.08, 0.28, lightAmount);
-        float duskMix = 1.0 - smoothstep(0.04, 0.35, abs(lightAmount));
-        float zenith = pow(clamp(direction.y * 0.5 + 0.5, 0.0, 1.0), 0.8);
+        vec3 ray = normalize(vWorldPosition - cameraPos);
+        vec3 localUp = normalize(cameraPos);
+        vec3 sun = normalize(sunDirection);
+        float viewHeight = dot(ray, localUp);
+        float sunHeight = dot(localUp, sun);
+        float dayMix = smoothstep(-0.12, 0.08, sunHeight);
+        float horizon = exp(-abs(viewHeight) * 5.2);
+        float zenith = pow(smoothstep(-0.14, 0.68, viewHeight), 0.9);
         vec3 day = mix(dayHorizon, dayZenith, zenith);
+        vec3 night = mix(nightHorizon, nightZenith, pow(clamp(viewHeight, 0.0, 1.0), 0.7));
+        float duskMix = 1.0 - smoothstep(0.015, 0.26, abs(sunHeight));
         vec3 color = mix(night, day, dayMix);
-        color = mix(color, dusk, duskMix * 0.58);
+        color = mix(color, dusk, horizon * duskMix * 0.72);
+        float sunAmount = max(dot(ray, sun), 0.0);
+        color += sunColor * pow(sunAmount, 28.0) * 0.16 * dayMix;
+        color += sunColor * pow(sunAmount, 720.0) * 1.1 * dayMix;
         gl_FragColor = vec4(color, 1.0);
       }
     `,
@@ -571,12 +770,12 @@ function createSky() {
 
 function createAtmosphere() {
   const geometry = new THREE.SphereGeometry(
-    PLANET_RADIUS + 140,
+    PLANET_RADIUS + 2,
     planetLoad.atmosphereSegments,
     Math.max(16, Math.round(planetLoad.atmosphereSegments * 0.66)),
   );
   const material = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
+    side: THREE.DoubleSide,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -604,20 +803,21 @@ function createAtmosphere() {
         float rim = pow(1.0 - abs(dot(normalize(vWorldNormal), viewDirection)), 2.4);
         float sunlight = max(dot(normalize(vWorldNormal), normalize(sunDirection)), 0.0);
         vec3 color = mix(vec3(0.08, 0.18, 0.28), vec3(0.36, 0.72, 0.86), sunlight);
-        gl_FragColor = vec4(color, rim * 0.12 + sunlight * 0.012);
+        gl_FragColor = vec4(color, rim * 0.13 + sunlight * 0.004);
       }
     `,
   });
+  material.forceSinglePass = true;
   return new THREE.Mesh(geometry, material);
 }
 
 function addLighting() {
   if (settings.mode === "realism") {
-    scene.add(new THREE.HemisphereLight(0xaec9cf, 0x3e3028, 1.15));
+    scene.add(new THREE.HemisphereLight(0xaec9cf, 0x332822, 0.78));
   } else {
     scene.add(new THREE.AmbientLight(0x5c6e89, 0.55));
   }
-  const sun = new THREE.DirectionalLight(0xffe0b0, settings.mode === "realism" ? 3.1 : 1.7);
+  const sun = new THREE.DirectionalLight(0xffe0b0, settings.mode === "realism" ? 3.8 : 1.7);
   sun.position.copy(SUN_DIRECTION).multiplyScalar(620);
   sun.target.position.set(0, 0, 0);
   scene.add(sun, sun.target);
