@@ -367,84 +367,108 @@ function createSanctuary(realism) {
   return group;
 }
 
-function createNightGlowTexture() {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const context = canvas.getContext("2d");
-  const gradient = context.createRadialGradient(32, 32, 1, 32, 32, 31);
-  gradient.addColorStop(0, "rgba(255,255,255,1)");
-  gradient.addColorStop(0.16, "rgba(132,238,255,0.92)");
-  gradient.addColorStop(0.48, "rgba(48,164,230,0.34)");
-  gradient.addColorStop(1, "rgba(24,92,180,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 64, 64);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
 function createNightBeacons(night, axisA, axisB, getSurfaceRadius) {
   const group = new THREE.Group();
-  const count = 22;
-  const crystalGeometry = new THREE.ConeGeometry(1.05, 7.4, 5);
-  crystalGeometry.translate(0, 3.7, 0);
-  const crystalMaterial = new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    vertexColors: true,
-    toneMapped: false,
-    fog: true,
+  const count = 12;
+  const litCount = 6;
+  const bodyGeometry = new THREE.BoxGeometry(1.15, 1.15, 2.8);
+  const bodyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x0c0e12,
+    emissive: 0x3d2415,
+    emissiveIntensity: 0.22,
+    roughness: 0.58,
+    metalness: 0.38,
   });
-  const crystals = new THREE.InstancedMesh(crystalGeometry, crystalMaterial, count);
-  const glowPositions = new Float32Array(count * 3);
+  const bodies = new THREE.InstancedMesh(bodyGeometry, bodyMaterial, count);
+  const lensMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffdfaa,
+    emissive: 0xffa64d,
+    emissiveIntensity: 3.2,
+    roughness: 0.18,
+    metalness: 0.05,
+  });
+  const lenses = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(0.58, 12, 8),
+    lensMaterial,
+    count,
+  );
   const direction = new THREE.Vector3();
   const tangent = new THREE.Vector3();
-  const forward = new THREE.Vector3();
-  const glowPosition = new THREE.Vector3();
-  const cyan = new THREE.Color(0x72efff);
-  const blue = new THREE.Color(0x5e8dff);
+  const crossTangent = new THREE.Vector3();
+  const origin = new THREE.Vector3();
+  const beamDirection = new THREE.Vector3();
+  const bodyQuaternion = new THREE.Quaternion();
+  const bodyAxis = new THREE.Vector3(0, 0, 1);
+  const spotlights = [];
+  const baseIntensities = [];
+  let previewDirection = null;
+  let seed = 82731;
+  const random = () => {
+    seed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    seed ^= seed + Math.imul(seed ^ (seed >>> 7), 61 | seed);
+    return ((seed ^ (seed >>> 14)) >>> 0) / 4294967296;
+  };
+  const palette = [0xffd29a, 0xff986e, 0xa7d6ff, 0xffe8c2];
 
   for (let index = 0; index < count; index += 1) {
-    const angle = index / count * Math.PI * 2 + (index % 3) * 0.2;
-    const spread = 0.095 + (index % 5) * 0.045;
+    const angle = random() * Math.PI * 2;
+    const spread = 0.08 + random() * 0.34;
     tangent.copy(axisA).multiplyScalar(Math.cos(angle)).addScaledVector(axisB, Math.sin(angle));
     direction.copy(night).multiplyScalar(Math.cos(spread))
       .addScaledVector(tangent, Math.sin(spread))
       .normalize();
-    forward.copy(tangent).cross(direction).normalize();
-    placeOnSphere(dummy, direction, forward, 0.12, getSurfaceRadius, index * 0.31);
-    const heightScale = 0.72 + (index % 7) * 0.13;
-    dummy.scale.set(0.72 + (index % 2) * 0.2, heightScale, 0.72 + (index % 3) * 0.12);
+    crossTangent.crossVectors(direction, tangent).normalize();
+    const illuminated = index % 2 === 0;
+    const airborne = illuminated || index % 5 === 0;
+    const altitude = airborne ? 9 + random() * 17 : 1.2 + random() * 3.2;
+    origin.copy(direction).multiplyScalar(getSurfaceRadius(direction) + altitude);
+    if (illuminated && !previewDirection) previewDirection = direction.clone();
+    const radialBias = illuminated
+      ? -(0.52 + random() * 0.28)
+      : -(0.08 + random() * 0.5);
+    beamDirection.copy(tangent).multiplyScalar((random() - 0.5) * 1.5)
+      .addScaledVector(crossTangent, (random() - 0.5) * 1.25)
+      .addScaledVector(direction, radialBias)
+      .normalize();
+
+    bodyQuaternion.setFromUnitVectors(bodyAxis, beamDirection);
+    dummy.position.copy(origin);
+    dummy.quaternion.copy(bodyQuaternion);
+    dummy.scale.setScalar(0.72 + random() * 0.52);
     dummy.updateMatrix();
-    crystals.setMatrixAt(index, dummy.matrix);
-    crystals.setColorAt(index, index % 4 === 0 ? blue : cyan);
+    bodies.setMatrixAt(index, dummy.matrix);
 
-    glowPosition.copy(direction).multiplyScalar(getSurfaceRadius(direction) + 5.4 * heightScale);
-    glowPositions[index * 3] = glowPosition.x;
-    glowPositions[index * 3 + 1] = glowPosition.y;
-    glowPositions[index * 3 + 2] = glowPosition.z;
+    dummy.position.copy(origin).addScaledVector(beamDirection, 1.48);
+    dummy.quaternion.copy(bodyQuaternion);
+    dummy.scale.setScalar(0.82 + random() * 0.28);
+    dummy.updateMatrix();
+    lenses.setMatrixAt(index, dummy.matrix);
+
+    if (illuminated && spotlights.length < litCount) {
+      const color = palette[index % palette.length];
+      const intensity = 2200 + random() * 2100;
+      const spotlight = new THREE.SpotLight(
+        color,
+        intensity,
+        76,
+        0.29 + random() * 0.12,
+        0.86,
+        2,
+      );
+      spotlight.position.copy(origin).addScaledVector(beamDirection, 1.45);
+      spotlight.castShadow = false;
+      spotlight.target.position.copy(origin).addScaledVector(beamDirection, 38);
+      group.add(spotlight, spotlight.target);
+      spotlights.push(spotlight);
+      baseIntensities.push(intensity);
+    }
   }
-  crystals.instanceMatrix.needsUpdate = true;
-  if (crystals.instanceColor) crystals.instanceColor.needsUpdate = true;
-
-  const glowGeometry = new THREE.BufferGeometry();
-  glowGeometry.setAttribute("position", new THREE.BufferAttribute(glowPositions, 3));
-  const glowMaterial = new THREE.PointsMaterial({
-    color: 0x8deeff,
-    map: createNightGlowTexture(),
-    size: 21,
-    sizeAttenuation: true,
-    transparent: true,
-    opacity: 0.72,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    toneMapped: false,
-    fog: true,
-  });
-  const glows = new THREE.Points(glowGeometry, glowMaterial);
-  glows.frustumCulled = false;
-  group.add(crystals, glows);
-  group.userData.glowMaterial = glowMaterial;
+  bodies.instanceMatrix.needsUpdate = true;
+  lenses.instanceMatrix.needsUpdate = true;
+  group.add(bodies, lenses);
+  group.userData.spotlights = spotlights;
+  group.userData.baseIntensities = baseIntensities;
+  group.userData.previewDirection = previewDirection;
   return group;
 }
 
@@ -554,13 +578,16 @@ export function createSpecialLandmarks({
       recordPlayer: dayObjectDirection,
       book: bookDirection,
       sanctuary: sanctuaryDirection,
+      lights: nightBeacons.userData.previewDirection,
     },
     update(delta) {
       recordPlayer.userData.recordDisc.rotation.y += delta * 1.55;
       compass.userData.rotor.rotation.y += delta * 0.42;
       for (const halo of sanctuary.userData.halos) halo.rotation.z += delta * halo.userData.spin;
-      nightBeacons.userData.glowMaterial.opacity = 0.62 + Math.sin(blackBoxAngle * 1.7) * 0.13;
-      nightBeacons.userData.glowMaterial.size = 20 + Math.sin(blackBoxAngle * 1.25) * 2.2;
+      nightBeacons.userData.spotlights.forEach((spotlight, index) => {
+        spotlight.intensity = nightBeacons.userData.baseIntensities[index]
+          * (0.88 + Math.sin(blackBoxAngle * (0.82 + index * 0.07) + index) * 0.12);
+      });
 
       blackBoxAngle += delta * 0.54;
       blackBoxDirection.copy(sun).multiplyScalar(Math.cos(blackBoxAngle))

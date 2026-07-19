@@ -12,6 +12,10 @@ production site and does not modify the existing game.
 - Flight test: `?mode=realism&quality=high&view=flight`
 - Whole planet / orbit: `planet-full.html?mode=realism&quality=high&view=orbit`
 - Whole planet / flight: `planet-full.html?mode=realism&quality=high&view=flight`
+- Water-spray checkpoint: `planet-full.html?mode=realism&quality=high&view=flight&start=water&spray=1`
+- Cave approach: `planet-full.html?mode=realism&quality=high&view=flight&start=cave`
+- Cloud passage: `planet-full.html?mode=realism&quality=high&view=flight&start=cloud`
+- Night lights: `planet-full.html?mode=realism&quality=high&view=flight&start=lights`
 
 Serve the repository over HTTP because browser ES modules do not reliably load
 from a `file://` URL.
@@ -60,45 +64,71 @@ renderer resource counts.
 
 `planet-full.html` keeps the production planet radius (`340`). Current-like mode
 retains `IcosahedronGeometry` detail `4`; realism mode uses a smooth-shaded
-`SphereGeometry` at `128 x 64` (low), `192 x 96` (standard), or `256 x 128`
+`SphereGeometry` at `192 x 96` (low), `256 x 128` (standard), or `512 x 256`
 (high). The macro surface combines the production terrain function with three
 relief bands, then adds authored landmarks: a three-peak mountain cluster up to
 roughly 58 metres, a deep crater with a raised rim, a long narrow valley with
 eroded shoulders, and a broad basin. A transparent physical water sphere fills
 every connected depression below 9 metres under the reference radius and uses
-one CPU-generated animated normal map. Terrain color combines dry soil, damp
-ground, exposed rock, and highland bands.
+one CPU-generated animated normal map plus a tiny sky-reflection cube map.
+Terrain color combines dry soil, damp ground, exposed rock, and highland bands.
 
-Rocks, pebbles, and cracks are distributed around the complete sphere with
-clustered rather than even placement. Each layer stays in a single
-`InstancedMesh` draw. Flight view continuously blends day, directional twilight,
-and night sky/fog from the player's position. Orbit view omits the ground sky and
-uses only the thin atmospheric rim, avoiding an unnecessary sky dome and its
-clipping artifact. Realism mode deliberately omits the old point-sprite cloud
-layer because it looked synthetic.
+The authored terrain is supplemented with 30 broad hills and 16 smooth rimmed
+craters, giving the complete sphere varied relief rather than a mostly flat
+shell. Rocks, pebbles, line-art cracks, and the experimental floating relics
+are omitted from realism mode. Three sparse point layers instead place 18
+static cloud banks at different altitudes. The visible banks use one 512-pixel
+CC0 alpha texture and three draw calls. When the player enters a cloud volume,
+the nearby sprite fades before it reaches the camera and the whole scene blends
+into local mist; after leaving the volume the original sky and fog return.
+Flight view continuously blends day,
+directional twilight, and night sky/fog from the player's position. Orbit view
+omits the ground sky and uses only the thin atmospheric rim, avoiding an
+unnecessary sky dome and its clipping artifact. Cloud positions never follow or
+rotate with the player.
 
 The whole-planet flight scene now includes a production-scale human player in a
-head-first Superman flight pose and seven landmark types at production-derived
-directions: giant record player, giant book, black sphere, white sphere,
-floating compass, sanctuary, and moving
-black box. The default `start=dusk` route follows the terminator instead of
+horizontal flight pose with both arms spread fully sideways and the waist,
+knees, feet, and paired legs held straight. It also includes seven landmark
+types at production-derived directions: giant record player, giant book, black
+sphere, white sphere, floating compass, sanctuary, and moving black box. The
+default `start=dusk` route follows the terminator instead of
 crossing immediately into day, so twilight remains visible while flying. Other
 visual checkpoints can be opened with `start=recordPlayer`, `start=book`,
 `start=day`, `start=night`, or `start=sanctuary`. Terrain checkpoints use
-`start=mountain`, `start=crater`, `start=water`, and `start=valley`; each begins
+`start=mountain`, `start=crater`, `start=water`, `start=valley`, and `start=cave`;
+each begins
 far enough away to read the full landform. Use `start=sunset` to stand on the
 terminator and face the physically computed sun direction directly.
 
-The night hemisphere keeps its dark sky but adds 22 luminous crystal beacons
-around the white sphere. Their meshes are one `InstancedMesh` and their soft
-halos are one `Points` draw, so the installation costs two draw calls rather
-than one draw per light. They use emissive-looking unlit materials instead of
-shadow-casting point lights. Flight starts and neutral input use production's
-10-metre altitude target; the former terrain-checkpoint altitude overrides have
-been removed. Because this experiment's mountains and valleys are much steeper
-than production terrain, neutral flight samples the surface about one second
-ahead and gently follows its rise or fall. Manual vertical input always takes
-priority over this terrain-follow correction.
+The brighter night hemisphere uses cool moonlight and adds 12 irregular light
+fixtures across the ground and lower air. Instanced dark housings and emissive
+lenses use two draw calls. Six shadow-free `SpotLight` instances illuminate
+nearby terrain and objects, but no hard translucent beam cone is drawn. Their
+positions, altitudes, directions, colors, and pulse phases vary.
+Flight starts and neutral input use
+production's 10-metre altitude target; the former terrain-checkpoint altitude
+overrides have been removed. Because this experiment's mountains and valleys
+are much steeper than production terrain, neutral flight samples the surface
+about one second ahead and gently follows its rise or fall. Manual vertical input always takes
+priority over this terrain-follow correction. The altitude error itself is
+returned slowly and symmetrically toward `ALT 10`, while the look-ahead term
+only compensates for the much steeper experimental terrain.
+
+The dusk blend now covers a wider band on both sides of the terminator. Its
+orange sun key, hemisphere sky and ground colors, and ambient fill are updated
+together, so terrain, the player, and lit landmarks share the sunset cast. High
+quality terrain uses aligned diffuse and normal maps repeated `18 x 9`, while a
+constant roughness of `1.0` prevents dark roughness-map regions from becoming
+shiny patches. Broad vertex colors and two low-frequency UV warps soften the
+regularity of the repeat without adding another material pass.
+
+The fly-through cave is a 64-metre curved hollow mountain generated as one
+continuous mesh. Its inner wall, outer rock surface, and both entrance sections
+share vertices at their seams; the former pile of instanced entrance boulders
+has been removed. The outer surface uses the same CC0 rock maps as the terrain,
+while the rough inner wall stays darker. It follows the planet curvature and
+keeps both openings clear for the production-style `ALT 10` flight path.
 
 High-quality flight mode replaces the procedural human with Khronos's
 `CesiumMan.glb` sample (about 479 KB), and replaces the giant
@@ -113,30 +143,40 @@ repository. The twilight sky is camera-centred so the sun direction remains
 geometrically correct at every point on the planet, and dusk uses separate
 horizon, middle, and zenith bands.
 
-High quality uses the 1K diffuse, OpenGL normal, and roughness maps from Poly
+High quality uses the 1K diffuse and OpenGL normal maps from Poly
 Haven's `Rocks Ground 04` material (`https://polyhaven.com/a/rocks_ground_04`).
-The source is CC0 and the three local JPEGs
-add about 2.1 MB. Low and standard quality keep the generated maps so the mobile
+The source is CC0. The cloud alpha texture is WickedInsignia's CC0
+`FX_CloudAlpha07.png` from OpenGameArt. Low and standard quality keep the generated maps so the mobile
 comparison does not inherit the extra transfer or texture memory cost. The maps
-remain uncompressed RGBA on the GPU, so mipmapped texture memory is estimated at
-about 16 MB. The 2048 shadow map adds further GPU memory in high quality. The
-loading cover now stays visible until all three files have loaded or failed.
+remain uncompressed RGBA on the GPU. The 2048 shadow map adds further GPU memory
+in high quality. The loading cover now stays visible until both files have
+loaded or failed.
+
+Low flight over a real water depression activates a 600-particle additive spray
+system. Emission depends on speed, height above the shared water surface, and
+whether the terrain beneath the player is actually submerged. The particles
+inherit part of the player's motion, fan sideways and upward, then fall and fade;
+the system remains idle everywhere else. The `spray=1` checkpoint starts only
+the experiment over the basin at `ALT 1.35` for quick visual testing.
 
 The current desktop-browser measurements at DPR `1.0` are:
 
-| Mode | Planet mesh | Rocks | Landmarks | Triangles | Draw calls | Startup |
+| Mode | Planet mesh | Clouds | Landmarks | Triangles | Draw calls | Startup |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| High flight | 256 x 128 | 2,200 | 7 types | 889,100-893,300 | 11-30 | 94-113 ms* |
+| High flight | 512 x 256 | 18 | 8 types | 416,896-419,640 | 13-24 | 207-295 ms* |
 
 The high-quality flight view held the display's 75 FPS cap in this desktop
-environment after enabling the local shadow pass and photographic PBR maps, with
-a measured 1% low of about `65 FPS` and a maximum frame time of about `15.6 ms`.
+environment after enabling the local shadow pass, PBR maps, cave, and six
+shadow-free spotlights. The cave checkpoint measured a 1% low of `69.9 FPS`;
+the cloud-passage checkpoint measured `70.4 FPS`. Maximum frame time was `14.3 ms`.
 The `START` value marked with `*` measures synchronous scene construction; it does
 not include asynchronous JPEG transfer and decode. No mobile viewport result is
 claimed here. A real iPhone GPU,
 thermal, and battery test is still required.
 
-This scene measures the whole-planet terrain, atmosphere or sky, dust, rocks,
-pebbles, cracks, player, and major landmark visuals. Landmark contact events,
+This scene measures the whole-planet terrain, atmosphere or sky, clouds, water
+spray, player, and major landmark visuals. The old circular fake
+player shadow is no longer attached to the scene; high flight mode uses only the
+real directional-light shadow. Landmark contact events,
 theme switching, return-route progression, audio paths, and production UI are
 not included, so it is still not a complete production-site benchmark.

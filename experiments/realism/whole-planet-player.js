@@ -9,6 +9,7 @@ const poseTarget = new THREE.Vector3();
 const poseDelta = new THREE.Quaternion();
 const poseWorldQuaternion = new THREE.Quaternion();
 const poseParentQuaternion = new THREE.Quaternion();
+const poseFrameQuaternion = new THREE.Quaternion();
 
 export function createFlightPlayer(scene, options = {}) {
   const player = new THREE.Group();
@@ -76,8 +77,8 @@ export function createFlightPlayer(scene, options = {}) {
 
   // The fallback uses the same head-first horizontal silhouette as the GLB.
   visual.rotation.x = Math.PI * 0.5;
-  armLeftRoot.rotation.z = Math.PI;
-  armRightRoot.rotation.z = Math.PI;
+  armLeftRoot.rotation.z = -Math.PI * 0.5;
+  armRightRoot.rotation.z = Math.PI * 0.5;
 
   const shadow = new THREE.Mesh(
     new THREE.CircleGeometry(1, 18),
@@ -89,8 +90,9 @@ export function createFlightPlayer(scene, options = {}) {
     }),
   );
   shadow.renderOrder = 2;
+  shadow.visible = false;
 
-  scene.add(player, shadow);
+  scene.add(player);
   const rig = {
     player,
     shadow,
@@ -143,7 +145,7 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
       if (object.material?.map) object.material.map.anisotropy = 8;
     });
 
-    poseSuperman(imported);
+    poseSuperman(imported, rig.player);
     rig.modelVisual = modelVisual;
     disposeVisual(rig.proceduralVisual);
   }).catch((error) => {
@@ -152,19 +154,25 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
   });
 }
 
-function poseSuperman(imported) {
+function poseSuperman(imported, targetFrame) {
   imported.updateWorldMatrix(true, true);
-  poseBoneToward(imported, "Skeleton_arm_joint_R", "Skeleton_arm_joint_R__2_", [0.12, 0.03, 1]);
-  poseBoneToward(imported, "Skeleton_arm_joint_R__2_", "Skeleton_arm_joint_R__3_", [0.04, -0.02, 1]);
-  poseBoneToward(imported, "Skeleton_arm_joint_L__4_", "Skeleton_arm_joint_L__3_", [-0.12, 0.03, 1]);
-  poseBoneToward(imported, "Skeleton_arm_joint_L__3_", "Skeleton_arm_joint_L__2_", [-0.04, -0.02, 1]);
-  poseBoneToward(imported, "leg_joint_R_1", "leg_joint_R_2", [0.1, -0.02, -1]);
-  poseBoneToward(imported, "leg_joint_R_2", "leg_joint_R_3", [0.04, -0.05, -1]);
-  poseBoneToward(imported, "leg_joint_L_1", "leg_joint_L_2", [-0.1, -0.02, -1]);
-  poseBoneToward(imported, "leg_joint_L_2", "leg_joint_L_3", [-0.04, -0.05, -1]);
+  poseBoneToward(imported, "Skeleton_torso_joint_1", "Skeleton_torso_joint_2", [0, 0, 1], targetFrame);
+  poseBoneToward(imported, "Skeleton_torso_joint_2", "torso_joint_3", [0, 0, 1], targetFrame);
+  poseBoneToward(imported, "torso_joint_3", "Skeleton_neck_joint_1", [0, 0, 1], targetFrame);
+  poseBoneToward(imported, "Skeleton_neck_joint_1", "Skeleton_neck_joint_2", [0, 0, 1], targetFrame);
+  poseBoneToward(imported, "Skeleton_arm_joint_R", "Skeleton_arm_joint_R__2_", [1, 0, 0], targetFrame);
+  poseBoneToward(imported, "Skeleton_arm_joint_R__2_", "Skeleton_arm_joint_R__3_", [1, 0, 0], targetFrame);
+  poseBoneToward(imported, "Skeleton_arm_joint_L__4_", "Skeleton_arm_joint_L__3_", [-1, 0, 0], targetFrame);
+  poseBoneToward(imported, "Skeleton_arm_joint_L__3_", "Skeleton_arm_joint_L__2_", [-1, 0, 0], targetFrame);
+  poseBoneToward(imported, "leg_joint_R_1", "leg_joint_R_2", [0, 0, -1], targetFrame);
+  poseBoneToward(imported, "leg_joint_R_2", "leg_joint_R_3", [0, 0, -1], targetFrame);
+  poseBoneToward(imported, "leg_joint_R_3", "leg_joint_R_5", [0, 0, -1], targetFrame);
+  poseBoneToward(imported, "leg_joint_L_1", "leg_joint_L_2", [0, 0, -1], targetFrame);
+  poseBoneToward(imported, "leg_joint_L_2", "leg_joint_L_3", [0, 0, -1], targetFrame);
+  poseBoneToward(imported, "leg_joint_L_3", "leg_joint_L_5", [0, 0, -1], targetFrame);
 }
 
-function poseBoneToward(root, boneName, childName, target) {
+function poseBoneToward(root, boneName, childName, target, targetFrame) {
   const bone = root.getObjectByName(boneName);
   const child = root.getObjectByName(childName);
   if (!bone || !child || !bone.parent) return;
@@ -173,7 +181,8 @@ function poseBoneToward(root, boneName, childName, target) {
   bone.getWorldPosition(poseBonePosition);
   child.getWorldPosition(poseChildPosition);
   poseDirection.copy(poseChildPosition).sub(poseBonePosition).normalize();
-  poseTarget.set(...target).normalize();
+  targetFrame.getWorldQuaternion(poseFrameQuaternion);
+  poseTarget.set(...target).normalize().applyQuaternion(poseFrameQuaternion);
   poseDelta.setFromUnitVectors(poseDirection, poseTarget);
   bone.getWorldQuaternion(poseWorldQuaternion);
   poseWorldQuaternion.premultiply(poseDelta);
@@ -204,8 +213,6 @@ export function updateFlightPlayer(rig, state) {
     up,
     bodyPitch,
     roll,
-    turnInput,
-    climbInput,
     altitude,
     surfaceRadius,
     delta,
@@ -223,20 +230,6 @@ export function updateFlightPlayer(rig, state) {
   const bob = Math.sin(rig.bobPhase) * 0.16 + Math.sin(rig.bobPhase * 0.37 + 1.1) * 0.05;
   rig.player.position.copy(position).addScaledVector(up, bob);
   if (rig.mixer) rig.mixer.update(delta);
-
-  const armSwing = THREE.MathUtils.clamp(climbInput * 0.18 + turnInput * 0.08, -0.22, 0.22);
-  rig.armLeftRoot.rotation.x = THREE.MathUtils.damp(
-    rig.armLeftRoot.rotation.x,
-    armSwing,
-    4.4,
-    delta,
-  );
-  rig.armRightRoot.rotation.x = THREE.MathUtils.damp(
-    rig.armRightRoot.rotation.x,
-    -armSwing,
-    4.4,
-    delta,
-  );
 
   rig.shadowDirection.copy(position).normalize();
   rig.shadow.position.copy(rig.shadowDirection).multiplyScalar(surfaceRadius + 0.06);
