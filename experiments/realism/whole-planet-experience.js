@@ -30,9 +30,18 @@ const EARTH_GLOW_SIZE = 310;
 const SPACE_TRANSITION_RATE = 1.45;
 const LOCAL_Y_AXIS = new THREE.Vector3(0, 1, 0);
 const RETURN_HISTORY_PREFIX = "__return_history__:";
+const RETURN_HISTORY_STORAGE_KEY = "ass-magic-return-histories-v1";
 const ENDING_ROLL_DURATION = 46;
 const ENDING_WHITEOUT_DURATION = 1050;
 const ENDING_BLACK_DELAY = 650;
+const ENDING_TRUE_MESSAGE_DURATION = 2200;
+const ENDING_ROLL_AUDIO_DELAY = 2000;
+const CAT_ROUTE_JOIN_DURATION = 1.75;
+const CAT_ROUTE_ROTATION_RESPONSE = 7.2;
+const CAT_ROUTE_COMPANION_SCALE = 0.1512;
+const CAT_ROUTE_MOUNT_SIDE = 0.34;
+const CAT_ROUTE_MOUNT_HEIGHT = 0.23;
+const CAT_ROUTE_MOUNT_BACK = 0.08;
 const DEVIL_SPAWN_DELAY = 5;
 const DEVIL_ENTRY_DURATION = 1.2;
 const DEVIL_ENTRY_FORWARD = 20;
@@ -63,6 +72,11 @@ const DEVIL_ROUTE_CLEARANCE = 18;
 const DEVIL_ROUTE_LEAD_DISTANCE = 12;
 const DEVIL_BLACK_BOX_ARRIVAL_LEAD = 3.2;
 const DEVIL_BLACK_BOX_WAIT_TIMEOUT = 16;
+const DEVIL_ROUTE_PLANNER = Object.freeze({
+  low: { samples: 18, offsets: [0, -0.28, 0.28] },
+  standard: { samples: 26, offsets: [0, -0.18, 0.18, -0.36, 0.36] },
+  high: { samples: 36, offsets: [0, -0.14, 0.14, -0.28, 0.28, -0.44, 0.44] },
+});
 const DEVIL_DESTINATIONS = [
   { id: "recordPlayer", label: "レコードプレイヤー", stopDistance: 31, endAltitude: 5, focusHeight: 5 },
   { id: "book", label: "巨大な本", stopDistance: 18, endAltitude: 4, focusHeight: 3 },
@@ -386,6 +400,64 @@ function createSpaceStars() {
   return stars;
 }
 
+// This is the same rear-view companion silhouette used by the production flight.
+// It stays lightweight because it is attached to the moving player every frame.
+function createCatCompanionVisual() {
+  const group = new THREE.Group();
+  group.name = "CatRouteCompanion";
+  const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0xfcfcfb });
+  const shadeMaterial = new THREE.MeshLambertMaterial({ color: 0xf2f2ee });
+  const brownMaterial = new THREE.MeshLambertMaterial({ color: 0x6a4632 });
+  const innerEarMaterial = new THREE.MeshLambertMaterial({ color: 0xe7cdbf });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1.05, 12, 10), bodyMaterial);
+  body.scale.set(0.94, 0.62, 1.82);
+  body.position.set(0, 0.96, -0.08);
+  group.add(body);
+
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.86, 12, 10), shadeMaterial);
+  shoulders.scale.set(0.82, 0.58, 0.92);
+  shoulders.position.set(0, 1.08, 0.92);
+  group.add(shoulders);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.68, 12, 10), bodyMaterial);
+  head.scale.set(0.82, 0.7, 0.76);
+  head.position.set(0, 1.1, 1.72);
+  group.add(head);
+
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.42, 4), brownMaterial);
+    ear.position.set(side * 0.28, 1.52, 1.9);
+    ear.rotation.set(-0.1, 0, side * -0.2);
+    group.add(ear);
+    const earInner = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.24, 4), innerEarMaterial);
+    earInner.position.set(side * 0.28, 1.48, 1.92);
+    earInner.rotation.copy(ear.rotation);
+    group.add(earInner);
+
+    const hindLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.72, 3, 6), shadeMaterial);
+    hindLeg.position.set(side * 0.34, 0.72, -1.62);
+    hindLeg.rotation.x = Math.PI * 0.5;
+    hindLeg.rotation.z = side * -0.16;
+    group.add(hindLeg);
+
+    const frontLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.88, 3, 6), bodyMaterial);
+    frontLeg.position.set(side * 0.28, 0.82, 2.04);
+    frontLeg.rotation.x = Math.PI * 0.5;
+    frontLeg.rotation.z = side * -0.08;
+    group.add(frontLeg);
+  }
+
+  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 1.24, 4, 8), brownMaterial);
+  tail.position.set(0.62, 1.18, -1.48);
+  tail.rotation.set(0.82, 0, -0.54);
+  group.add(tail);
+  group.scale.setScalar(CAT_ROUTE_COMPANION_SCALE);
+  group.visible = false;
+  group.frustumCulled = false;
+  return group;
+}
+
 export function createWholePlanetExperience({
   canvas,
   scene,
@@ -394,6 +466,7 @@ export function createWholePlanetExperience({
   landmarks,
   getAltitude,
   getSurfaceRadius,
+  quality = "standard",
   onGuideSpeedChange,
   onWorldInversion,
 }) {
@@ -445,12 +518,25 @@ export function createWholePlanetExperience({
   const endingAudio = new Audio(resolveRootAsset("./森の羊水　piano 1 2.m4a"));
   endingAudio.preload = "auto";
   endingAudio.volume = 0.72;
+  endingAudio.playsInline = true;
+  endingAudio.crossOrigin = "anonymous";
   const earthArrivalAudio = new Audio(resolveRootAsset("./過去を思い出す.mp3"));
   earthArrivalAudio.preload = "auto";
+  earthArrivalAudio.volume = 0.9;
+  earthArrivalAudio.playsInline = true;
+  earthArrivalAudio.crossOrigin = "anonymous";
+  const spaceReturnAudio = new Audio(resolveRootAsset("./死後の世界.mp3"));
+  spaceReturnAudio.preload = "auto";
+  spaceReturnAudio.loop = true;
+  spaceReturnAudio.volume = 0.78;
+  spaceReturnAudio.playsInline = true;
+  spaceReturnAudio.crossOrigin = "anonymous";
   const clockAudio = new Audio(resolveRootAsset("./振り子時計（エコー入り）.mp3"));
   clockAudio.loop = true;
   clockAudio.preload = "auto";
   clockAudio.volume = 0.48;
+  clockAudio.playsInline = true;
+  clockAudio.crossOrigin = "anonymous";
   const challengeFlash = document.querySelector("#experience-theme-flash");
   const challengeTimer = document.querySelector("#experience-challenge-timer");
 
@@ -501,16 +587,34 @@ export function createWholePlanetExperience({
   const devilRelativeEnd = new THREE.Vector3();
   const devilRelativeDelta = new THREE.Vector3();
   const devilClosestApproach = new THREE.Vector3();
+  const catSourceUp = new THREE.Vector3();
+  const catMountUp = new THREE.Vector3();
+  const catMountForward = new THREE.Vector3();
+  const catMountRight = new THREE.Vector3();
+  const catDesiredPosition = new THREE.Vector3();
+  const catTargetQuaternion = new THREE.Quaternion();
+  const catBasis = new THREE.Matrix4();
   const earthVisual = createEarthReturnVisual();
   const spaceStars = createSpaceStars();
   const devilModel = createDevilModel();
-  scene.add(earthVisual.glow, earthVisual.earth, spaceStars, devilModel);
+  const catCompanion = createCatCompanionVisual();
+  scene.add(earthVisual.glow, earthVisual.earth, spaceStars, devilModel, catCompanion);
   const state = {
     phase: "idle",
     challengeStart: null,
     challengeTimeRemaining: 0,
     worldInverted: false,
     blackBoxOpened: false,
+    catFound: false,
+    catRouteAvailable: false,
+    catJoinPhase: "idle",
+    catJoinElapsed: 0,
+    catFollowing: false,
+    catPendingJoin: false,
+    catJoinStart: new THREE.Vector3(),
+    catPosition: new THREE.Vector3(),
+    reachedEarthWithCat: false,
+    returnRecorded: false,
     modalOpen: false,
     beamOrigin: new THREE.Vector3(),
     beamDirection: new THREE.Vector3(),
@@ -554,6 +658,12 @@ export function createWholePlanetExperience({
         endDirection: new THREE.Vector3(),
         routeAxis: new THREE.Vector3(),
         focusPoint: new THREE.Vector3(),
+        pathDirections: [],
+        pathRadii: [],
+        pathCumulative: [],
+        pathLength: 0,
+        routeRisk: 0,
+        plannedSpeed: DEVIL_ROUTE_SPEED,
       },
     },
   };
@@ -642,8 +752,43 @@ export function createWholePlanetExperience({
     syncMusicUi();
   }
 
+  function playEffectAudio(effect, restart = false) {
+    if (!effect) return;
+    if (restart) {
+      try {
+        effect.currentTime = 0;
+      } catch (error) {
+        console.warn("Effect audio rewind failed.", error);
+      }
+    }
+    effect.muted = false;
+    const result = effect.play();
+    result?.catch((error) => {
+      if (error?.name !== "AbortError") console.warn("Effect audio is waiting for a gesture.", error);
+    });
+  }
+
+  function stopEffectAudio(effect, reset = false) {
+    if (!effect) return;
+    effect.pause();
+    if (reset) {
+      try {
+        effect.currentTime = 0;
+      } catch (error) {
+        console.warn("Effect audio reset failed.", error);
+      }
+    }
+  }
+
   function unlockMusic() {
     if (audioUnlocked || musicGesturePending || state.phase === "challenge" || state.modalOpen) return;
+    for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
+      try {
+        effect.load();
+      } catch (error) {
+        console.warn("Effect audio preload failed.", error);
+      }
+    }
     musicGesturePending = true;
     void playMusic().finally(() => {
       musicGesturePending = false;
@@ -707,11 +852,90 @@ export function createWholePlanetExperience({
 
   function closeNativeOverlay() {
     if (!activeNativeOverlay) return;
+    const shouldStartCatJoin = activeNativeOverlay === blackBoxOverlay
+      && state.catPendingJoin
+      && state.catJoinPhase === "dialogue";
     activeNativeOverlay.classList.remove("is-open");
     activeNativeOverlay.setAttribute("aria-hidden", "true");
     activeNativeOverlay = null;
     state.modalOpen = false;
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    if (shouldStartCatJoin) startCatJoin();
+  }
+
+  function refreshCatRouteAvailability() {
+    state.catRouteAvailable = state.blackBoxOpened
+      && state.catFound
+      && state.phase === "sanctuary"
+      && state.catJoinPhase === "idle"
+      && !state.catFollowing
+      && !state.ending;
+    canvas.dataset.catRoute = state.catFollowing
+      ? "following"
+      : state.catJoinPhase === "joining" ? "joining" : state.catRouteAvailable ? "ready" : "inactive";
+  }
+
+  function getCatMountTransform() {
+    catMountUp.copy(flight.position).normalize();
+    catMountForward.copy(flight.forward)
+      .addScaledVector(catMountUp, -flight.forward.dot(catMountUp));
+    if (catMountForward.lengthSq() < 0.0001) catMountForward.set(0, 0, 1);
+    catMountForward.normalize();
+    catMountRight.crossVectors(catMountUp, catMountForward).normalize();
+    catDesiredPosition.copy(flight.position)
+      .addScaledVector(catMountRight, CAT_ROUTE_MOUNT_SIDE)
+      .addScaledVector(catMountUp, CAT_ROUTE_MOUNT_HEIGHT)
+      .addScaledVector(catMountForward, -CAT_ROUTE_MOUNT_BACK);
+    catBasis.makeBasis(catMountRight, catMountUp, catMountForward);
+    catTargetQuaternion.setFromRotationMatrix(catBasis);
+  }
+
+  function startCatJoin() {
+    if (state.catJoinPhase !== "dialogue" || state.catFollowing || state.ending) return;
+    const blackBox = landmarks.objects.blackBox;
+    blackBox.getWorldPosition(state.catJoinStart);
+    catSourceUp.copy(state.catJoinStart).normalize();
+    state.catJoinStart.addScaledVector(catSourceUp, 1.3);
+    state.catPosition.copy(state.catJoinStart);
+    state.catJoinElapsed = 0;
+    state.catJoinPhase = "joining";
+    state.catPendingJoin = false;
+    catCompanion.position.copy(state.catJoinStart);
+    getCatMountTransform();
+    catCompanion.quaternion.copy(catTargetQuaternion);
+    catCompanion.visible = true;
+    refreshCatRouteAvailability();
+  }
+
+  function updateCatCompanion(delta) {
+    if (state.catJoinPhase !== "joining" && !state.catFollowing) return;
+    getCatMountTransform();
+    if (state.catJoinPhase === "joining") {
+      state.catJoinElapsed += delta;
+      const progress = THREE.MathUtils.clamp(state.catJoinElapsed / CAT_ROUTE_JOIN_DURATION, 0, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      state.catPosition.lerpVectors(state.catJoinStart, catDesiredPosition, eased);
+      // A single broad arc makes the jump readable without a sudden snap.
+      state.catPosition.addScaledVector(catMountUp, Math.sin(progress * Math.PI) * 1.15);
+      catCompanion.position.copy(state.catPosition);
+      catCompanion.quaternion.slerp(
+        catTargetQuaternion,
+        1 - Math.exp(-CAT_ROUTE_ROTATION_RESPONSE * delta),
+      );
+      if (progress >= 1) {
+        state.catJoinPhase = "complete";
+        state.catFollowing = true;
+        state.catPosition.copy(catDesiredPosition);
+        catCompanion.position.copy(catDesiredPosition);
+        catCompanion.quaternion.copy(catTargetQuaternion);
+        refreshCatRouteAvailability();
+        showToast("猫が肩に飛び乗った。", 3000);
+      }
+      return;
+    }
+    state.catPosition.copy(catDesiredPosition);
+    catCompanion.position.copy(catDesiredPosition);
+    catCompanion.quaternion.copy(catTargetQuaternion);
   }
 
   function refreshMusicSelector() {
@@ -857,10 +1081,80 @@ export function createWholePlanetExperience({
   function openProductionBlackBox() {
     const blackBox = landmarks.objects.blackBox;
     blackBox.userData.grounded = true;
-    setBlackBoxView("intro");
-    if (blackBoxTitle) blackBoxTitle.style.visibility = state.blackBoxOpened ? "hidden" : "visible";
+    refreshCatRouteAvailability();
+    if (state.catFollowing || state.catJoinPhase === "joining" || state.catJoinPhase === "complete") return;
+    const view = state.catRouteAvailable ? "cat-route" : "intro";
+    state.catPendingJoin = view === "cat-route";
+    if (view === "cat-route") state.catJoinPhase = "dialogue";
+    setBlackBoxView(view);
+    if (blackBoxTitle) blackBoxTitle.style.visibility = state.blackBoxOpened || view === "cat-route" ? "hidden" : "visible";
     if (blackBoxOpen) blackBoxOpen.textContent = state.blackBoxOpened ? "また開けちゃう" : "開けてみる";
     openNativeOverlay(blackBoxOverlay);
+  }
+
+  function getBookPlayerName() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(BOOK_PLAYER_KEY) || "null");
+      return stored?.hasWrittenNameInBook && typeof stored.bookPlayerName === "string"
+        ? stored.bookPlayerName.trim()
+        : "";
+    } catch (error) {
+      return "";
+    }
+  }
+
+  async function recordReturnHistory(isTrueReturn) {
+    if (state.returnRecorded) return;
+    state.returnRecorded = true;
+    const playerName = getBookPlayerName();
+    if (!playerName) return;
+    const message = `${RETURN_HISTORY_PREFIX}${JSON.stringify({
+      playerName,
+      isTrueReturn: Boolean(isTrueReturn),
+      createdAt: new Date().toISOString(),
+    })}`;
+    try {
+      const response = await fetch(getBookUrl("?select=id"), {
+        method: "POST",
+        headers: getBookHeaders("return=minimal"),
+        body: JSON.stringify([{ name: HIDDEN_BOOK_AUTHOR, message }]),
+      });
+      if (!response.ok) throw new Error(`return-history-save-${response.status}`);
+    } catch (error) {
+      console.warn("Return history could not be saved.", error);
+      try {
+        const stored = JSON.parse(localStorage.getItem(RETURN_HISTORY_STORAGE_KEY) || "[]");
+        const entries = Array.isArray(stored) ? stored : [];
+        entries.unshift({
+          playerName,
+          isTrueReturn: Boolean(isTrueReturn),
+          createdAt: new Date().toISOString(),
+        });
+        localStorage.setItem(RETURN_HISTORY_STORAGE_KEY, JSON.stringify(entries.slice(0, 80)));
+      } catch (storageError) {
+        console.warn("Local return history could not be saved.", storageError);
+      }
+    }
+  }
+
+  function renderEndingHistories(histories) {
+    const isAllowed = (name) => name && !EXCLUDED_BOOK_NAMES.has(name);
+    const normal = histories.filter((entry) => !entry.isTrue && isAllowed(entry.name)).map((entry) => entry.name);
+    const truth = histories.filter((entry) => entry.isTrue && isAllowed(entry.name)).map((entry) => entry.name);
+    if (endingReturnees) endingReturnees.textContent = normal.length ? normal.join("\n") : "未確認";
+    if (endingTrueReturnees) endingTrueReturnees.textContent = truth.length ? truth.join("\n") : "未確認";
+  }
+
+  function readLocalReturnHistories() {
+    try {
+      const stored = JSON.parse(localStorage.getItem(RETURN_HISTORY_STORAGE_KEY) || "[]");
+      return (Array.isArray(stored) ? stored : []).map((entry) => ({
+        name: typeof entry?.playerName === "string" ? entry.playerName.trim() : "",
+        isTrue: Boolean(entry?.isTrueReturn),
+      }));
+    } catch (error) {
+      return [];
+    }
   }
 
   async function loadEndingNames() {
@@ -883,13 +1177,10 @@ export function createWholePlanetExperience({
           return null;
         }
       }).filter(Boolean);
-      const isAllowed = (name) => name && !EXCLUDED_BOOK_NAMES.has(name);
-      const normal = histories.filter((entry) => !entry.isTrue && isAllowed(entry.name)).map((entry) => entry.name);
-      const truth = histories.filter((entry) => entry.isTrue && isAllowed(entry.name)).map((entry) => entry.name);
-      if (endingReturnees) endingReturnees.textContent = normal.length ? normal.join("\n") : "未確認";
-      if (endingTrueReturnees) endingTrueReturnees.textContent = truth.length ? truth.join("\n") : "未確認";
+      renderEndingHistories(histories);
     } catch (error) {
       console.warn("Return history could not be loaded for credits.", error);
+      renderEndingHistories(readLocalReturnHistories());
     }
   }
 
@@ -904,24 +1195,32 @@ export function createWholePlanetExperience({
       endingRollTrack.style.animation = `ending-roll ${ENDING_ROLL_DURATION}s linear forwards`;
     }
     endingRollStart = performance.now();
+    canvas.dataset.returnBgm = "ending-roll";
     window.clearTimeout(endingAudioTimer);
     endingAudio.currentTime = 0;
     endingAudioTimer = window.setTimeout(() => {
-      void endingAudio.play().catch((error) => console.warn("Ending music is waiting for a gesture.", error));
-    }, 2000);
+      playEffectAudio(endingAudio);
+    }, ENDING_ROLL_AUDIO_DELAY);
   }
 
-  function startProductionEnding() {
+  function startProductionEnding(isTrueReturn) {
     window.clearTimeout(endingWhiteoutTimer);
     window.clearTimeout(endingBlackTimer);
     endingWhiteout?.classList.add("is-active");
+    endingWhiteout?.classList.remove("is-true-message");
     endingWhiteout?.setAttribute("aria-hidden", "false");
     endingRestart?.classList.remove("is-visible");
     void loadEndingNames();
     endingWhiteoutTimer = window.setTimeout(() => {
-      endingOverlay?.classList.add("is-transitioning");
-      endingOverlay?.setAttribute("aria-hidden", "false");
-      endingBlackTimer = window.setTimeout(openEndingRoll, ENDING_BLACK_DELAY);
+      if (isTrueReturn) endingWhiteout?.classList.add("is-true-message");
+      const beginBlackTransition = () => {
+        endingWhiteout?.classList.remove("is-true-message");
+        endingOverlay?.classList.add("is-transitioning");
+        endingOverlay?.setAttribute("aria-hidden", "false");
+        endingBlackTimer = window.setTimeout(openEndingRoll, ENDING_BLACK_DELAY);
+      };
+      if (isTrueReturn) endingBlackTimer = window.setTimeout(beginBlackTransition, ENDING_TRUE_MESSAGE_DURATION);
+      else beginBlackTransition();
     }, ENDING_WHITEOUT_DURATION);
   }
 
@@ -1058,6 +1357,127 @@ export function createWholePlanetExperience({
     }
   }
 
+  function buildDevilRoutePlan(navigation) {
+    const planner = DEVIL_ROUTE_PLANNER[quality] || DEVIL_ROUTE_PLANNER.standard;
+    const start = navigation.startDirection;
+    const end = navigation.endDirection;
+    const routeAxis = new THREE.Vector3().crossVectors(start, end);
+    if (routeAxis.lengthSq() < 0.000001) {
+      routeAxis.crossVectors(
+        start,
+        Math.abs(start.y) < 0.92 ? LOCAL_Y_AXIS : new THREE.Vector3(1, 0, 0),
+      );
+    }
+    routeAxis.normalize();
+    const directMidpoint = start.clone().add(end);
+    if (directMidpoint.lengthSq() < 0.000001) directMidpoint.copy(routeAxis).cross(start);
+    directMidpoint.normalize();
+    const baseSurface = Math.min(getSurfaceRadius(start), getSurfaceRadius(end));
+    const startRadius = flight.position.length();
+    let best = null;
+
+    for (const sideOffset of planner.offsets) {
+      const control = directMidpoint.clone().addScaledVector(routeAxis, sideOffset).normalize();
+      const directions = [];
+      const surfaces = [];
+      let terrainCost = 0;
+      let maximumRise = 0;
+      let totalSlope = 0;
+      let angularLength = 0;
+      let previousSurface = getSurfaceRadius(start);
+      let previousDirection = start;
+
+      for (let index = 0; index <= planner.samples; index += 1) {
+        const t = index / planner.samples;
+        const oneMinusT = 1 - t;
+        const direction = start.clone().multiplyScalar(oneMinusT * oneMinusT)
+          .addScaledVector(control, 2 * oneMinusT * t)
+          .addScaledVector(end, t * t)
+          .normalize();
+        const surface = getSurfaceRadius(direction);
+        const rise = Math.max(0, surface - baseSurface);
+        const slope = index > 0 ? Math.abs(surface - previousSurface) : 0;
+        if (index > 0) {
+          angularLength += Math.acos(THREE.MathUtils.clamp(previousDirection.dot(direction), -1, 1));
+        }
+        maximumRise = Math.max(maximumRise, rise);
+        totalSlope += slope;
+        // Terrain is intentionally much more expensive than a slightly longer detour.
+        terrainCost += rise * rise * 0.12 + slope * 8.5;
+        directions.push(direction);
+        surfaces.push(surface);
+        previousSurface = surface;
+        previousDirection = direction;
+      }
+
+      const routeDistance = angularLength * Math.max(baseSurface, 1);
+      const cost = routeDistance + terrainCost + Math.abs(sideOffset) * routeDistance * 0.08;
+      if (!best || cost < best.cost) {
+        best = {
+          cost,
+          directions,
+          surfaces,
+          routeDistance,
+          risk: maximumRise + totalSlope / Math.max(1, planner.samples) * 2.2,
+          sideOffset,
+        };
+      }
+    }
+
+    const radii = [];
+    const cumulative = [0];
+    let pathLength = 0;
+    for (let index = 0; index < best.directions.length; index += 1) {
+      const t = index / Math.max(1, best.directions.length - 1);
+      const windowStart = Math.max(0, index - 2);
+      const windowEnd = Math.min(best.surfaces.length - 1, index + 3);
+      let terrainAhead = best.surfaces[index];
+      for (let sample = windowStart; sample <= windowEnd; sample += 1) {
+        terrainAhead = Math.max(terrainAhead, best.surfaces[sample]);
+      }
+      const endRadius = best.surfaces[best.surfaces.length - 1] + 0.9 + navigation.endAltitude;
+      const baseline = THREE.MathUtils.lerp(startRadius, endRadius, t);
+      const clearance = 3.5 + Math.sin(t * Math.PI) * THREE.MathUtils.clamp(
+        DEVIL_ROUTE_CLEARANCE + best.risk * 0.22,
+        DEVIL_ROUTE_CLEARANCE,
+        38,
+      );
+      const radius = index === 0
+        ? startRadius
+        : index === best.directions.length - 1
+          ? endRadius
+          : Math.max(baseline, terrainAhead + 0.9 + clearance);
+      radii.push(radius);
+      if (index > 0) {
+        const angle = Math.acos(THREE.MathUtils.clamp(
+          best.directions[index - 1].dot(best.directions[index]),
+          -1,
+          1,
+        ));
+        const tangential = angle * (radii[index - 1] + radius) * 0.5;
+        const radial = radius - radii[index - 1];
+        pathLength += Math.hypot(tangential, radial);
+        cumulative.push(pathLength);
+      }
+    }
+
+    navigation.pathDirections = best.directions;
+    navigation.pathRadii = radii;
+    navigation.pathCumulative = cumulative;
+    navigation.pathLength = pathLength;
+    navigation.routeRisk = best.risk;
+    navigation.plannedSpeed = THREE.MathUtils.clamp(
+      DEVIL_ROUTE_SPEED - best.risk * 0.62,
+      52,
+      DEVIL_ROUTE_SPEED,
+    );
+    navigation.routeAxis.copy(routeAxis);
+    navigation.arcAngle = Math.acos(THREE.MathUtils.clamp(start.dot(end), -1, 1));
+    canvas.dataset.guideRouteSide = best.sideOffset.toFixed(2);
+    canvas.dataset.guideRouteRisk = best.risk.toFixed(1);
+    canvas.dataset.guideRouteSamples = String(best.directions.length);
+  }
+
   function startDevilRoute(destination) {
     const target = landmarks.objects[destination.id];
     if (!target || !target.parent || !target.visible) return;
@@ -1114,21 +1534,9 @@ export function createWholePlanetExperience({
         .addScaledVector(targetDirection, destination.focusHeight);
     }
 
-    navigation.routeAxis.crossVectors(navigation.startDirection, navigation.endDirection);
-    if (navigation.routeAxis.lengthSq() < 0.000001) {
-      navigation.routeAxis.crossVectors(
-        navigation.startDirection,
-        Math.abs(navigation.startDirection.y) < 0.92 ? LOCAL_Y_AXIS : new THREE.Vector3(1, 0, 0),
-      );
-    }
-    navigation.routeAxis.normalize();
-    navigation.arcAngle = Math.acos(THREE.MathUtils.clamp(
-      navigation.startDirection.dot(navigation.endDirection),
-      -1,
-      1,
-    ));
+    buildDevilRoutePlan(navigation);
     navigation.duration = THREE.MathUtils.clamp(
-      navigation.arcAngle * flight.position.length() / DEVIL_ROUTE_SPEED,
+      navigation.pathLength / navigation.plannedSpeed,
       DEVIL_ROUTE_MIN_DURATION,
       DEVIL_ROUTE_MAX_DURATION,
     );
@@ -1233,36 +1641,80 @@ export function createWholePlanetExperience({
     }
     const progress = THREE.MathUtils.clamp(navigation.elapsed / navigation.duration, 0, 1);
     const eased = progress * progress * (3 - 2 * progress);
-    devilRouteDirection.copy(navigation.startDirection)
-      .applyAxisAngle(navigation.routeAxis, navigation.arcAngle * eased)
+    const pathDistance = navigation.pathLength * eased;
+    let pathIndex = 1;
+    while (
+      pathIndex < navigation.pathCumulative.length - 1
+      && navigation.pathCumulative[pathIndex] < pathDistance
+    ) pathIndex += 1;
+    const segmentStart = Math.max(0, pathIndex - 1);
+    const segmentLength = Math.max(
+      0.0001,
+      navigation.pathCumulative[pathIndex] - navigation.pathCumulative[segmentStart],
+    );
+    const segmentMix = THREE.MathUtils.clamp(
+      (pathDistance - navigation.pathCumulative[segmentStart]) / segmentLength,
+      0,
+      1,
+    );
+    devilRouteDirection.copy(navigation.pathDirections[segmentStart])
+      .lerp(navigation.pathDirections[pathIndex], segmentMix)
       .normalize();
-    const routeAltitude = THREE.MathUtils.lerp(
-      navigation.startAltitude,
-      navigation.endAltitude,
-      eased,
-    ) + Math.sin(progress * Math.PI) * DEVIL_ROUTE_CLEARANCE;
-    flight.position.copy(devilRouteDirection)
-      .multiplyScalar(getSurfaceRadius(devilRouteDirection) + 0.9 + routeAltitude);
-    devilRouteForward.crossVectors(navigation.routeAxis, devilRouteDirection).normalize();
+    const routeRadius = THREE.MathUtils.lerp(
+      navigation.pathRadii[segmentStart],
+      navigation.pathRadii[pathIndex],
+      segmentMix,
+    );
+    flight.position.copy(devilRouteDirection).multiplyScalar(routeRadius);
+    const forwardIndex = Math.min(navigation.pathDirections.length - 1, pathIndex + 1);
+    devilRouteForward.copy(navigation.pathDirections[forwardIndex])
+      .addScaledVector(
+        devilRouteDirection,
+        -navigation.pathDirections[forwardIndex].dot(devilRouteDirection),
+      )
+      .normalize();
     if (devilRouteForward.lengthSq() < 0.0001) devilRouteForward.copy(flight.forward);
-    flight.forward.copy(devilRouteForward);
-    flight.speed = navigation.arcAngle * flight.position.length() / Math.max(navigation.duration, 0.1);
+    flight.forward.lerp(devilRouteForward, 1 - Math.exp(-7.5 * delta)).normalize();
+    flight.speed = navigation.pathLength / Math.max(navigation.duration, 0.1);
     flight.radialSpeed = 0;
     flight.bodyPitch = THREE.MathUtils.damp(flight.bodyPitch, 0, 6, delta);
     flight.roll = THREE.MathUtils.damp(flight.roll, 0, 6, delta);
 
-    const remainingAngle = navigation.arcAngle * (1 - eased);
-    const leadAngle = Math.min(
-      remainingAngle,
-      DEVIL_ROUTE_LEAD_DISTANCE / Math.max(flight.position.length(), 1),
+    const leadDistance = Math.min(
+      navigation.pathLength,
+      pathDistance + DEVIL_ROUTE_LEAD_DISTANCE,
     );
-    devilTarget.copy(devilRouteDirection)
-      .applyAxisAngle(navigation.routeAxis, leadAngle)
+    let leadIndex = pathIndex;
+    while (
+      leadIndex < navigation.pathCumulative.length - 1
+      && navigation.pathCumulative[leadIndex] < leadDistance
+    ) leadIndex += 1;
+    const leadStart = Math.max(0, leadIndex - 1);
+    const leadSegmentLength = Math.max(
+      0.0001,
+      navigation.pathCumulative[leadIndex] - navigation.pathCumulative[leadStart],
+    );
+    const leadMix = THREE.MathUtils.clamp(
+      (leadDistance - navigation.pathCumulative[leadStart]) / leadSegmentLength,
+      0,
+      1,
+    );
+    devilTarget.copy(navigation.pathDirections[leadStart])
+      .lerp(navigation.pathDirections[leadIndex], leadMix)
       .normalize();
+    const leadRadius = THREE.MathUtils.lerp(
+      navigation.pathRadii[leadStart],
+      navigation.pathRadii[leadIndex],
+      leadMix,
+    );
     state.devil.anchorUp.copy(devilTarget);
-    state.devil.anchorPosition.copy(devilTarget)
-      .multiplyScalar(getSurfaceRadius(devilTarget) + 0.9 + routeAltitude + 2.8);
-    state.devil.flightForward.crossVectors(navigation.routeAxis, devilTarget).normalize();
+    state.devil.anchorPosition.copy(devilTarget).multiplyScalar(leadRadius + 2.8);
+    state.devil.flightForward.copy(devilTarget)
+      .addScaledVector(devilRouteDirection, -devilTarget.dot(devilRouteDirection))
+      .normalize();
+    if (state.devil.flightForward.lengthSq() < 0.0001) {
+      state.devil.flightForward.copy(devilRouteForward);
+    }
     devilModel.position.copy(state.devil.anchorPosition);
     orientDevil(state.devil.flightForward);
 
@@ -1704,6 +2156,7 @@ export function createWholePlanetExperience({
     state.sanctuaryStartAltitude = Math.max(0, getAltitude?.(flight.position) || 0);
     state.earthApproachStartDistance = 0;
     landmarks.objects.sanctuary.userData.activationTarget = 1;
+    refreshCatRouteAvailability();
     if (state.blackBoxOpened && landmarks.objects.blackBox.userData.grounded) {
       landmarks.objects.blackBox.getWorldPosition(targetPosition);
       landmarks.objects.compass.userData.targetWorld = targetPosition.clone();
@@ -1730,23 +2183,32 @@ export function createWholePlanetExperience({
     flight.radialSpeed = 0;
     flight.bodyPitch = 0;
     state.spaceFlightActive = true;
+    audio.pause();
+    syncMusicUi();
+    playEffectAudio(spaceReturnAudio, true);
+    canvas.dataset.returnBgm = "space-return";
     showToast("宇宙帰還モード。光の先の地球へ。", 4200);
   }
 
   function triggerReturnEnding() {
     if (state.ending) return;
     state.ending = true;
+    state.reachedEarthWithCat = state.catFollowing === true;
     earthVisual.earth.visible = false;
     earthVisual.glow.visible = false;
     spaceStars.visible = false;
     audio.pause();
     audio.volume = 0;
     syncMusicUi();
-    clockAudio.pause();
-    earthArrivalAudio.currentTime = 0;
-    void earthArrivalAudio.play().catch((error) => console.warn("Earth arrival audio is waiting for a gesture.", error));
-    startProductionEnding();
+    stopEffectAudio(clockAudio, true);
+    stopEffectAudio(spaceReturnAudio, true);
+    playEffectAudio(earthArrivalAudio, true);
+    canvas.dataset.returnBgm = "earth-arrival";
+    void recordReturnHistory(state.reachedEarthWithCat).finally(() => loadEndingNames());
+    startProductionEnding(state.reachedEarthWithCat);
+    refreshCatRouteAvailability();
     canvas.dataset.returnPhase = "ending";
+    canvas.dataset.returnEnding = state.reachedEarthWithCat ? "true" : "normal";
   }
 
   function updateReturnRoute(delta) {
@@ -1980,8 +2442,10 @@ export function createWholePlanetExperience({
   blackBoxIgnore?.addEventListener("click", closeNativeOverlay);
   blackBoxOpen?.addEventListener("click", () => {
     state.blackBoxOpened = true;
+    state.catFound = true;
     landmarks.objects.blackBox.userData.opened = true;
     setBlackBoxView("reveal");
+    refreshCatRouteAvailability();
   });
   musicSelectorClose?.addEventListener("click", closeNativeOverlay);
   musicSelectorBackdrop?.addEventListener("click", closeNativeOverlay);
@@ -1991,8 +2455,9 @@ export function createWholePlanetExperience({
   devilUi.navigationCancel.addEventListener("click", () => stopDevilRoute(false));
   endingRollTrack?.addEventListener("animationend", () => endingRestart?.classList.add("is-visible"));
   endingRestart?.addEventListener("click", () => {
-    endingAudio.pause();
-    earthArrivalAudio.pause();
+    stopEffectAudio(endingAudio, true);
+    stopEffectAudio(earthArrivalAudio, true);
+    stopEffectAudio(spaceReturnAudio, true);
     const url = new URL(window.location.href);
     url.searchParams.delete("route");
     url.searchParams.set("start", "day");
@@ -2030,6 +2495,7 @@ export function createWholePlanetExperience({
       updateContacts();
       updateCompassAssist(delta);
       updateReturnRoute(delta);
+      updateCatCompanion(delta);
       if (
         state.ending
         && endingOverlay?.classList.contains("is-open")
@@ -2050,10 +2516,13 @@ export function createWholePlanetExperience({
       earthArrivalAudio.currentTime = 0;
       endingAudio.pause();
       endingAudio.currentTime = 0;
+      spaceReturnAudio.pause();
+      spaceReturnAudio.currentTime = 0;
       window.clearTimeout(endingAudioTimer);
       window.clearTimeout(endingWhiteoutTimer);
       window.clearTimeout(endingBlackTimer);
       endingWhiteout?.classList.remove("is-active");
+      endingWhiteout?.classList.remove("is-true-message");
       endingWhiteout?.setAttribute("aria-hidden", "true");
       endingOverlay?.classList.remove("is-open", "is-transitioning");
       endingOverlay?.setAttribute("aria-hidden", "true");
@@ -2072,12 +2541,24 @@ export function createWholePlanetExperience({
       state.devil.navigation.waitElapsed = 0;
       if (challengeMusicWasPlaying) void playMusic();
       challengeMusicWasPlaying = false;
-      const routeMode = new URLSearchParams(window.location.search).get("route");
+      const resetParams = new URLSearchParams(window.location.search);
+      const routeMode = resetParams.get("route");
+      const catDebugFollowing = resetParams.get("catdebug") === "1";
       const routeReady = routeMode === "ready" || routeMode === "beam" || routeMode === "space";
       state.phase = routeMode === "beam" || routeMode === "space"
         ? "sanctuary"
         : routeReady ? "inverted" : "idle";
       state.worldInverted = routeReady;
+      state.blackBoxOpened = false;
+      state.catFound = false;
+      state.catRouteAvailable = false;
+      state.catJoinPhase = catDebugFollowing ? "complete" : "idle";
+      state.catJoinElapsed = 0;
+      state.catFollowing = catDebugFollowing;
+      state.catPendingJoin = false;
+      state.reachedEarthWithCat = false;
+      state.returnRecorded = false;
+      catCompanion.visible = catDebugFollowing;
       state.challengeStart = null;
       state.challengeTimeRemaining = 0;
       state.spaceFlightActive = false;
@@ -2090,12 +2571,16 @@ export function createWholePlanetExperience({
       state.ending = false;
       state.debugForceSpace = routeMode === "space";
       audio.volume = 1;
+      canvas.dataset.returnBgm = "playlist";
+      canvas.dataset.returnEnding = "none";
       earthVisual.earth.visible = false;
       earthVisual.glow.visible = false;
       spaceStars.visible = false;
       landmarks.objects.sanctuary.userData.activationTarget = routeMode === "beam" || routeMode === "space" ? 1 : 0;
+      landmarks.objects.blackBox.userData.opened = false;
       landmarks.objects.compass.userData.targetWorld = null;
       onWorldInversion?.(routeReady);
+      refreshCatRouteAvailability();
       contactState.clear();
     },
   };

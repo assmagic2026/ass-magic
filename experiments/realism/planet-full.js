@@ -10,7 +10,7 @@ import {
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-136";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-143";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-144";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -24,6 +24,13 @@ const TERRAIN_HIGH = new THREE.Color(0xaaa59a);
 const TERRAIN_TEXTURE_TINT = new THREE.Color(0xffffff);
 const WATER_LEVEL = -9;
 const WATER_RADIUS = PLANET_RADIUS + WATER_LEVEL;
+const WATER_RAINBOW_EVENT = Object.freeze({
+  firstDelayMin: 32,
+  firstDelayMax: 58,
+  repeatDelayMin: 78,
+  repeatDelayMax: 148,
+  duration: 18,
+});
 const FEATURE_AXIS_A = new THREE.Vector3().crossVectors(WORLD_UP, SUN_DIRECTION).normalize();
 const FEATURE_AXIS_B = new THREE.Vector3().crossVectors(SUN_DIRECTION, FEATURE_AXIS_A).normalize();
 const MOUNTAIN_DIRECTION = FEATURE_AXIS_A.clone()
@@ -176,6 +183,7 @@ const textureDisposables = [];
 const externalTextureLoads = [];
 const movingSurfaceLayers = [];
 const cloudVolumes = [];
+let nightFissures = null;
 let sharedCloudTexture = null;
 const planet = createPlanet();
 planet.receiveShadow = realismShadowsEnabled;
@@ -484,6 +492,7 @@ const experience = settings.view === "flight"
     landmarks: specialLandmarks,
     getAltitude: getFlightAltitude,
     getSurfaceRadius,
+    quality: settings.quality,
     onGuideSpeedChange(speed) {
       flight.speedSelection = speed;
       flightSpeedSlider.value = String(speed);
@@ -540,6 +549,7 @@ renderer.setAnimationLoop(() => {
     layer.object.rotation.y = elapsed * layer.speed;
   }
   if (water) updateWaterSurface(water, elapsed, delta);
+  if (nightFissures) updateNightFissures(nightFissures, elapsed);
   if (atmosphere) atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
   if (sky) {
     sky.position.copy(camera.position);
@@ -876,6 +886,19 @@ function createWaterSurface() {
   group.userData.dayColor = new THREE.Color(0x149fbe);
   group.userData.duskColor = new THREE.Color(0x6f5a83);
   group.userData.nightColor = new THREE.Color(0x0d4770);
+  group.userData.visualTime = 0;
+  group.userData.rainbow = {
+    active: false,
+    elapsed: 0,
+    progress: 0,
+    strength: 0,
+    origin: WATER_DIRECTION.clone(),
+    nextDelay: THREE.MathUtils.lerp(
+      WATER_RAINBOW_EVENT.firstDelayMin,
+      WATER_RAINBOW_EVENT.firstDelayMax,
+      Math.random(),
+    ),
+  };
   return group;
 }
 
@@ -883,6 +906,9 @@ function createWaterPrismMaterial() {
   return new THREE.ShaderMaterial({
     uniforms: {
       waterPrismTime: { value: 0 },
+      waterRainbowOrigin: { value: WATER_DIRECTION.clone() },
+      waterRainbowProgress: { value: 0 },
+      waterRainbowStrength: { value: 0 },
     },
     vertexShader: `
       varying vec3 vWaterWorldPosition;
@@ -896,17 +922,22 @@ function createWaterPrismMaterial() {
     `,
     fragmentShader: `
       uniform float waterPrismTime;
+      uniform vec3 waterRainbowOrigin;
+      uniform float waterRainbowProgress;
+      uniform float waterRainbowStrength;
       varying vec3 vWaterWorldPosition;
       varying vec3 vWaterWorldNormal;
       void main() {
         vec3 viewDirection = normalize(cameraPosition - vWaterWorldPosition);
         float fresnel = pow(1.0 - abs(dot(normalize(vWaterWorldNormal), viewDirection)), 2.2);
-        float bandA = 0.5 + 0.5 * sin(vWaterWorldPosition.x * 0.085 + vWaterWorldPosition.z * 0.117 + waterPrismTime * 1.7);
-        float bandB = 0.5 + 0.5 * sin(vWaterWorldPosition.y * 0.13 - vWaterWorldPosition.x * 0.061 - waterPrismTime * 1.15);
-        float sparkle = pow(max(0.0, bandA * bandB), 12.0);
-        vec3 rainbow = 0.56 + 0.44 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + bandA * 0.28 + waterPrismTime * 0.025));
-        float alpha = (0.018 + sparkle * 0.24) * (0.22 + fresnel);
-        gl_FragColor = vec4(rainbow * (0.38 + sparkle * 1.35), alpha);
+        vec3 waterDirection = normalize(vWaterWorldPosition);
+        float angularDistance = acos(clamp(dot(waterDirection, normalize(waterRainbowOrigin)), -1.0, 1.0));
+        float waveCenter = mix(0.08, 2.15, waterRainbowProgress);
+        float broadWave = 1.0 - smoothstep(0.18, 0.62, abs(angularDistance - waveCenter));
+        float huePhase = waterRainbowProgress * 0.62 + angularDistance * 0.16;
+        vec3 rainbow = 0.56 + 0.44 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + huePhase));
+        float eventAlpha = broadWave * waterRainbowStrength * (0.045 + fresnel * 0.13);
+        gl_FragColor = vec4(rainbow * (0.55 + fresnel * 0.5), eventAlpha);
       }
     `,
     transparent: true,
@@ -917,12 +948,18 @@ function createWaterPrismMaterial() {
 
 function applyWaterWaveShader(material, amplitude, frequency, speed) {
   material.userData.waveUniform = { value: 0 };
+  material.userData.rainbowProgressUniform = { value: 0 };
+  material.userData.rainbowStrengthUniform = { value: 0 };
+  material.userData.rainbowOriginUniform = { value: WATER_DIRECTION.clone() };
   material.onBeforeCompile = (shader) => {
     shader.uniforms.waterWaveTime = material.userData.waveUniform;
+    shader.uniforms.waterRainbowProgress = material.userData.rainbowProgressUniform;
+    shader.uniforms.waterRainbowStrength = material.userData.rainbowStrengthUniform;
+    shader.uniforms.waterRainbowOrigin = material.userData.rainbowOriginUniform;
     shader.vertexShader = shader.vertexShader
       .replace(
         "#include <common>",
-        `#include <common>\nuniform float waterWaveTime;`,
+        `#include <common>\nuniform float waterWaveTime;\nvarying vec3 vWaterWorldPosition;`,
       )
       .replace(
         "#include <begin_vertex>",
@@ -930,18 +967,88 @@ function applyWaterWaveShader(material, amplitude, frequency, speed) {
         float waterWave = sin((position.x + position.z * 0.71) * ${frequency.toFixed(4)} + waterWaveTime * ${speed.toFixed(3)})
           + cos((position.z - position.y * 0.43) * ${(frequency * 1.37).toFixed(4)} - waterWaveTime * ${(speed * 0.78).toFixed(3)});
         transformed += normal * waterWave * ${amplitude.toFixed(4)};`,
+      )
+      .replace(
+        "#include <worldpos_vertex>",
+        `#include <worldpos_vertex>\nvWaterWorldPosition = worldPosition.xyz;`,
       );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vWaterWorldPosition;
+        uniform float waterWaveTime;
+        uniform vec3 waterRainbowOrigin;
+        uniform float waterRainbowProgress;
+        uniform float waterRainbowStrength;`,
+      )
+      .replace(
+        "#include <color_fragment>",
+        `#include <color_fragment>
+        vec3 waterDirection = normalize(vWaterWorldPosition);
+        float largeFieldA = 0.5 + 0.5 * sin(dot(waterDirection, normalize(vec3(0.72, 0.31, -0.62))) * 2.35 + waterWaveTime * 0.018);
+        float largeFieldB = 0.5 + 0.5 * sin(dot(waterDirection, normalize(vec3(-0.22, 0.91, 0.36))) * 1.72 - waterWaveTime * 0.012 + 1.8);
+        ${settings.quality === "high" ? "largeFieldB = mix(largeFieldB, 0.5 + 0.5 * sin(dot(waterDirection, normalize(vec3(0.41, -0.48, 0.78))) * 2.05 + waterWaveTime * 0.009), 0.24);" : ""}
+        vec3 waterBlue = vec3(0.025, 0.24, 0.52);
+        vec3 waterCyan = vec3(0.015, 0.62, 0.72);
+        vec3 waterGreen = vec3(0.025, 0.47, 0.46);
+        vec3 waterViolet = vec3(0.25, 0.18, 0.48);
+        vec3 broadGradient = mix(waterBlue, waterCyan, smoothstep(0.08, 0.92, largeFieldA));
+        broadGradient = mix(broadGradient, waterGreen, smoothstep(0.48, 0.96, largeFieldB) * 0.58);
+        broadGradient = mix(broadGradient, waterViolet, smoothstep(0.02, 0.42, largeFieldB) * (1.0 - largeFieldA) * 0.42);
+        diffuseColor.rgb = mix(diffuseColor.rgb, broadGradient, 0.58);
+        float rainbowDistance = acos(clamp(dot(waterDirection, normalize(waterRainbowOrigin)), -1.0, 1.0));
+        float rainbowCenter = mix(0.08, 2.15, waterRainbowProgress);
+        float rainbowWave = 1.0 - smoothstep(0.22, 0.68, abs(rainbowDistance - rainbowCenter));
+        vec3 rainbowTint = 0.56 + 0.44 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + waterRainbowProgress * 0.62 + rainbowDistance * 0.16));
+        diffuseColor.rgb = mix(diffuseColor.rgb, rainbowTint, rainbowWave * waterRainbowStrength * 0.34);`,
+      );
+    material.userData.compiledWaterShader = shader;
   };
-  material.customProgramCacheKey = () => `realism-water-${amplitude}-${frequency}-${speed}`;
+  material.customProgramCacheKey = () => `realism-water-gradient-${settings.quality}-${amplitude}-${frequency}-${speed}`;
 }
 
-function updateWaterSurface(waterSurface, time, delta) {
+function updateWaterSurface(waterSurface, _time, delta) {
   const data = waterSurface.userData;
+  if (!document.hidden) data.visualTime += delta;
+  const time = data.visualTime;
   data.normalMap.offset.set(time * 0.008, time * -0.0047);
   data.detailNormalMap.offset.set(0.37 - time * 0.013, 0.18 + time * 0.009);
-  data.primaryMaterial.userData.waveUniform.value = time;
-  data.detailMaterial.userData.waveUniform.value = time;
+  const event = data.rainbow;
+  if (!document.hidden) {
+    if (!event.active) {
+      event.nextDelay -= delta;
+      if (event.nextDelay <= 0) {
+        event.active = true;
+        event.elapsed = 0;
+      }
+    } else {
+      event.elapsed += delta;
+      event.progress = THREE.MathUtils.clamp(event.elapsed / WATER_RAINBOW_EVENT.duration, 0, 1);
+      event.strength = Math.pow(Math.sin(event.progress * Math.PI), 0.82);
+      if (event.progress >= 1) {
+        event.active = false;
+        event.progress = 0;
+        event.strength = 0;
+        event.nextDelay = THREE.MathUtils.lerp(
+          WATER_RAINBOW_EVENT.repeatDelayMin,
+          WATER_RAINBOW_EVENT.repeatDelayMax,
+          Math.random(),
+        );
+      }
+    }
+  }
+  for (const material of [data.primaryMaterial, data.detailMaterial]) {
+    material.userData.waveUniform.value = time;
+    material.userData.rainbowProgressUniform.value = event.progress;
+    material.userData.rainbowStrengthUniform.value = event.strength;
+    material.userData.rainbowOriginUniform.value.copy(event.origin);
+  }
   data.prismMaterial.uniforms.waterPrismTime.value = time;
+  data.prismMaterial.uniforms.waterRainbowOrigin.value.copy(event.origin);
+  data.prismMaterial.uniforms.waterRainbowProgress.value = event.progress;
+  data.prismMaterial.uniforms.waterRainbowStrength.value = event.strength;
+  canvas.dataset.waterRainbow = event.active ? "active" : "waiting";
   const reference = settings.view === "flight" && flight.position.lengthSq() > 1
     ? flight.position
     : camera.position;
@@ -1533,7 +1640,11 @@ function makeTexture(canvasElement, isColor, anisotropy, repeatX, repeatY) {
 
 function addSurfaceDetails() {
   const random = createSeededRandom(89173);
-  if (settings.mode !== "realism" && planetLoad.crackCount) addCracks(random);
+  if (settings.mode === "realism" && planetLoad.crackCount) {
+    nightFissures = addRealismNightFissures(random);
+  } else if (planetLoad.crackCount) {
+    addCracks(random);
+  }
   addDust(random);
 }
 
@@ -1891,6 +2002,205 @@ function addCracks(random) {
   cracks.instanceMatrix.needsUpdate = true;
   cracks.renderOrder = 1;
   scene.add(cracks);
+}
+
+function createNightFissureTexture(core = false) {
+  const textureCanvas = document.createElement("canvas");
+  textureCanvas.width = 128;
+  textureCanvas.height = 32;
+  const context = textureCanvas.getContext("2d");
+  const gradient = context.createLinearGradient(0, 0, textureCanvas.width, 0);
+  gradient.addColorStop(0, "rgba(255,255,255,0)");
+  gradient.addColorStop(0.1, "rgba(255,255,255,0.92)");
+  gradient.addColorStop(0.88, "rgba(255,255,255,0.96)");
+  gradient.addColorStop(1, "rgba(255,255,255,0)");
+  context.strokeStyle = gradient;
+  context.lineCap = "round";
+  context.lineWidth = core ? 5 : 14;
+  context.beginPath();
+  context.moveTo(3, 17);
+  context.bezierCurveTo(34, 10, 70, 23, 125, 14);
+  context.stroke();
+  return registerCanvasTexture(textureCanvas, true);
+}
+
+function applyNightFissureShader(material, glowLayer) {
+  material.userData.sunDirectionUniform = { value: WORLD_SUN_DIRECTION.clone() };
+  material.userData.timeUniform = { value: 0 };
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.fissureSunDirection = material.userData.sunDirectionUniform;
+    shader.uniforms.fissureTime = material.userData.timeUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nvarying vec3 vFissureWorldDirection;",
+      )
+      .replace(
+        "#include <worldpos_vertex>",
+        "#include <worldpos_vertex>\nvFissureWorldDirection = normalize(worldPosition.xyz);",
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+        varying vec3 vFissureWorldDirection;
+        uniform vec3 fissureSunDirection;
+        uniform float fissureTime;`,
+      )
+      .replace(
+        "#include <alphatest_fragment>",
+        `#include <alphatest_fragment>
+        float fissureSunHeight = dot(normalize(vFissureWorldDirection), normalize(fissureSunDirection));
+        float fissureNightFade = 1.0 - smoothstep(-0.34, 0.14, fissureSunHeight);
+        float fissurePulse = ${glowLayer ? "0.88 + 0.12 * sin(fissureTime * 0.42 + dot(vFissureWorldDirection, vec3(9.0, 13.0, 17.0)))" : "1.0"};
+        diffuseColor.a *= fissureNightFade * fissurePulse;
+        if (diffuseColor.a < 0.008) discard;`,
+      );
+  };
+  material.customProgramCacheKey = () => `realism-night-fissure-${glowLayer ? "glow" : "slit"}`;
+}
+
+function addRealismNightFissures(random) {
+  const slitMaterial = new THREE.MeshBasicMaterial({
+    map: createNightFissureTexture(false),
+    color: 0x090b12,
+    transparent: true,
+    opacity: 0.9,
+    alphaTest: 0.015,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    map: createNightFissureTexture(true),
+    color: 0xffffff,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.82,
+    alphaTest: 0.008,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  applyNightFissureShader(slitMaterial, false);
+  applyNightFissureShader(glowMaterial, true);
+
+  const geometry = new THREE.PlaneGeometry(1, 1);
+  const slit = new THREE.InstancedMesh(geometry, slitMaterial, planetLoad.crackCount);
+  const glow = new THREE.InstancedMesh(geometry, glowMaterial, planetLoad.crackCount);
+  const slitMatrix = new THREE.Matrix4();
+  const glowMatrix = new THREE.Matrix4();
+  const orientationMatrix = new THREE.Matrix4();
+  const orientation = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  const position = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  const nextDirection = new THREE.Vector3();
+  const segmentTangent = new THREE.Vector3();
+  const segmentSide = new THREE.Vector3();
+  const travelAxis = new THREE.Vector3();
+  const color = new THREE.Color();
+  const weightedPalette = [
+    0x42e6da, 0x42e6da, 0x52d7ff, 0x52d7ff,
+    0x68f0aa, 0x759cff, 0x9f75ff, 0xe978ff,
+    0xffb35f,
+  ];
+  const branchQueue = [];
+  const seedBranch = () => {
+    const direction = randomSphereDirection(random, new THREE.Vector3()).clone();
+    const tangent = new THREE.Vector3(random() - 0.5, random() - 0.5, random() - 0.5);
+    tangent.addScaledVector(direction, -direction.dot(tangent));
+    if (tangent.lengthSq() < 0.0001) tangent.crossVectors(direction, WORLD_UP);
+    tangent.normalize();
+    branchQueue.push({
+      direction,
+      tangent,
+      steps: Math.round(10 + random() * (settings.quality === "high" ? 34 : 22)),
+      width: 0.16 + random() * 0.42,
+      depth: 0,
+    });
+  };
+
+  let instanceIndex = 0;
+  while (instanceIndex < planetLoad.crackCount) {
+    if (!branchQueue.length) seedBranch();
+    const branch = branchQueue.shift();
+    let direction = branch.direction.clone();
+    let tangent = branch.tangent.clone();
+    for (let stepIndex = 0; stepIndex < branch.steps && instanceIndex < planetLoad.crackCount; stepIndex += 1) {
+      const length = 1.25 + Math.pow(random(), 0.72) * (branch.depth > 0 ? 2.2 : 4.1);
+      travelAxis.crossVectors(direction, tangent).normalize();
+      const travelAngle = length / PLANET_RADIUS;
+      nextDirection.copy(direction).applyAxisAngle(travelAxis, travelAngle).normalize();
+      center.copy(direction).add(nextDirection).normalize();
+      segmentTangent.copy(nextDirection)
+        .addScaledVector(center, -nextDirection.dot(center))
+        .normalize();
+      segmentSide.crossVectors(center, segmentTangent).normalize();
+      orientationMatrix.makeBasis(segmentTangent, segmentSide, center);
+      orientation.setFromRotationMatrix(orientationMatrix);
+      const terrainRadius = getTerrainRadius(center);
+
+      if (terrainRadius > WATER_RADIUS + 0.18) {
+        position.copy(center).multiplyScalar(terrainRadius + 0.055);
+        scale.set(length * 1.16, branch.width * (0.72 + random() * 0.54), 1);
+        slitMatrix.compose(position, orientation, scale);
+        slit.setMatrixAt(instanceIndex, slitMatrix);
+
+        position.copy(center).multiplyScalar(terrainRadius + 0.073);
+        scale.y *= 0.34;
+        glowMatrix.compose(position, orientation, scale);
+        glow.setMatrixAt(instanceIndex, glowMatrix);
+        color.setHex(weightedPalette[Math.floor(random() * weightedPalette.length)]);
+        color.offsetHSL((random() - 0.5) * 0.035, 0, (random() - 0.5) * 0.12);
+        glow.setColorAt(instanceIndex, color);
+      } else {
+        slit.setMatrixAt(instanceIndex, slitMatrix.makeScale(0, 0, 0));
+        glow.setMatrixAt(instanceIndex, glowMatrix.makeScale(0, 0, 0));
+      }
+
+      if (branch.depth < 2 && stepIndex > 2 && random() < 0.12) {
+        const branchDirection = nextDirection.clone();
+        const branchTangent = segmentTangent.clone()
+          .applyAxisAngle(branchDirection, (random() < 0.5 ? -1 : 1) * (0.42 + random() * 0.72))
+          .normalize();
+        branchQueue.push({
+          direction: branchDirection,
+          tangent: branchTangent,
+          steps: Math.round(3 + random() * 10),
+          width: branch.width * (0.48 + random() * 0.24),
+          depth: branch.depth + 1,
+        });
+      }
+
+      tangent.applyAxisAngle(travelAxis, travelAngle)
+        .applyAxisAngle(nextDirection, (random() - 0.5) * 0.22)
+        .addScaledVector(nextDirection, -tangent.dot(nextDirection))
+        .normalize();
+      direction.copy(nextDirection);
+      instanceIndex += 1;
+    }
+  }
+
+  slit.instanceMatrix.needsUpdate = true;
+  glow.instanceMatrix.needsUpdate = true;
+  if (glow.instanceColor) glow.instanceColor.needsUpdate = true;
+  slit.renderOrder = 1;
+  glow.renderOrder = 2;
+  scene.add(slit, glow);
+  return { slit, glow, slitMaterial, glowMaterial };
+}
+
+function updateNightFissures(fissures, time) {
+  fissures.slitMaterial.userData.sunDirectionUniform.value.copy(WORLD_SUN_DIRECTION);
+  fissures.glowMaterial.userData.sunDirectionUniform.value.copy(WORLD_SUN_DIRECTION);
+  fissures.slitMaterial.userData.timeUniform.value = time;
+  fissures.glowMaterial.userData.timeUniform.value = time;
 }
 
 function addDust(random) {
