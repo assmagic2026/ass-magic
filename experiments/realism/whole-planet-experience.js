@@ -2001,6 +2001,11 @@ export function createWholePlanetExperience({
   window.addEventListener("keydown", unlockMusic, { once: true });
 
   loadTrack(currentTrackIndex, false);
+  // Begin the first track shortly after the flight appears.  Mobile browsers that
+  // reject this attempt will use the existing first-touch retry path.
+  window.setTimeout(() => {
+    if (!audioUnlocked && !state.modalOpen && state.phase !== "challenge") void playMusic();
+  }, 500);
 
   return {
     state,

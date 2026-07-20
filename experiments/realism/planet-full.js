@@ -10,7 +10,7 @@ import {
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-136";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-141";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-142";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -365,7 +365,6 @@ const TERRAIN_ASSIST_LANES = Object.freeze([-1, 0, 1]);
 const FLIGHT_PHYSICS = Object.freeze({
   GROUND_SPEED: 7,
   MIN_FORWARD_SPEED: 9,
-  MIN_TANGENT_SPEED: 2.5,
   GLIDE_DRAG: 0.03,
   HOLD_ACCEL_RATE: 7.5,
   LOCK_ACCEL_DECAY: 1.4,
@@ -2809,14 +2808,20 @@ function updateFlight(delta) {
   const altitude = currentRadius - currentSurface;
   updateTerrainAssist(delta, currentRadius, terrainAssistControl);
   const accelerating = flight.keys.has("Space") || flight.accelPointers.size > 0;
-  // The slider is the total three-dimensional travel speed.  The forward tangent
-  // component is solved again after vertical movement has been calculated.
-  const totalSpeedTarget = Math.max(FLIGHT_PHYSICS.MIN_TANGENT_SPEED, flight.speedSelection);
-  const initialForwardTarget = Math.sqrt(Math.max(
-    0,
-    totalSpeedTarget * totalSpeedTarget - flight.radialSpeed * flight.radialSpeed,
-  ));
-  const speedTarget = Math.max(FLIGHT_PHYSICS.MIN_TANGENT_SPEED, initialForwardTarget);
+  if (accelerating) {
+    flight.holdAccel += FLIGHT_PHYSICS.HOLD_ACCEL_RATE * delta;
+  } else {
+    flight.holdAccel = Math.max(
+      0,
+      flight.holdAccel - FLIGHT_PHYSICS.LOCK_ACCEL_DECAY * delta,
+    );
+  }
+  const speedTarget = Math.max(
+    FLIGHT_PHYSICS.MIN_FORWARD_SPEED,
+    flight.speedSelection
+      + Math.max(0, climbInput) * FLIGHT_PHYSICS.STICK_BOOST
+      + flight.holdAccel,
+  );
   const speedResponse = speedTarget > flight.speed
       ? FLIGHT_PHYSICS.LOCK_SPEED_ACCEL
       : FLIGHT_PHYSICS.LOCK_SPEED_SETTLE;
@@ -3049,21 +3054,6 @@ function updateFlight(delta) {
     -commandedMaxDescendSpeed,
     maxAscentSpeed,
   );
-  const maximumVerticalSpeed = Math.sqrt(Math.max(
-    0,
-    totalSpeedTarget * totalSpeedTarget
-      - FLIGHT_PHYSICS.MIN_TANGENT_SPEED * FLIGHT_PHYSICS.MIN_TANGENT_SPEED,
-  ));
-  flight.radialSpeed = THREE.MathUtils.clamp(
-    flight.radialSpeed,
-    -maximumVerticalSpeed,
-    maximumVerticalSpeed,
-  );
-  flight.speed = Math.sqrt(Math.max(
-    FLIGHT_PHYSICS.MIN_TANGENT_SPEED * FLIGHT_PHYSICS.MIN_TANGENT_SPEED,
-    totalSpeedTarget * totalSpeedTarget - flight.radialSpeed * flight.radialSpeed,
-  ));
-
   flightRight.crossVectors(flightUp, flight.forward).normalize();
   const moveAngle = (flight.speed * delta) / currentRadius;
   flightNextUp.copy(flightUp).applyAxisAngle(flightRight, moveAngle).normalize();
@@ -3227,7 +3217,7 @@ function updateFlight(delta) {
     const assistDebug = terrainAssistDebugEnabled
       ? `<br>DIVE ${THREE.MathUtils.radToDeg(descentAngleLimit).toFixed(0)}° P${(flight.descentPose * 100).toFixed(0)}%<br>ASSIST ${terrainAssist.phase} ${(terrainAssist.strength * 100).toFixed(0)}% S${terrainAssist.side}<br>CLR ${terrainAssist.minimumClearance.toFixed(1)} T${terrainAssist.timeToRisk.toFixed(1)} V ${flight.radialSpeed.toFixed(1)}>${terrainAssist.verticalSpeed.toFixed(1)}`
       : "";
-    flightReadout.innerHTML = `SPEED ${Math.round(Math.hypot(flight.speed, flight.radialSpeed))}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}${assistDebug}`;
+    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}${assistDebug}`;
     flight.readoutElapsed = 0;
   }
 }
