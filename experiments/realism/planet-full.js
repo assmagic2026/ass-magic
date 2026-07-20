@@ -8,9 +8,9 @@ import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
 import {
   createFlightPlayer,
   updateFlightPlayer,
-} from "./whole-planet-player.js?v=realism-46";
+} from "./whole-planet-player.js?v=realism-47";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-136";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-140";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-141";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -306,6 +306,7 @@ const flight = {
   bodyPitch: -0.12,
   roll: 0,
   cameraLift: 0,
+  cameraHighAltitudeLook: 0,
   onGround: false,
   stickId: null,
   stickOffset: new THREE.Vector2(),
@@ -364,6 +365,7 @@ const TERRAIN_ASSIST_LANES = Object.freeze([-1, 0, 1]);
 const FLIGHT_PHYSICS = Object.freeze({
   GROUND_SPEED: 7,
   MIN_FORWARD_SPEED: 9,
+  MIN_TANGENT_SPEED: 2.5,
   GLIDE_DRAG: 0.03,
   HOLD_ACCEL_RATE: 7.5,
   LOCK_ACCEL_DECAY: 1.4,
@@ -381,13 +383,16 @@ const FLIGHT_PHYSICS = Object.freeze({
   DESCENT_HIGH_ALTITUDE: 100,
   DESCENT_HIGH_SPEED_ANGLE_SCALE: 0.72,
   DESCENT_SURFACE_RESERVE: 2.4,
+  DESCENT_FAST_SURFACE_RESERVE: 13.2,
   DESCENT_MIN_TIME_LOW_SPEED: 1.6,
   DESCENT_MIN_TIME_HIGH_SPEED: 2.8,
   DESCENT_MIN_SINK_SPEED: 0.45,
   DESCENT_SURFACE_GUARD_START: 6,
   DESCENT_SURFACE_GUARD_END: 20,
+  DESCENT_FAST_SURFACE_GUARD_START: 15,
+  DESCENT_FAST_SURFACE_GUARD_END: 48,
   DESCENT_POSE_RESPONSE: 3.1,
-  DESCENT_POSE_RETURN: 2.6,
+  DESCENT_POSE_RETURN: 0.82,
   DESCENT_POSE_RAMP_START: 0.08,
   DESCENT_POSE_RAMP_END: 0.82,
   DESCENT_TRANSITION_KICK_SPEED: 5,
@@ -400,21 +405,25 @@ const FLIGHT_PHYSICS = Object.freeze({
   DESCENT_FLOAT_DRAG: 0.1,
   // Terrain assist: time-weighted sampling followed by jerk-limited correction.
   TERRAIN_ASSIST_SCAN_INTERVAL: 0.08,
-  TERRAIN_ASSIST_TIMES: Object.freeze([0.45, 0.85, 1.35, 2.1, 3.2]),
+  // Faster flight reads much farther ahead, allowing a broad, natural climb instead
+  // of leaving the emergency guard to make a visibly abrupt correction.
+  TERRAIN_ASSIST_TIMES: Object.freeze([0.6, 1.3, 2.4, 4.1, 6.2]),
+  TERRAIN_ASSIST_FAST_LOOK_AHEAD_MULTIPLIER: 1.48,
   TERRAIN_ASSIST_LANE_ANGLE: 0.05,
   TERRAIN_ASSIST_SAFE_CLEARANCE: 3.6,
-  TERRAIN_ASSIST_START_MARGIN: 6.5,
-  TERRAIN_ASSIST_MAX_ASCENT_SPEED: 15,
+  TERRAIN_ASSIST_START_MARGIN: 13,
+  TERRAIN_ASSIST_SPEED_MARGIN: 0.15,
+  TERRAIN_ASSIST_MAX_ASCENT_SPEED: 13,
   TERRAIN_ASSIST_MAX_DESCENT_SPEED: 1.8,
-  TERRAIN_ASSIST_MAX_ASCENT_ACCEL: 7.5,
+  TERRAIN_ASSIST_MAX_ASCENT_ACCEL: 5.2,
   TERRAIN_ASSIST_MAX_DESCENT_ACCEL: 0.8,
-  TERRAIN_ASSIST_MAX_VERTICAL_JERK: 18,
-  TERRAIN_ASSIST_VERTICAL_RESPONSE: 1.8,
-  TERRAIN_ASSIST_TARGET_RISE: 2.5,
+  TERRAIN_ASSIST_MAX_VERTICAL_JERK: 9.5,
+  TERRAIN_ASSIST_VERTICAL_RESPONSE: 1.35,
+  TERRAIN_ASSIST_TARGET_RISE: 1.45,
   TERRAIN_ASSIST_TARGET_FALL: 0.9,
   TERRAIN_ASSIST_MAX_YAW_RATE: 0.18,
   TERRAIN_ASSIST_MAX_YAW_ACCEL: 0.26,
-  TERRAIN_ASSIST_STRENGTH_RISE: 2,
+  TERRAIN_ASSIST_STRENGTH_RISE: 1.15,
   TERRAIN_ASSIST_STRENGTH_FALL: 0.72,
   TERRAIN_ASSIST_IDLE_STRENGTH: 0.42,
   TERRAIN_ASSIST_CONTROL_STRENGTH: 1.25,
@@ -430,6 +439,7 @@ const FLIGHT_PHYSICS = Object.freeze({
   TERRAIN_OBSTACLE_AHEAD_SECONDS: 0.8,
   TERRAIN_OBSTACLE_RISE_THRESHOLD: 1.2,
   NEUTRAL_ALTITUDE: 10,
+  NEUTRAL_ALTITUDE_FAST: 30,
   NEUTRAL_DESCEND_MAX: 3,
   NEUTRAL_ASCEND_MAX: 2.2,
   NEUTRAL_RETURN: 0.8,
@@ -458,6 +468,8 @@ const FLIGHT_PHYSICS = Object.freeze({
   CAMERA_SMOOTH: 0.075,
   CAMERA_LOOK_SMOOTH: 0.1,
   CAMERA_HIGH_ALTITUDE_SMOOTH: 0.42,
+  CAMERA_HIGH_ALTITUDE_LOOK_RESPONSE: 4.2,
+  CAMERA_HIGH_ALTITUDE_SPEED_SMOOTH: 0.62,
   CAMERA_PITCH_SMOOTH: 3.4,
   CAMERA_DESCEND_PITCH_SMOOTH: 4,
   BASE_FOV: 70,
@@ -2520,7 +2532,19 @@ function moveTowards(current, target, maxDelta) {
 function scanTerrainAssist(currentRadius) {
   const config = FLIGHT_PHYSICS;
   const times = config.TERRAIN_ASSIST_TIMES;
-  const longestLookAhead = times[times.length - 1];
+  const speedLookAheadMix = THREE.MathUtils.smoothstep(
+    flight.speed,
+    24,
+    120,
+  );
+  const lookAheadMultiplier = THREE.MathUtils.lerp(
+    1,
+    config.TERRAIN_ASSIST_FAST_LOOK_AHEAD_MULTIPLIER,
+    speedLookAheadMix,
+  );
+  const longestLookAhead = times[times.length - 1] * lookAheadMultiplier;
+  const startMargin = config.TERRAIN_ASSIST_START_MARGIN
+    + flight.speed * config.TERRAIN_ASSIST_SPEED_MARGIN;
   let centerRisk = 0;
   let leftRisk = 0;
   let rightRisk = 0;
@@ -2529,7 +2553,8 @@ function scanTerrainAssist(currentRadius) {
   let timeToRisk = 0;
 
   flightRight.crossVectors(flightUp, flight.forward).normalize();
-  for (const time of times) {
+  for (const baseTime of times) {
+    const time = baseTime * lookAheadMultiplier;
     const forwardAngle = (flight.speed * time) / currentRadius;
     terrainAssistDirection.copy(flightUp)
       .applyAxisAngle(flightRight, forwardAngle)
@@ -2548,9 +2573,9 @@ function scanTerrainAssist(currentRadius) {
       const projectedRadius = currentRadius + flight.radialSpeed * time;
       const clearance = projectedRadius - requiredRadius;
       const clearanceRisk = THREE.MathUtils.smoothstep(
-        config.TERRAIN_ASSIST_START_MARGIN - clearance,
+        startMargin - clearance,
         0,
-        config.TERRAIN_ASSIST_START_MARGIN + config.TERRAIN_ASSIST_SAFE_CLEARANCE,
+        startMargin + config.TERRAIN_ASSIST_SAFE_CLEARANCE,
       );
       // Near obstacles matter most, while distant terrain starts a gentler preparation arc.
       const urgency = THREE.MathUtils.lerp(1, 0.58, time / longestLookAhead);
@@ -2784,21 +2809,14 @@ function updateFlight(delta) {
   const altitude = currentRadius - currentSurface;
   updateTerrainAssist(delta, currentRadius, terrainAssistControl);
   const accelerating = flight.keys.has("Space") || flight.accelPointers.size > 0;
-  if (accelerating) {
-    flight.holdAccel += FLIGHT_PHYSICS.HOLD_ACCEL_RATE * delta;
-  } else {
-    flight.holdAccel = Math.max(
-      0,
-      flight.holdAccel - FLIGHT_PHYSICS.LOCK_ACCEL_DECAY * delta,
-    );
-  }
-  const baseSpeedTarget = Math.max(
-    FLIGHT_PHYSICS.MIN_FORWARD_SPEED,
-    flight.speedSelection
-      + Math.max(0, climbInput) * FLIGHT_PHYSICS.STICK_BOOST
-      + flight.holdAccel,
-  );
-  const speedTarget = baseSpeedTarget;
+  // The slider is the total three-dimensional travel speed.  The forward tangent
+  // component is solved again after vertical movement has been calculated.
+  const totalSpeedTarget = Math.max(FLIGHT_PHYSICS.MIN_TANGENT_SPEED, flight.speedSelection);
+  const initialForwardTarget = Math.sqrt(Math.max(
+    0,
+    totalSpeedTarget * totalSpeedTarget - flight.radialSpeed * flight.radialSpeed,
+  ));
+  const speedTarget = Math.max(FLIGHT_PHYSICS.MIN_TANGENT_SPEED, initialForwardTarget);
   const speedResponse = speedTarget > flight.speed
       ? FLIGHT_PHYSICS.LOCK_SPEED_ACCEL
       : FLIGHT_PHYSICS.LOCK_SPEED_SETTLE;
@@ -2849,15 +2867,31 @@ function updateFlight(delta) {
     FLIGHT_PHYSICS.DESCENT_MIN_TIME_HIGH_SPEED,
     descentSpeedMix,
   );
+  const fastFlightMix = THREE.MathUtils.smoothstep(flight.speed, 30, 120);
+  const descentSurfaceReserve = THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.DESCENT_SURFACE_RESERVE,
+    FLIGHT_PHYSICS.DESCENT_FAST_SURFACE_RESERVE,
+    fastFlightMix,
+  );
   const surfaceLimitedSinkSpeed = Math.max(
     FLIGHT_PHYSICS.DESCENT_MIN_SINK_SPEED,
-    (altitude - FLIGHT_PHYSICS.DESCENT_SURFACE_RESERVE) / minimumSurfaceTime,
+    (altitude - descentSurfaceReserve) / minimumSurfaceTime,
   );
   const angleLimitedSinkSpeed = flight.speed * Math.tan(descentAngleLimit);
+  const surfaceGuardStart = THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.DESCENT_SURFACE_GUARD_START,
+    FLIGHT_PHYSICS.DESCENT_FAST_SURFACE_GUARD_START,
+    fastFlightMix,
+  );
+  const surfaceGuardEnd = THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.DESCENT_SURFACE_GUARD_END,
+    FLIGHT_PHYSICS.DESCENT_FAST_SURFACE_GUARD_END,
+    fastFlightMix,
+  );
   const nearSurfaceGuard = 1 - THREE.MathUtils.smoothstep(
     altitude,
-    FLIGHT_PHYSICS.DESCENT_SURFACE_GUARD_START,
-    FLIGHT_PHYSICS.DESCENT_SURFACE_GUARD_END,
+    surfaceGuardStart,
+    surfaceGuardEnd,
   );
   const commandedMaxDescendSpeed = THREE.MathUtils.lerp(
     angleLimitedSinkSpeed,
@@ -2952,8 +2986,13 @@ function updateFlight(delta) {
       -FLIGHT_PHYSICS.TERRAIN_FOLLOW_DESCENT_MAX,
       FLIGHT_PHYSICS.TERRAIN_FOLLOW_ASCENT_MAX,
     );
+    const neutralAltitude = THREE.MathUtils.lerp(
+      FLIGHT_PHYSICS.NEUTRAL_ALTITUDE,
+      FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_FAST,
+      fastFlightMix,
+    );
     const altitudeReturnSpeed = THREE.MathUtils.clamp(
-      (FLIGHT_PHYSICS.NEUTRAL_ALTITUDE - altitude)
+      (neutralAltitude - altitude)
         * FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_RETURN,
       -FLIGHT_PHYSICS.NEUTRAL_DESCEND_MAX,
       FLIGHT_PHYSICS.NEUTRAL_ASCEND_MAX,
@@ -2964,7 +3003,7 @@ function updateFlight(delta) {
       FLIGHT_PHYSICS.TERRAIN_FOLLOW_ASCENT_MAX,
     );
     if (
-      altitude > FLIGHT_PHYSICS.NEUTRAL_ALTITUDE
+      altitude > neutralAltitude
         + FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_DEADZONE
     ) {
       // Above ALT10, terrain-following must not create another ascent after release.
@@ -2975,7 +3014,7 @@ function updateFlight(delta) {
       );
     }
     const followingTerrainDrop = terrainFollowSpeed < -0.8
-      && altitude <= FLIGHT_PHYSICS.NEUTRAL_ALTITUDE
+      && altitude <= neutralAltitude
         + FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_DEADZONE;
     const coastingFromDescent = !followingTerrainDrop
       && flight.radialSpeed < neutralTarget - 0.1;
@@ -3010,6 +3049,20 @@ function updateFlight(delta) {
     -commandedMaxDescendSpeed,
     maxAscentSpeed,
   );
+  const maximumVerticalSpeed = Math.sqrt(Math.max(
+    0,
+    totalSpeedTarget * totalSpeedTarget
+      - FLIGHT_PHYSICS.MIN_TANGENT_SPEED * FLIGHT_PHYSICS.MIN_TANGENT_SPEED,
+  ));
+  flight.radialSpeed = THREE.MathUtils.clamp(
+    flight.radialSpeed,
+    -maximumVerticalSpeed,
+    maximumVerticalSpeed,
+  );
+  flight.speed = Math.sqrt(Math.max(
+    FLIGHT_PHYSICS.MIN_TANGENT_SPEED * FLIGHT_PHYSICS.MIN_TANGENT_SPEED,
+    totalSpeedTarget * totalSpeedTarget - flight.radialSpeed * flight.radialSpeed,
+  ));
 
   flightRight.crossVectors(flightUp, flight.forward).normalize();
   const moveAngle = (flight.speed * delta) / currentRadius;
@@ -3174,7 +3227,7 @@ function updateFlight(delta) {
     const assistDebug = terrainAssistDebugEnabled
       ? `<br>DIVE ${THREE.MathUtils.radToDeg(descentAngleLimit).toFixed(0)}° P${(flight.descentPose * 100).toFixed(0)}%<br>ASSIST ${terrainAssist.phase} ${(terrainAssist.strength * 100).toFixed(0)}% S${terrainAssist.side}<br>CLR ${terrainAssist.minimumClearance.toFixed(1)} T${terrainAssist.timeToRisk.toFixed(1)} V ${flight.radialSpeed.toFixed(1)}>${terrainAssist.verticalSpeed.toFixed(1)}`
       : "";
-    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}${assistDebug}`;
+    flightReadout.innerHTML = `SPEED ${Math.round(Math.hypot(flight.speed, flight.radialSpeed))}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}${assistDebug}`;
     flight.readoutElapsed = 0;
   }
 }
@@ -3339,9 +3392,23 @@ function updateFlightCamera(delta, snap = false) {
       flight.position.length() - getSurfaceRadius(flightUp) - PLAYER_CLEARANCE,
     );
   const returnRouteActive = returnState?.phase === "sanctuary";
-  const highAltitudeLook = returnRouteActive || spaceReturnActive
+  const targetHighAltitudeLook = returnRouteActive || spaceReturnActive
     ? 0
     : THREE.MathUtils.clamp(altitude / 200, 0, 1);
+  const highAltitudeLookResponse = THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.CAMERA_HIGH_ALTITUDE_LOOK_RESPONSE,
+    FLIGHT_PHYSICS.CAMERA_HIGH_ALTITUDE_SPEED_SMOOTH,
+    THREE.MathUtils.smoothstep(flight.speed, 30, 120),
+  );
+  flight.cameraHighAltitudeLook = snap
+    ? targetHighAltitudeLook
+    : THREE.MathUtils.damp(
+      flight.cameraHighAltitudeLook,
+      targetHighAltitudeLook,
+      highAltitudeLookResponse,
+      delta,
+    );
+  const highAltitudeLook = flight.cameraHighAltitudeLook;
   const baseCameraPitch = Math.atan2(1.6, Math.max(distance, 0.001));
   const cameraPitch = THREE.MathUtils.lerp(
     baseCameraPitch,
@@ -3584,6 +3651,7 @@ function resetFlight() {
   flight.bodyPitch = FLIGHT_PHYSICS.CRUISE_BODY_PITCH;
   flight.roll = 0;
   flight.cameraLift = 0;
+  flight.cameraHighAltitudeLook = 0;
   flight.onGround = false;
   flight.stickOffset.set(0, 0);
   flight.stickSmooth.set(0, 0);

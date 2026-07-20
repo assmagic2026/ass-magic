@@ -63,9 +63,9 @@ export function createFlightPlayer(scene, options = {}) {
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.58, 4, 8), coatMaterial);
     arm.position.y = -0.408;
     arm.rotation.z = side * -0.13;
-    arm.scale.y = 1.2;
+    arm.scale.y = 1.44;
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 6), skinMaterial);
-    hand.position.set(side * 0.08, -0.864, 0);
+    hand.position.set(side * 0.08, -1.037, 0);
     root.add(arm, hand);
   }
 
@@ -158,7 +158,7 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
       if (object.material?.map) object.material.map.anisotropy = 8;
     });
 
-    extendImportedArms(imported, 1.2);
+    extendImportedArms(imported, 1.44);
     poseSuperman(imported, rig.player);
     measureImportedAnchors(imported, rig);
     rig.modelVisual = modelVisual;

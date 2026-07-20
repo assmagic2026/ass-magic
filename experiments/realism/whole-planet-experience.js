@@ -55,6 +55,7 @@ const DEVIL_FLEE_WEAVE_AMOUNT = 0.18;
 const DEVIL_TERRAIN_RESPONSE = 4.2;
 // Realistic terrain adds vertical variation, so use a more forgiving encounter radius.
 const DEVIL_CONTACT_RADIUS = 15;
+const MONOCHROME_CHALLENGE_DURATION = 30;
 const DEVIL_ROUTE_SPEED = 95;
 const DEVIL_ROUTE_MIN_DURATION = 2.8;
 const DEVIL_ROUTE_MAX_DURATION = 13;
@@ -450,6 +451,8 @@ export function createWholePlanetExperience({
   clockAudio.loop = true;
   clockAudio.preload = "auto";
   clockAudio.volume = 0.48;
+  const challengeFlash = document.querySelector("#experience-theme-flash");
+  const challengeTimer = document.querySelector("#experience-challenge-timer");
 
   const tracks = playlist.filter((track) => !track.disabled);
   let currentTrackIndex = Math.max(0, tracks.findIndex((track) => track.initial));
@@ -504,6 +507,7 @@ export function createWholePlanetExperience({
   const state = {
     phase: "idle",
     challengeStart: null,
+    challengeTimeRemaining: 0,
     worldInverted: false,
     blackBoxOpened: false,
     modalOpen: false,
@@ -1630,21 +1634,26 @@ export function createWholePlanetExperience({
     if (!success) {
       state.phase = "idle";
       state.challengeStart = null;
+      state.challengeTimeRemaining = 0;
       landmarks.objects.compass.userData.targetWorld = null;
-      showToast("帰還の往復は失敗した。もう一度、どちらかの球から始める。", 4200);
+      triggerChallengeFlash("is-failure");
+      showToast("モノクロチャレンジ終了。もう一度、どちらかの球から始める。", 4200);
       return;
     }
     state.phase = "inverted";
     state.challengeStart = null;
+    state.challengeTimeRemaining = 0;
     state.worldInverted = true;
     landmarks.objects.compass.userData.targetWorld = null;
     onWorldInversion?.(true);
+    triggerChallengeFlash("is-success");
     showToast("昼と夜が逆転した。白い球の近くの巨大な装置へ。", 4600);
   }
 
   function startChallenge(id) {
     state.phase = "challenge";
     state.challengeStart = id;
+    state.challengeTimeRemaining = MONOCHROME_CHALLENGE_DURATION;
     const targetId = id === "blackSphere" ? "whiteSphere" : "blackSphere";
     const target = landmarks.objects[targetId];
     target.getWorldPosition(targetPosition);
@@ -1654,7 +1663,24 @@ export function createWholePlanetExperience({
     pauseMusic();
     clockAudio.currentTime = 0;
     void clockAudio.play().catch((error) => console.warn("Clock audio is waiting for a gesture.", error));
-    showToast("モノクロ開始。ほかの物体に触れず、反対側の球へ。", 4200);
+    triggerChallengeFlash("is-start");
+    showToast("モノクロ開始。30秒以内に、もう一方の球へ。", 4200);
+  }
+
+  function triggerChallengeFlash(kind) {
+    if (!challengeFlash) return;
+    challengeFlash.className = `experience-theme-flash ${kind}`;
+    void challengeFlash.offsetWidth;
+    challengeFlash.classList.add("is-active");
+  }
+
+  function updateChallenge(delta) {
+    if (state.phase !== "challenge") return;
+    state.challengeTimeRemaining = Math.max(0, state.challengeTimeRemaining - delta);
+    if (challengeTimer) {
+      challengeTimer.textContent = `${state.challengeTimeRemaining.toFixed(1)} SEC`;
+    }
+    if (state.challengeTimeRemaining <= 0) endChallenge(false);
   }
 
   function handleSphere(id) {
@@ -1986,6 +2012,7 @@ export function createWholePlanetExperience({
       || state.devil.phase === "route-wait",
     getReturnState: () => state,
     update(delta) {
+      updateChallenge(delta);
       updateDevil(delta);
       updateContacts();
       updateCompassAssist(delta);
@@ -2039,6 +2066,7 @@ export function createWholePlanetExperience({
         : routeReady ? "inverted" : "idle";
       state.worldInverted = routeReady;
       state.challengeStart = null;
+      state.challengeTimeRemaining = 0;
       state.spaceFlightActive = false;
       state.spaceTransition = 0;
       state.spaceUp.set(0, 0, 0);

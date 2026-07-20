@@ -42,7 +42,61 @@ body {
 }
 
 body.is-monochrome #scene {
-  filter: grayscale(1) contrast(1.06);
+  filter: grayscale(1) contrast(1.78) brightness(1.42);
+}
+
+.experience-challenge-timer {
+  position: fixed;
+  z-index: 8;
+  top: max(82px, calc(env(safe-area-inset-top) + 58px));
+  left: 50%;
+  display: none;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font: 700 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.14em;
+  transform: translateX(-50%);
+}
+
+body.is-monochrome .experience-challenge-timer { display: block; }
+
+.experience-theme-flash {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: #fff;
+  mix-blend-mode: screen;
+}
+
+.experience-theme-flash span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 64px;
+  height: 64px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scale(0.12);
+}
+
+.experience-theme-flash.is-active { animation: experience-theme-flash 820ms cubic-bezier(.16,.74,.28,1) both; }
+.experience-theme-flash.is-active span { animation: experience-theme-ring 820ms cubic-bezier(.16,.74,.28,1) both; }
+.experience-theme-flash.is-success { background: #fff; }
+.experience-theme-flash.is-failure { background: #080808; mix-blend-mode: multiply; }
+
+@keyframes experience-theme-flash {
+  0% { opacity: 0; }
+  12% { opacity: .92; }
+  100% { opacity: 0; }
+}
+
+@keyframes experience-theme-ring {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(.12); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(32); }
 }
 
 #scene:active {
@@ -1030,8 +1084,8 @@ body.flight-mode .help {
   }
 
   .flight-readout {
-    bottom: max(155px, calc(env(safe-area-inset-bottom) + 143px));
-    left: max(16px, env(safe-area-inset-left));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: max(10px, env(safe-area-inset-left));
   }
 
   .help {
@@ -1068,6 +1122,6 @@ body.flight-mode #devil-guide-summon {
 @media (max-width: 700px) {
   body.flight-mode #devil-guide-summon {
     left: max(10px, env(safe-area-inset-left));
-    bottom: max(220px, calc(env(safe-area-inset-bottom) + 210px));
+    bottom: max(56px, calc(env(safe-area-inset-bottom) + 46px));
   }
 }
