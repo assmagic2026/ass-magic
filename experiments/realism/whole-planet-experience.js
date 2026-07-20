@@ -457,6 +457,7 @@ export function createWholePlanetExperience({
   const tracks = playlist.filter((track) => !track.disabled);
   let currentTrackIndex = Math.max(0, tracks.findIndex((track) => track.initial));
   let audioUnlocked = false;
+  let musicGesturePending = false;
   let lyricsRequest = 0;
   let toastTimer = 0;
   let closeAction = null;
@@ -642,8 +643,11 @@ export function createWholePlanetExperience({
   }
 
   function unlockMusic() {
-    if (audioUnlocked || state.phase === "challenge" || state.modalOpen) return;
-    void playMusic();
+    if (audioUnlocked || musicGesturePending || state.phase === "challenge" || state.modalOpen) return;
+    musicGesturePending = true;
+    void playMusic().finally(() => {
+      musicGesturePending = false;
+    });
   }
 
   function showToast(message, duration = 3200) {
@@ -1997,6 +2001,10 @@ export function createWholePlanetExperience({
   audio.addEventListener("play", syncMusicUi);
   audio.addEventListener("pause", syncMusicUi);
   audio.addEventListener("ended", () => loadTrack(currentTrackIndex + 1, true));
+  // Match the production page: start inside the first user gesture, before the
+  // flight controls consume it. This is the path iOS Safari permits for audio.
+  window.addEventListener("pointerdown", unlockMusic, { capture: true, once: true });
+  window.addEventListener("touchstart", unlockMusic, { capture: true, once: true, passive: true });
   canvas.addEventListener("pointerdown", unlockMusic);
   window.addEventListener("keydown", unlockMusic, { once: true });
 
