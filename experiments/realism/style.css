@@ -38,6 +38,11 @@ body {
 #scene {
   display: block;
   cursor: grab;
+  transition: filter 900ms ease;
+}
+
+body.is-monochrome #scene {
+  filter: grayscale(1) contrast(1.06);
 }
 
 #scene:active {
@@ -239,18 +244,17 @@ body.flight-mode .flight-stick {
 .flight-speed-panel {
   position: fixed;
   z-index: 5;
-  right: 12px;
-  bottom: 166px;
+  top: 78px;
+  right: 18px;
   display: none;
-  width: 140px;
-  height: 190px;
-  padding: 12px 10px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 18px;
-  background: rgba(12, 20, 20, 0.34);
+  width: 96px;
+  padding: 10px 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(9, 16, 28, 0.14);
   color: var(--ink);
   text-align: center;
-  backdrop-filter: blur(6px);
+  backdrop-filter: blur(2px);
 }
 
 body.flight-mode .flight-speed-panel {
@@ -260,22 +264,84 @@ body.flight-mode .flight-speed-panel {
 }
 
 .flight-speed-panel > span {
+  display: block;
   font-size: 8px;
   letter-spacing: 0.22em;
+  color: rgba(236, 247, 255, 0.62);
 }
 
 .flight-speed-panel output {
-  margin: 2px 0 4px;
-  font: 24px/1 Georgia, "Times New Roman", serif;
+  width: 100%;
+  margin: 8px 0;
+  color: #f6fbff;
+  font: 24px/1 "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  letter-spacing: 0.06em;
+}
+
+.flight-speed-panel .flight-speed-limit {
+  color: rgba(226, 241, 255, 0.56);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.flight-speed-rail {
+  position: relative;
+  width: 28px;
+  height: 168px;
+  margin: 8px auto;
+  flex: 0 0 auto;
+}
+
+.flight-speed-rail::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(160, 238, 255, 0.96), rgba(123, 190, 255, 0.24));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  transform: translateX(-50%);
+}
+
+#flight-speed-fill {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  width: 6px;
+  height: calc(var(--speed-ratio, 0.259) * 144px);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(230, 250, 255, 1), rgba(117, 212, 255, 0.92));
+  box-shadow: 0 0 10px rgba(127, 220, 255, 0.24);
+  transform: translateX(-50%);
+}
+
+#flight-speed-thumb {
+  position: absolute;
+  top: calc(12px + (1 - var(--speed-ratio, 0.259)) * 144px);
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(58, 94, 142, 0.3);
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fff, #dff4ff);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  transform: translate(-50%, -50%);
 }
 
 .flight-speed-panel input {
-  width: 24px;
-  height: 130px;
+  position: absolute;
+  z-index: 2;
+  inset: 69px 0 18px;
+  width: 100%;
+  height: auto;
   margin: 0;
   direction: rtl;
+  opacity: 0;
+  cursor: pointer;
   writing-mode: vertical-lr;
-  accent-color: #7be4ff;
+  touch-action: none;
 }
 
 .flight-readout {
@@ -295,9 +361,488 @@ body.flight-mode .flight-speed-panel {
   display: block;
 }
 
-body.flight-mode .controls {
-  right: 164px;
-  justify-content: flex-start;
+.experience-music {
+  position: fixed;
+  z-index: 5;
+  top: 76px;
+  left: 18px;
+  display: none;
+  width: 136px;
+  color: var(--ink);
+}
+
+body.flight-mode .experience-music {
+  display: block;
+}
+
+.experience-music-art {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #0a0f16;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.experience-music-art::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(9, 14, 22, 0.92);
+  box-shadow: 0 0 0 5px rgba(242, 248, 255, 0.18);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.experience-music img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  filter: saturate(1.04) contrast(1.01);
+}
+
+.experience-music.is-playing img {
+  animation: experience-record-spin 18s linear infinite;
+}
+
+.experience-music-copy {
+  width: 136px;
+}
+
+.experience-music-copy strong {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.experience-music-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-areas: "toggle next" "lyrics lyrics";
+  gap: 6px;
+  width: 136px;
+  margin-top: 12px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(8, 14, 22, 0.34), rgba(8, 14, 22, 0.18));
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+}
+
+.experience-music button,
+.experience-lyrics button,
+.experience-modal button,
+.experience-modal input,
+.experience-modal textarea {
+  border: 1px solid rgba(244, 240, 223, 0.28);
+  border-radius: 0;
+  background: rgba(244, 240, 223, 0.07);
+  color: var(--ink);
+  font: inherit;
+}
+
+.experience-music button {
+  display: grid;
+  width: 100%;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(18, 28, 42, 0.92), rgba(9, 15, 23, 0.78));
+  color: #eff8ff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 5px 12px rgba(0, 0, 0, 0.16);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#experience-play { grid-area: toggle; }
+#experience-next { grid-area: next; }
+#experience-lyrics-toggle {
+  grid-area: lyrics;
+  height: 28px;
+}
+
+#experience-lyrics-toggle.is-active {
+  border-color: rgba(192, 234, 255, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 5px 12px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(114, 202, 255, 0.12);
+}
+
+.experience-toggle-icon {
+  position: relative;
+  width: 14px;
+  height: 15px;
+  margin-left: 2px;
+}
+
+.experience-toggle-icon::before,
+.experience-toggle-icon::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+
+.experience-toggle-icon::before {
+  inset: 0;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.experience-toggle-icon::after {
+  display: none;
+}
+
+#experience-play.is-playing .experience-toggle-icon {
+  width: 13px;
+  height: 13px;
+  margin-left: 0;
+}
+
+#experience-play.is-playing .experience-toggle-icon::before,
+#experience-play.is-playing .experience-toggle-icon::after {
+  display: block;
+  top: 0;
+  width: 4px;
+  height: 12px;
+  border-radius: 1px;
+  clip-path: none;
+}
+
+#experience-play.is-playing .experience-toggle-icon::before { left: 0; }
+#experience-play.is-playing .experience-toggle-icon::after { right: 0; }
+
+.experience-next-icon {
+  position: relative;
+  width: 19px;
+  height: 15px;
+}
+
+.experience-next-icon::before,
+.experience-next-icon::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 7px;
+  height: 15px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.experience-next-icon::before { left: 0; }
+.experience-next-icon::after { left: 5px; }
+.experience-next-icon span {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  width: 2px;
+  height: 13px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.experience-lyrics {
+  position: fixed;
+  z-index: 5;
+  top: 304px;
+  left: 18px;
+  width: 286px;
+  max-height: min(74vh, 640px);
+  padding: 0;
+  overflow: hidden;
+  color: var(--ink);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+
+.experience-lyrics.is-open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.experience-lyrics button {
+  display: none;
+}
+
+.experience-lyrics pre {
+  max-height: min(74vh, 640px);
+  margin: 0;
+  overflow: auto;
+  color: rgba(244, 248, 255, 0.72);
+  font: 13.5px/1.5 "Hiragino Mincho ProN", "Yu Mincho", serif;
+  letter-spacing: 0.016em;
+  text-align: left;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.26);
+  white-space: pre-line;
+  user-select: text;
+  -webkit-user-select: text;
+  scrollbar-width: none;
+}
+
+@keyframes experience-record-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.experience-toast {
+  position: fixed;
+  z-index: 7;
+  bottom: max(96px, calc(env(safe-area-inset-bottom) + 82px));
+  left: 50%;
+  width: min(520px, calc(100vw - 40px));
+  padding: 12px 18px;
+  background: rgba(5, 9, 10, 0.84);
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  line-height: 1.7;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 12px);
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+.experience-toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.return-whiteout {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 28px;
+  background: #fff;
+  color: #111;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 900ms ease, visibility 0s linear 900ms;
+}
+
+.return-whiteout p,
+.return-whiteout button {
+  opacity: 0;
+  transform: translate3d(0, 8px, 0);
+  transition: opacity 700ms ease 1100ms, transform 700ms ease 1100ms;
+}
+
+.return-whiteout p {
+  margin: 0;
+  font: 400 clamp(15px, 1.8vw, 20px)/1.6 "Hiragino Mincho ProN", "Yu Mincho", serif;
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+}
+
+.return-whiteout button {
+  padding: 9px 18px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 999px;
+  background: transparent;
+  color: #111;
+  font: 500 12px/1 "Futura", "Century Gothic", sans-serif;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+}
+
+.return-whiteout.is-active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.return-whiteout.is-active p,
+.return-whiteout.is-active button {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.experience-overlay {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+    max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  place-items: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 240ms ease, visibility 240ms ease;
+}
+
+.experience-overlay.is-open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.experience-overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(7px);
+}
+
+.experience-modal {
+  position: relative;
+  width: min(680px, 100%);
+  max-height: min(760px, 92vh);
+  overflow: hidden;
+  border: 1px solid rgba(244, 240, 223, 0.34);
+  background: #111718;
+  color: var(--ink);
+  box-shadow: 0 24px 90px rgba(0, 0, 0, 0.5);
+}
+
+.experience-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 17px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.experience-modal h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(18px, 3vw, 28px);
+  font-weight: 400;
+}
+
+.experience-modal header button {
+  padding: 7px 10px;
+}
+
+.experience-modal-body {
+  max-height: calc(min(760px, 92vh) - 66px);
+  padding: 20px;
+  overflow: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.experience-modal-body > button {
+  display: block;
+  margin: 24px auto;
+  padding: 12px 22px;
+  cursor: pointer;
+}
+
+.experience-modal-copy {
+  margin: 10px 0 18px;
+  color: var(--muted);
+  line-height: 1.8;
+  text-align: center;
+}
+
+.experience-track-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.experience-track-choice {
+  padding: 11px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.experience-track-choice.is-current {
+  border-color: #7be4ff;
+  background: rgba(123, 228, 255, 0.16);
+}
+
+.experience-cat-image {
+  display: block;
+  width: min(460px, 100%);
+  max-height: 58vh;
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.experience-book-status {
+  margin: 0 0 13px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.experience-book-status.is-stopped {
+  color: #ff9374;
+}
+
+.experience-book-entries {
+  display: grid;
+  max-height: 300px;
+  gap: 8px;
+  overflow: auto;
+}
+
+.experience-book-entry {
+  padding: 12px;
+  border: 1px solid rgba(244, 240, 223, 0.16);
+  background: rgba(244, 240, 223, 0.035);
+}
+
+.experience-book-entry p {
+  margin: 7px 0 0;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.experience-book-meta {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.experience-book-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.experience-book-form input,
+.experience-book-form textarea {
+  width: 100%;
+  padding: 10px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.experience-book-form textarea {
+  grid-column: 1 / -1;
+  resize: vertical;
+}
+
+.experience-book-form button {
+  grid-column: 2;
+  padding: 9px 18px;
+}
+
+body.flight-mode .masthead,
+body.flight-mode .perf-hud,
+body.flight-mode .controls,
+body.flight-mode .help {
+  display: none;
 }
 
 .loading {
@@ -347,8 +892,124 @@ body.flight-mode .controls {
     gap: 6px;
   }
 
-  body.flight-mode .controls {
-    right: 164px;
+  .flight-speed-panel {
+    top: max(64px, calc(env(safe-area-inset-top) + 48px));
+    right: max(10px, env(safe-area-inset-right));
+    width: 88px;
+    padding: 10px 7px;
+    border-radius: 16px;
+  }
+
+  .flight-speed-panel output {
+    font-size: 21px;
+  }
+
+  .flight-speed-rail {
+    height: 144px;
+  }
+
+  .flight-speed-rail::before {
+    top: 12px;
+    bottom: 12px;
+  }
+
+  #flight-speed-fill {
+    height: calc(var(--speed-ratio, 0.259) * 120px);
+  }
+
+  #flight-speed-thumb {
+    top: calc(12px + (1 - var(--speed-ratio, 0.259)) * 120px);
+  }
+
+  .experience-music {
+    top: max(62px, calc(env(safe-area-inset-top) + 46px));
+    left: max(10px, env(safe-area-inset-left));
+    width: 108px;
+  }
+
+  .experience-music-art {
+    width: 102px;
+    height: 102px;
+  }
+
+  .experience-music-art::after {
+    width: 14px;
+    height: 14px;
+    box-shadow: 0 0 0 4px rgba(242, 248, 255, 0.18);
+  }
+
+  .experience-music-actions {
+    width: 108px;
+    gap: 4px;
+    margin-top: 10px;
+    padding: 5px;
+    border-radius: 18px;
+  }
+
+  .experience-music button {
+    height: 30px;
+    font-size: 8px;
+    letter-spacing: 0.12em;
+    text-indent: 0.12em;
+  }
+
+  #experience-lyrics-toggle {
+    height: 24px;
+  }
+
+  .experience-toggle-icon {
+    width: 11px;
+    height: 12px;
+  }
+
+  #experience-play.is-playing .experience-toggle-icon {
+    width: 11px;
+    height: 11px;
+  }
+
+  .experience-next-icon {
+    width: 16px;
+    height: 12px;
+  }
+
+  .experience-next-icon::before,
+  .experience-next-icon::after {
+    width: 6px;
+    height: 12px;
+  }
+
+  .experience-next-icon::after {
+    left: 4px;
+  }
+
+  .experience-next-icon span {
+    height: 10px;
+  }
+
+  .experience-lyrics {
+    top: 244px;
+    left: max(10px, env(safe-area-inset-left));
+    width: 214px;
+    max-height: min(62vh, 520px);
+  }
+
+  .experience-lyrics pre {
+    max-height: min(62vh, 520px);
+    font-size: 11.2px;
+    line-height: 1.42;
+  }
+
+  .experience-toast {
+    bottom: max(165px, calc(env(safe-area-inset-bottom) + 151px));
+    font-size: 10px;
+  }
+
+  .experience-track-list {
+    grid-template-columns: 1fr;
+  }
+
+  .experience-modal-body {
+    padding: 15px;
   }
 
   .mode-switch,
@@ -375,5 +1036,38 @@ body.flight-mode .controls {
 
   .help {
     display: none;
+  }
+}
+
+/* The production ending now cuts quietly from white to black; no gradient pass. */
+#ending-rise {
+  display: none !important;
+}
+
+#ending-close {
+  display: none !important;
+}
+
+#ending-overlay.is-transitioning,
+#ending-overlay.is-open {
+  background: #000;
+}
+
+body.devil-guide-navigating .flight-speed-panel,
+body.devil-guide-navigating .flight-stick {
+  pointer-events: none;
+  opacity: 0.42;
+}
+
+/* Keep the summon button clear of the flight ALT readout on every viewport. */
+body.flight-mode #devil-guide-summon {
+  left: max(18px, env(safe-area-inset-left));
+  bottom: max(150px, calc(env(safe-area-inset-bottom) + 140px));
+}
+
+@media (max-width: 700px) {
+  body.flight-mode #devil-guide-summon {
+    left: max(10px, env(safe-area-inset-left));
+    bottom: max(220px, calc(env(safe-area-inset-bottom) + 210px));
   }
 }

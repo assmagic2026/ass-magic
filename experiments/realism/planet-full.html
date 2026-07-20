@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#182f34">
     <title>ASS MAGIC / Whole Planet Study</title>
-    <link rel="stylesheet" href="./style.css">
+    <link rel="stylesheet" href="../../style.css?v=realism-136">
+    <link rel="stylesheet" href="./style.css?v=realism-142">
   </head>
   <body>
     <main id="stage">
@@ -42,13 +43,137 @@
       <div id="flight-stick" class="flight-stick" aria-hidden="true"><span></span></div>
       <label id="flight-speed-panel" class="flight-speed-panel">
         <span>SPEED</span>
-        <output id="flight-speed-value">40</output>
-        <input id="flight-speed-slider" type="range" min="12" max="120" step="1" value="40" orient="vertical">
+        <output id="flight-speed-value">30</output>
+        <span class="flight-speed-limit">120</span>
+        <span class="flight-speed-rail" aria-hidden="true">
+          <span id="flight-speed-fill"></span>
+          <span id="flight-speed-thumb"></span>
+        </span>
+        <span class="flight-speed-limit">12</span>
+        <input id="flight-speed-slider" type="range" min="12" max="120" step="1" value="30" orient="vertical">
       </label>
       <div id="flight-readout" class="flight-readout" aria-live="polite"></div>
+
+      <section id="experience-music" class="experience-music" aria-label="音楽プレイヤー">
+        <div class="experience-music-art">
+          <img id="experience-art" alt="再生中のジャケット">
+        </div>
+        <div class="experience-music-copy">
+          <strong id="experience-track-title"></strong>
+          <div class="experience-music-actions">
+            <button id="experience-play" type="button" aria-label="再生">
+              <span class="experience-toggle-icon" aria-hidden="true"></span>
+            </button>
+            <button id="experience-next" type="button" aria-label="次の曲">
+              <span class="experience-next-icon" aria-hidden="true"><span></span></span>
+            </button>
+            <button id="experience-lyrics-toggle" type="button" aria-label="歌詞表示" aria-pressed="false">Lyric</button>
+          </div>
+        </div>
+      </section>
+
+      <aside id="experience-lyrics" class="experience-lyrics" aria-label="歌詞">
+        <button id="experience-lyrics-close" type="button">Close</button>
+        <pre id="experience-lyrics-text"></pre>
+      </aside>
+
+      <div id="experience-toast" class="experience-toast" aria-live="polite"></div>
+
+      <div id="experience-overlay" class="experience-overlay" aria-hidden="true">
+        <div class="experience-overlay-backdrop"></div>
+        <section class="experience-modal" role="dialog" aria-modal="true">
+          <header>
+            <h2 id="experience-modal-title"></h2>
+            <button id="experience-modal-close" type="button">Close</button>
+          </header>
+          <div id="experience-modal-body" class="experience-modal-body"></div>
+        </section>
+      </div>
+
+      <audio id="experience-audio" preload="metadata"></audio>
       <div class="loading" id="loading">BUILDING THE WHOLE PLANET</div>
     </main>
 
-    <script type="module" src="./planet-full.js?v=realism-80"></script>
+    <div id="ending-whiteout" aria-hidden="true">
+      <div id="ending-true-message">ありがとうニャー</div>
+    </div>
+    <div id="ending-overlay" aria-hidden="true">
+      <div id="ending-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="Ending">
+        <div id="ending-rise" aria-hidden="true"></div>
+        <div id="ending-roll-viewport" aria-hidden="true">
+          <div id="ending-roll-track">
+            <div class="ending-roll-credit"><div class="ending-roll-role">制作</div><div class="ending-roll-name">ASS MAGIC</div></div>
+            <div class="ending-roll-credit"><div class="ending-roll-role">音楽</div><div class="ending-roll-name">ASS MAGIC</div></div>
+            <div class="ending-roll-credit"><div class="ending-roll-role">アートディレクション</div><div class="ending-roll-name">ASS MAGIC</div></div>
+            <div class="ending-roll-credit"><div class="ending-roll-role">クリエイティブディレクション</div><div class="ending-roll-name">ASS MAGIC</div></div>
+            <div class="ending-roll-credit"><div class="ending-roll-role">出演</div><div class="ending-roll-name">絹枝</div></div>
+            <div class="ending-roll-credit"><div class="ending-roll-role">Special Thanks</div><div class="ending-roll-name">皆様</div></div>
+            <div class="ending-roll-credit"><div class="ending-roll-role">帰還成功者</div><div id="ending-returnees-list" class="ending-roll-list">未確認</div></div>
+            <div class="ending-roll-credit"><div class="ending-roll-role">真の帰還成功者</div><div id="ending-true-returnees-list" class="ending-roll-list">未確認</div></div>
+            <div class="ending-roll-credit ending-roll-credit-last"></div>
+          </div>
+        </div>
+        <button id="ending-restart-trigger" class="ui-control" type="button" aria-label="最初の飛行画面に戻る">END</button>
+        <button id="ending-close" class="ui-control" type="button">閉じる</button>
+      </div>
+    </div>
+
+    <div id="book-overlay" aria-hidden="true">
+      <div id="book-backdrop" class="ui-control"></div>
+      <div id="book-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="記録の本">
+        <div id="book-panel-head"><button id="book-close" class="ui-control" type="button" aria-label="Close book">Close</button></div>
+        <div id="book-mode-switch" class="ui-control" role="tablist" aria-label="Book actions">
+          <button id="book-view-write" class="book-mode-btn ui-control" type="button" data-book-view="write" aria-selected="false">何か書き残す</button>
+          <button id="book-view-read" class="book-mode-btn ui-control is-active" type="button" data-book-view="read" aria-selected="true">読んでみる</button>
+        </div>
+        <div id="book-spread">
+          <section class="book-view book-page is-active" data-book-view="read">
+            <div class="book-page-label">READ</div>
+            <div id="book-message-page" class="ui-control" aria-live="polite"></div>
+            <button id="book-next-page" class="ui-control" type="button">ページをめくる</button>
+          </section>
+          <section class="book-view book-page" data-book-view="write">
+            <div class="book-page-label">WRITE</div>
+            <form id="book-form" class="ui-control">
+              <input id="book-name" class="ui-control" type="text" maxlength="24" placeholder="名前（任意）">
+              <textarea id="book-message-input" class="ui-control" rows="6" maxlength="280" placeholder="何を書く？"></textarea>
+              <button id="book-submit" class="ui-control" type="submit">記す</button>
+              <div id="book-status">本の記録を読み込んでいます。</div>
+            </form>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="black-box-overlay" aria-hidden="true">
+      <div id="black-box-backdrop" class="ui-control"></div>
+      <div id="black-box-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="黒い箱">
+        <div id="black-box-head">
+          <div id="black-box-title"><span class="black-box-kicker">高速移動する</span><span class="black-box-main-title">黒い箱を捕獲</span></div>
+          <button id="black-box-close" class="ui-control" type="button" aria-label="Close black box">Close</button>
+        </div>
+        <div id="black-box-view-intro" class="black-box-view is-active">
+          <div id="black-box-actions"><button id="black-box-open" class="ui-control" type="button">開けてみる</button><button id="black-box-ignore" class="ui-control" type="button">ほっとく</button></div>
+        </div>
+        <div id="black-box-view-reveal" class="black-box-view">
+          <img id="black-box-cat-image" src="../../blackbox-cat.jpg" alt="箱の中にいた猫">
+          <div id="black-box-caption">かわいいのがいた。</div>
+          <div id="black-box-reveal-actions"><a id="black-box-download" class="ui-control" href="../../blackbox-cat.jpg" download="blackbox-cat.jpg">保存する</a></div>
+        </div>
+        <div id="black-box-view-cat-route" class="black-box-view">
+          <div id="black-box-cat-route-copy"><p class="black-box-dialog-line">あなた「お前も帰りたいか？」</p><p class="black-box-dialog-line">猫「ニャー。」</p></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="music-selector-overlay" aria-hidden="true">
+      <div id="music-selector-backdrop" class="ui-control"></div>
+      <div id="music-selector-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="曲を選ぶ">
+        <div id="music-selector-head"><button id="music-selector-close" class="ui-control" type="button" aria-label="Close music selector">Close</button></div>
+        <div id="music-selector-browser"><div id="music-selector-now-playing"></div><div id="music-selector-list" class="ui-control" aria-label="楽曲リスト"></div></div>
+      </div>
+    </div>
+
+    <script type="module" src="./planet-full.js?v=realism-152"></script>
   </body>
 </html>

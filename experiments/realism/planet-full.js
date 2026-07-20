@@ -8,13 +8,15 @@ import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
 import {
   createFlightPlayer,
   updateFlightPlayer,
-} from "./whole-planet-player.js?v=realism-41";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-70";
+} from "./whole-planet-player.js?v=realism-46";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-136";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-140";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const SUN_DIRECTION = new THREE.Vector3(0.82, 0.33, 0.46).normalize();
+const WORLD_SUN_DIRECTION = SUN_DIRECTION.clone();
 const TERRAIN_DRY = new THREE.Color(0x827965);
 const TERRAIN_WET = new THREE.Color(0x46564b);
 const TERRAIN_ROCK = new THREE.Color(0x66635d);
@@ -87,7 +89,7 @@ const PLANET_LOADS = Object.freeze({
     planetDetail: 4,
     crackCount: 0,
     dustCount: 600,
-    cloudCount: 16,
+    cloudCount: 0,
     atmosphereSegments: 24,
   },
   low: {
@@ -95,7 +97,7 @@ const PLANET_LOADS = Object.freeze({
     planetHeightSegments: 96,
     crackCount: 360,
     dustCount: 250,
-    cloudCount: 12,
+    cloudCount: 0,
     atmosphereSegments: 24,
   },
   standard: {
@@ -103,7 +105,7 @@ const PLANET_LOADS = Object.freeze({
     planetHeightSegments: 128,
     crackCount: 800,
     dustCount: 500,
-    cloudCount: 15,
+    cloudCount: 0,
     atmosphereSegments: 32,
   },
   high: {
@@ -111,7 +113,7 @@ const PLANET_LOADS = Object.freeze({
     planetHeightSegments: 256,
     crackCount: 1400,
     dustCount: 900,
-    cloudCount: 18,
+    cloudCount: 0,
     atmosphereSegments: 48,
   },
 });
@@ -128,6 +130,7 @@ const settings = {
   scopeLabel: "WHOLE PLANET",
   loadLabel: `R340 ${meshLabel} / LANDMARK 8 / CLOUD ${planetLoad.cloudCount.toLocaleString()}`,
 };
+const terrainAssistDebugEnabled = new URLSearchParams(window.location.search).get("flightdebug") === "1";
 configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
@@ -154,7 +157,10 @@ let hemisphereLight = null;
 let twilightFillLight = null;
 let nightFillLight = null;
 let sunKeyLight = null;
+let moonKeyLight = null;
 let flightShadowLight = null;
+let worldInversionTarget = 0;
+let worldInversionMix = 0;
 scene.background = new THREE.Color(0x091317);
 if (settings.mode === "realism" && settings.view === "flight") {
   scene.fog = new THREE.FogExp2(0xaacbd4, 0.0036);
@@ -176,8 +182,7 @@ planet.receiveShadow = realismShadowsEnabled;
 scene.add(planet);
 const water = settings.mode === "realism" ? createWaterSurface() : null;
 if (water) scene.add(water);
-const cave = settings.mode === "realism" ? createFlyThroughCave() : null;
-if (cave) scene.add(cave);
+const cave = null;
 const sky = settings.view === "flight" ? createSky() : null;
 if (sky) scene.add(sky);
 const waterSpray = settings.mode === "realism" && settings.view === "flight"
@@ -207,6 +212,7 @@ Object.assign(specialLandmarks.directions, {
   cloud: cloudVolumes[0]?.position.clone().normalize(),
 });
 if (specialLandmarks.ready) externalTextureLoads.push(specialLandmarks.ready);
+let waterPlayerReflection = null;
 const flightPlayer = createFlightPlayer(scene, {
   modelUrl: useGlbAssets ? "./assets/models/cesium-man.glb" : null,
   castShadow: realismShadowsEnabled,
@@ -214,12 +220,19 @@ const flightPlayer = createFlightPlayer(scene, {
 if (flightPlayer.ready) externalTextureLoads.push(flightPlayer.ready);
 flightPlayer.player.visible = settings.view === "flight";
 flightPlayer.shadow.visible = false;
+if (settings.mode === "realism" && settings.view === "flight") {
+  if (flightPlayer.ready) {
+    flightPlayer.ready.then(installWaterPlayerReflection, installWaterPlayerReflection);
+  } else {
+    installWaterPlayerReflection();
+  }
+}
 if (realismShadowsEnabled) {
   flightPlayer.player.traverse((object) => {
     if (object.isMesh) object.castShadow = true;
   });
   specialLandmarks.root.traverse((object) => {
-    if (!object.isMesh || object.material?.transparent) return;
+    if (!object.isMesh || object.material?.transparent || object.userData.noShadow) return;
     object.castShadow = true;
     object.receiveShadow = true;
   });
@@ -234,6 +247,7 @@ const flightStick = document.querySelector("#flight-stick");
 const flightStickKnob = flightStick.querySelector("span");
 const flightSpeedSlider = document.querySelector("#flight-speed-slider");
 const flightSpeedValue = document.querySelector("#flight-speed-value");
+const flightSpeedPanel = document.querySelector("#flight-speed-panel");
 const flightReadout = document.querySelector("#flight-readout");
 const flightHelp = document.querySelector(".help");
 const flightStickTarget = new THREE.Vector2();
@@ -246,11 +260,24 @@ const flightPreviousForward = new THREE.Vector3();
 const flightCross = new THREE.Vector3();
 const flightVisualForward = new THREE.Vector3();
 const flightCameraForward = new THREE.Vector3();
+const flightCameraOrbitForward = new THREE.Vector3();
 const flightCameraTarget = new THREE.Vector3();
 const flightCameraDesired = new THREE.Vector3();
+const flightCameraFocus = new THREE.Vector3();
+const flightCameraUpTarget = new THREE.Vector3();
+const flightCameraLookSmoothed = new THREE.Vector3();
+const flightEarthDirection = new THREE.Vector3();
+const flightEarthProjected = new THREE.Vector3();
+const flightBeamClosestPoint = new THREE.Vector3();
+const flightBeamOffset = new THREE.Vector3();
 const flightTerrainAheadUp = new THREE.Vector3();
+const terrainAssistDirection = new THREE.Vector3();
+const terrainAssistLaneDirection = new THREE.Vector3();
+const terrainAssistLaneRight = new THREE.Vector3();
+const flightAltitudeDirection = new THREE.Vector3();
 const flightFogColor = new THREE.Color();
 const flightSunColor = new THREE.Color();
+const waterViewUp = new THREE.Vector3();
 const flightHemisphereSkyColor = new THREE.Color();
 const flightHemisphereGroundColor = new THREE.Color();
 const lightDaySun = new THREE.Color(0xffe0b0);
@@ -264,13 +291,15 @@ const lightNightGround = new THREE.Color(0x1d2a42);
 const flightFogDay = new THREE.Color(0xaacbd4);
 const flightFogDusk = new THREE.Color(0xc58b73);
 const flightFogNight = new THREE.Color(0x304b67);
+const flightBackgroundGround = new THREE.Color(0x091317);
+const flightBackgroundSpace = new THREE.Color(0x000000);
 const cloudMistColor = new THREE.Color(0xe8eef0);
 let cloudPassageMix = 0;
 const flight = {
   position: new THREE.Vector3(),
   forward: new THREE.Vector3(),
-  speed: 40,
-  speedSelection: 40,
+  speed: 30,
+  speedSelection: 30,
   holdAccel: 0,
   radialSpeed: 0,
   cruiseAltitude: 10,
@@ -287,9 +316,29 @@ const flight = {
   directLastY: 0,
   directTurnX: 0,
   directTurnY: 0,
+  descendHeld: false,
+  descentElapsed: 0,
+  descentPose: 0,
+  descentKick: 0,
   accelPointers: new Set(),
   keys: new Set(),
   readoutElapsed: 0,
+};
+const terrainAssist = {
+  scanElapsed: Infinity,
+  strength: 0,
+  targetStrength: 0,
+  targetVerticalSpeed: 0,
+  verticalSpeed: 0,
+  verticalAcceleration: 0,
+  yawRate: 0,
+  targetYawRate: 0,
+  side: 0,
+  sideHold: 0,
+  summitHold: 0,
+  phase: "normal",
+  minimumClearance: Infinity,
+  timeToRisk: 0,
 };
 const orbit = {
   yaw: -0.46,
@@ -311,6 +360,7 @@ const FLIGHT_STICK_RESPONSE = 5;
 const FLIGHT_STICK_RETURN = 3.2;
 const FLIGHT_VERTICAL_RELEASE = 12;
 const FLIGHT_ARROW_SCALE_X = 0.5;
+const TERRAIN_ASSIST_LANES = Object.freeze([-1, 0, 1]);
 const FLIGHT_PHYSICS = Object.freeze({
   GROUND_SPEED: 7,
   MIN_FORWARD_SPEED: 9,
@@ -320,45 +370,119 @@ const FLIGHT_PHYSICS = Object.freeze({
   LOCK_SPEED_ACCEL: 3.2,
   LOCK_SPEED_SETTLE: 0.9,
   STICK_BOOST: 1.7,
-  STICK_CLIMB: 11.5,
-  STICK_DESCEND: 6.5,
-  DESCEND_RESPONSE: 1.7,
-  DESCEND_TARGET_RATIO: 0.3,
-  DESCEND_TARGET_MIN: 1.9,
-  SOFT_GROUND_RANGE: 2.4,
-  SOFT_GROUND_FORCE: 28,
-  SOFT_GROUND_DAMP: 7.5,
-  SOFT_GROUND_MIN_ALT: 0.32,
-  SOFT_GROUND_LAND_ALT: 0.08,
+  STICK_CLIMB: 28.75,
+  DESCEND_RESPONSE: 0.95,
+  DESCEND_SHALLOW_RESPONSE: 2.6,
+  DESCENT_LOW_ALTITUDE_ANGLE: THREE.MathUtils.degToRad(6),
+  DESCENT_MID_ALTITUDE_ANGLE: THREE.MathUtils.degToRad(45),
+  DESCENT_HIGH_ALTITUDE_ANGLE: THREE.MathUtils.degToRad(80),
+  DESCENT_ALTITUDE_BLEND_START: 2.5,
+  DESCENT_MID_ALTITUDE: 30,
+  DESCENT_HIGH_ALTITUDE: 100,
+  DESCENT_HIGH_SPEED_ANGLE_SCALE: 0.72,
+  DESCENT_SURFACE_RESERVE: 2.4,
+  DESCENT_MIN_TIME_LOW_SPEED: 1.6,
+  DESCENT_MIN_TIME_HIGH_SPEED: 2.8,
+  DESCENT_MIN_SINK_SPEED: 0.45,
+  DESCENT_SURFACE_GUARD_START: 6,
+  DESCENT_SURFACE_GUARD_END: 20,
+  DESCENT_POSE_RESPONSE: 3.1,
+  DESCENT_POSE_RETURN: 2.6,
+  DESCENT_POSE_RAMP_START: 0.08,
+  DESCENT_POSE_RAMP_END: 0.82,
+  DESCENT_TRANSITION_KICK_SPEED: 5,
+  DESCENT_TRANSITION_KICK_DECAY: 0.58,
+  DESCENT_POSE_MIN_LEAD: THREE.MathUtils.degToRad(8),
+  DESCENT_POSE_MAX_LEAD: THREE.MathUtils.degToRad(44),
+  DESCENT_FLOAT_DURATION: 0.42,
+  DESCENT_GRAVITY_RAMP_DURATION: 0.68,
+  DESCENT_GRAVITY: 11.5,
+  DESCENT_FLOAT_DRAG: 0.1,
+  // Terrain assist: time-weighted sampling followed by jerk-limited correction.
+  TERRAIN_ASSIST_SCAN_INTERVAL: 0.08,
+  TERRAIN_ASSIST_TIMES: Object.freeze([0.45, 0.85, 1.35, 2.1, 3.2]),
+  TERRAIN_ASSIST_LANE_ANGLE: 0.05,
+  TERRAIN_ASSIST_SAFE_CLEARANCE: 3.6,
+  TERRAIN_ASSIST_START_MARGIN: 6.5,
+  TERRAIN_ASSIST_MAX_ASCENT_SPEED: 15,
+  TERRAIN_ASSIST_MAX_DESCENT_SPEED: 1.8,
+  TERRAIN_ASSIST_MAX_ASCENT_ACCEL: 7.5,
+  TERRAIN_ASSIST_MAX_DESCENT_ACCEL: 0.8,
+  TERRAIN_ASSIST_MAX_VERTICAL_JERK: 18,
+  TERRAIN_ASSIST_VERTICAL_RESPONSE: 1.8,
+  TERRAIN_ASSIST_TARGET_RISE: 2.5,
+  TERRAIN_ASSIST_TARGET_FALL: 0.9,
+  TERRAIN_ASSIST_MAX_YAW_RATE: 0.18,
+  TERRAIN_ASSIST_MAX_YAW_ACCEL: 0.26,
+  TERRAIN_ASSIST_STRENGTH_RISE: 2,
+  TERRAIN_ASSIST_STRENGTH_FALL: 0.72,
+  TERRAIN_ASSIST_IDLE_STRENGTH: 0.42,
+  TERRAIN_ASSIST_CONTROL_STRENGTH: 1.25,
+  TERRAIN_ASSIST_CONTROL_ACCEL_MULTIPLIER: 1.8,
+  TERRAIN_ASSIST_SIDE_HOLD_SECONDS: 1.45,
+  TERRAIN_ASSIST_SUMMIT_HOLD_SECONDS: 0.9,
+  TERRAIN_ASSIST_EMERGENCY_CLEARANCE: 0.3,
+  TERRAIN_ASSIST_EMERGENCY_SOFT_RANGE: 20,
+  TERRAIN_ASSIST_EMERGENCY_BRAKE_TIME: 1.5,
+  TERRAIN_ASSIST_EMERGENCY_RECOVERY_ACCEL: 160,
+  TERRAIN_ASSIST_EMERGENCY_MIN_SPEED: 12,
+  TERRAIN_ASSIST_EMERGENCY_SPEED_RESPONSE: 3.2,
+  TERRAIN_OBSTACLE_AHEAD_SECONDS: 0.8,
+  TERRAIN_OBSTACLE_RISE_THRESHOLD: 1.2,
   NEUTRAL_ALTITUDE: 10,
-  NEUTRAL_DESCEND_MIN: 0.55,
-  NEUTRAL_DESCEND_MAX: 2.1,
-  NEUTRAL_RETURN: 1.1,
-  NEUTRAL_ASCENT_BRAKE: 3,
+  NEUTRAL_DESCEND_MAX: 3,
+  NEUTRAL_ASCEND_MAX: 2.2,
+  NEUTRAL_RETURN: 0.8,
+  NEUTRAL_ASCENT_BRAKE: 0.3335,
+  DESCENT_COAST_RESPONSE: 0.3335,
+  NEUTRAL_ALTITUDE_RETURN: 0.32,
   NEUTRAL_ALTITUDE_DEADZONE: 0.3,
   TERRAIN_LOOK_AHEAD_SECONDS: 1.15,
   TERRAIN_FOLLOW_ASCENT_MAX: 6,
-  TERRAIN_FOLLOW_DESCENT_MAX: 3.2,
+  TERRAIN_FOLLOW_DESCENT_MAX: 2.4,
+  TERRAIN_FOLLOW_DESCENT_RESPONSE: 0.42,
   TERRAIN_FOLLOW_ALTITUDE_RETURN: 0.45,
   TERRAIN_FOLLOW_ALTITUDE_MAX: 2.1,
-  MAX_ASCENT_ANGLE: Math.PI / 4,
-  CRUISE_BODY_PITCH: -0.12,
-  DESCEND_INPUT_PITCH: 0.18,
-  MAX_BODY_PITCH: Math.PI / 9,
-  BODY_PITCH_RESPONSE: 6,
-  BODY_DESCEND_PITCH_RESPONSE: 1.5,
+  MAX_ASCENT_ANGLE: Math.PI * 0.36,
+  CRUISE_BODY_PITCH: 0,
+  BODY_PITCH_RESPONSE: 1.8,
+  BODY_PITCH_ASCENT_RESPONSE: 5.5,
+  BODY_PITCH_DESCENT_RESPONSE: 10,
+  BODY_PITCH_DESCENT_INPUT_RESPONSE: 3,
   MAX_BANK: 0.9,
   BANK_FROM_TURN: 3.4,
   ROLL_RESPONSE: 4.8,
   CAMERA_DISTANCE: 11,
   CAMERA_HEIGHT: 2.8,
   CAMERA_DISTANCE_SPEED: 0.08,
-  CAMERA_SMOOTH: 0.12,
+  CAMERA_SMOOTH: 0.075,
+  CAMERA_LOOK_SMOOTH: 0.1,
+  CAMERA_HIGH_ALTITUDE_SMOOTH: 0.42,
   CAMERA_PITCH_SMOOTH: 3.4,
-  CAMERA_DESCEND_PITCH_SMOOTH: 0.85,
+  CAMERA_DESCEND_PITCH_SMOOTH: 4,
   BASE_FOV: 70,
   SPEED_FOV: 7,
 });
+
+const experience = settings.view === "flight"
+  ? createWholePlanetExperience({
+    canvas,
+    scene,
+    camera,
+    flight,
+    landmarks: specialLandmarks,
+    getAltitude: getFlightAltitude,
+    getSurfaceRadius,
+    onGuideSpeedChange(speed) {
+      flight.speedSelection = speed;
+      flightSpeedSlider.value = String(speed);
+      syncFlightSpeedUi();
+    },
+    onWorldInversion(inverted) {
+      worldInversionTarget = inverted ? 1 : 0;
+    },
+  })
+  : null;
 
 if (settings.view === "flight") {
   document.body.classList.add("flight-mode");
@@ -390,17 +514,21 @@ let elapsed = 0;
 renderer.setAnimationLoop(() => {
   const delta = Math.min(clock.getDelta(), 0.1);
   elapsed += delta;
+  updateWorldInversion(delta);
   specialLandmarks.update(delta);
-  if (settings.view === "flight") updateFlight(delta);
-  else updateOrbit(delta);
+  experience?.update(delta);
+  if (settings.view === "flight") {
+    if (experience?.isGuideNavigating()) updateGuidedFlight(delta);
+    else if (!experience?.isPaused()) updateFlight(delta);
+  } else {
+    updateOrbit(delta);
+  }
   if (waterSpray) updateWaterSpray(waterSpray, delta);
 
   for (const layer of movingSurfaceLayers) {
     layer.object.rotation.y = elapsed * layer.speed;
   }
-  if (water?.material.normalMap) {
-    water.material.normalMap.offset.set(elapsed * 0.004, elapsed * -0.0025);
-  }
+  if (water) updateWaterSurface(water, elapsed, delta);
   if (atmosphere) atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
   if (sky) {
     sky.position.copy(camera.position);
@@ -499,7 +627,17 @@ function terrainFeatureHeight(direction) {
   height += 16 * Math.exp(-Math.pow((craterDistance - 0.15) / 0.048, 2));
 
   const basinDistance = chordDistance(direction, WATER_DIRECTION);
-  height -= 29 * Math.exp(-Math.pow(basinDistance / 0.24, 2));
+  const coastRipple = Math.sin(
+    direction.dot(FEATURE_AXIS_A) * 92
+      + direction.dot(FEATURE_AXIS_B) * 41
+      + direction.y * 27,
+  );
+  const coastWarp = terrainSignal(direction, 13.5, 7.31) * 0.052
+    + terrainSignal(direction, 31, 1.87) * 0.022
+    + coastRipple * 0.016;
+  const coastRadius = THREE.MathUtils.clamp(0.218 + coastWarp, 0.14, 0.305);
+  const inletWarp = terrainSignal(direction, 8.2, 4.11) * 0.026;
+  height -= 29 * Math.exp(-Math.pow((basinDistance + inletWarp) / coastRadius, 2.35));
 
   const valleyCrossTrack = Math.abs(direction.dot(VALLEY_NORMAL));
   const valleyAlongTrack = chordDistance(direction, VALLEY_DIRECTION);
@@ -580,6 +718,12 @@ function getSurfaceRadius(direction) {
   return settings.mode === "realism" ? Math.max(terrainRadius, WATER_RADIUS) : terrainRadius;
 }
 
+function getFlightAltitude(position) {
+  if (!position || position.lengthSq() < 0.0001) return 0;
+  flightAltitudeDirection.copy(position).normalize();
+  return position.length() - getSurfaceRadius(flightAltitudeDirection) - PLAYER_CLEARANCE;
+}
+
 function getTerrainColor(direction, height, target) {
   if (settings.mode !== "realism") {
     const bands = [0x00d9ff, 0x7a4dff, 0xff3f94, 0xff9822, 0xb8ff1f];
@@ -642,34 +786,251 @@ function createRealisticPlanetMaterial() {
 function createWaterSurface() {
   const widthSegments = Math.max(96, Math.round(planetLoad.planetWidthSegments * 0.75));
   const heightSegments = Math.max(48, Math.round(planetLoad.planetHeightSegments * 0.75));
-  const normalMap = createWaterNormalTexture(settings.quality === "high" ? 256 : 128);
-  const material = new THREE.MeshPhysicalMaterial({
-    color: 0x73bac4,
-    roughness: 0.16,
+  const textureSize = settings.quality === "high" ? 256 : 128;
+  const normalMap = createWaterNormalTexture(textureSize, 13, 6.5);
+  const detailNormalMap = createWaterNormalTexture(textureSize, 31, 15.5);
+  detailNormalMap.offset.set(0.37, 0.18);
+  const environmentMap = createWaterEnvironmentMap();
+  const primaryMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x149fbe,
+    roughness: 0.035,
     metalness: 0,
     clearcoat: 1,
-    clearcoatRoughness: 0.12,
-    reflectivity: 0.7,
+    clearcoatRoughness: 0.06,
+    reflectivity: 0.88,
     ior: 1.333,
     specularIntensity: 1,
-    specularColor: 0xd9f4f5,
-    envMap: createWaterEnvironmentMap(),
-    envMapIntensity: 0.9,
+    specularColor: 0xe8fdff,
+    envMap: environmentMap,
+    envMapIntensity: 1.85,
+    iridescence: 0.58,
+    iridescenceIOR: 1.32,
+    iridescenceThicknessRange: [100, 520],
     normalMap,
-    normalScale: new THREE.Vector2(0.16, 0.16),
+    normalScale: new THREE.Vector2(0.23, 0.23),
     transparent: true,
-    opacity: 0.58,
+    opacity: 0.72,
     depthWrite: false,
   });
-  const waterSurface = new THREE.Mesh(
+  const detailMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0xb7ffff,
+    roughness: 0.052,
+    metalness: 0,
+    clearcoat: 1,
+    clearcoatRoughness: 0.04,
+    reflectivity: 0.95,
+    specularIntensity: 1,
+    specularColor: 0xffffff,
+    envMap: environmentMap,
+    envMapIntensity: 2,
+    iridescence: 0.86,
+    iridescenceIOR: 1.3,
+    iridescenceThicknessRange: [120, 700],
+    normalMap: detailNormalMap,
+    normalScale: new THREE.Vector2(0.32, 0.32),
+    transparent: true,
+    opacity: 0.12,
+    depthWrite: false,
+    blending: THREE.NormalBlending,
+  });
+  applyWaterWaveShader(primaryMaterial, 0.11, 0.032, 0.74);
+  applyWaterWaveShader(detailMaterial, 0.055, 0.061, -1.08);
+  const primary = new THREE.Mesh(
     new THREE.SphereGeometry(WATER_RADIUS, widthSegments, heightSegments),
-    material,
+    primaryMaterial,
   );
-  waterSurface.renderOrder = 1;
-  return waterSurface;
+  const detailWidthSegments = Math.max(96, Math.round(widthSegments * 0.5));
+  const detailHeightSegments = Math.max(48, Math.round(heightSegments * 0.5));
+  const detail = new THREE.Mesh(
+    new THREE.SphereGeometry(
+      WATER_RADIUS + 0.055,
+      detailWidthSegments,
+      detailHeightSegments,
+    ),
+    detailMaterial,
+  );
+  const prismMaterial = createWaterPrismMaterial();
+  const prism = new THREE.Mesh(detail.geometry, prismMaterial);
+  prism.scale.setScalar(1.00018);
+  primary.renderOrder = 1;
+  detail.renderOrder = 2;
+  prism.renderOrder = 3;
+  const group = new THREE.Group();
+  group.add(primary, detail, prism);
+  group.userData.primaryMaterial = primaryMaterial;
+  group.userData.detailMaterial = detailMaterial;
+  group.userData.normalMap = normalMap;
+  group.userData.detailNormalMap = detailNormalMap;
+  group.userData.prismMaterial = prismMaterial;
+  group.userData.dayColor = new THREE.Color(0x149fbe);
+  group.userData.duskColor = new THREE.Color(0x6f5a83);
+  group.userData.nightColor = new THREE.Color(0x0d4770);
+  return group;
 }
 
-function createWaterNormalTexture(size) {
+function createWaterPrismMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      waterPrismTime: { value: 0 },
+    },
+    vertexShader: `
+      varying vec3 vWaterWorldPosition;
+      varying vec3 vWaterWorldNormal;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWaterWorldPosition = worldPosition.xyz;
+        vWaterWorldNormal = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform float waterPrismTime;
+      varying vec3 vWaterWorldPosition;
+      varying vec3 vWaterWorldNormal;
+      void main() {
+        vec3 viewDirection = normalize(cameraPosition - vWaterWorldPosition);
+        float fresnel = pow(1.0 - abs(dot(normalize(vWaterWorldNormal), viewDirection)), 2.2);
+        float bandA = 0.5 + 0.5 * sin(vWaterWorldPosition.x * 0.085 + vWaterWorldPosition.z * 0.117 + waterPrismTime * 1.7);
+        float bandB = 0.5 + 0.5 * sin(vWaterWorldPosition.y * 0.13 - vWaterWorldPosition.x * 0.061 - waterPrismTime * 1.15);
+        float sparkle = pow(max(0.0, bandA * bandB), 12.0);
+        vec3 rainbow = 0.56 + 0.44 * cos(6.28318 * (vec3(0.0, 0.33, 0.67) + bandA * 0.28 + waterPrismTime * 0.025));
+        float alpha = (0.018 + sparkle * 0.24) * (0.22 + fresnel);
+        gl_FragColor = vec4(rainbow * (0.38 + sparkle * 1.35), alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+}
+
+function applyWaterWaveShader(material, amplitude, frequency, speed) {
+  material.userData.waveUniform = { value: 0 };
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.waterWaveTime = material.userData.waveUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>\nuniform float waterWaveTime;`,
+      )
+      .replace(
+        "#include <begin_vertex>",
+        `vec3 transformed = vec3(position);
+        float waterWave = sin((position.x + position.z * 0.71) * ${frequency.toFixed(4)} + waterWaveTime * ${speed.toFixed(3)})
+          + cos((position.z - position.y * 0.43) * ${(frequency * 1.37).toFixed(4)} - waterWaveTime * ${(speed * 0.78).toFixed(3)});
+        transformed += normal * waterWave * ${amplitude.toFixed(4)};`,
+      );
+  };
+  material.customProgramCacheKey = () => `realism-water-${amplitude}-${frequency}-${speed}`;
+}
+
+function updateWaterSurface(waterSurface, time, delta) {
+  const data = waterSurface.userData;
+  data.normalMap.offset.set(time * 0.008, time * -0.0047);
+  data.detailNormalMap.offset.set(0.37 - time * 0.013, 0.18 + time * 0.009);
+  data.primaryMaterial.userData.waveUniform.value = time;
+  data.detailMaterial.userData.waveUniform.value = time;
+  data.prismMaterial.uniforms.waterPrismTime.value = time;
+  const reference = settings.view === "flight" && flight.position.lengthSq() > 1
+    ? flight.position
+    : camera.position;
+  waterViewUp.copy(reference).normalize();
+  const sunHeight = waterViewUp.dot(WORLD_SUN_DIRECTION);
+  const dayMix = THREE.MathUtils.smoothstep(sunHeight, -0.12, 0.24);
+  const duskMix = 1 - THREE.MathUtils.smoothstep(Math.abs(sunHeight), 0.03, 0.42);
+  flightSunColor.copy(data.nightColor).lerp(data.dayColor, dayMix);
+  flightSunColor.lerp(data.duskColor, duskMix * 0.72);
+  data.primaryMaterial.color.lerp(flightSunColor, 1 - Math.exp(-2.4 * delta));
+  data.primaryMaterial.opacity = THREE.MathUtils.damp(
+    data.primaryMaterial.opacity,
+    THREE.MathUtils.lerp(0.76, 0.62, dayMix),
+    2.2,
+    delta,
+  );
+}
+
+function installWaterPlayerReflection() {
+  if (waterPlayerReflection) return;
+  flightPlayer.player.updateWorldMatrix(true, true);
+  const reflection = new THREE.Group();
+  const playerWorldInverse = flightPlayer.player.matrixWorld.clone().invert();
+  const objectToPlayer = new THREE.Matrix4();
+  const skinnedPosition = new THREE.Vector3();
+  const reflectionMaterials = [];
+  const source = flightPlayer.modelVisual || flightPlayer.proceduralVisual;
+
+  source.updateWorldMatrix(true, true);
+  source.traverse((object) => {
+    if (!object.isMesh || !object.geometry?.attributes?.position) return;
+    let geometry;
+    if (object.isSkinnedMesh) {
+      const sourcePosition = object.geometry.attributes.position;
+      const positions = new Float32Array(sourcePosition.count * 3);
+      for (let index = 0; index < sourcePosition.count; index += 1) {
+        skinnedPosition.fromBufferAttribute(sourcePosition, index);
+        object.applyBoneTransform(index, skinnedPosition);
+        object.localToWorld(skinnedPosition).applyMatrix4(playerWorldInverse);
+        positions[index * 3] = skinnedPosition.x;
+        positions[index * 3 + 1] = skinnedPosition.y;
+        positions[index * 3 + 2] = skinnedPosition.z;
+      }
+      geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      if (object.geometry.index) geometry.setIndex(object.geometry.index.clone());
+    } else {
+      geometry = object.geometry.clone();
+      objectToPlayer.multiplyMatrices(playerWorldInverse, object.matrixWorld);
+      geometry.applyMatrix4(objectToPlayer);
+    }
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x183e48,
+      transparent: true,
+      opacity: 0.2,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+      toneMapped: false,
+    });
+    reflectionMaterials.push(material);
+    const reflectedPart = new THREE.Mesh(geometry, material);
+    reflectedPart.frustumCulled = false;
+    reflection.add(reflectedPart);
+  });
+  reflection.visible = false;
+  reflection.renderOrder = 0;
+  reflection.userData.materials = reflectionMaterials;
+  scene.add(reflection);
+  waterPlayerReflection = reflection;
+}
+
+function updateWaterPlayerReflection() {
+  const reflection = waterPlayerReflection;
+  if (!reflection) return;
+  const returnState = experience?.getReturnState();
+  if (returnState?.spaceFlightActive || returnState?.ending) {
+    reflection.visible = false;
+    return;
+  }
+  flightUp.copy(flight.position).normalize();
+  const terrainRadius = getTerrainRadius(flightUp);
+  const playerRadius = flightPlayer.player.position.length();
+  const altitudeAboveWater = playerRadius - WATER_RADIUS;
+  const overOpenWater = terrainRadius <= WATER_RADIUS + 0.32;
+  const visibility = overOpenWater
+    ? 1 - THREE.MathUtils.smoothstep(altitudeAboveWater, 1.5, 28)
+    : 0;
+  reflection.visible = visibility > 0.01 && altitudeAboveWater > 0;
+  canvas.dataset.waterReflection = reflection.visible ? "visible" : "hidden";
+  if (!reflection.visible) return;
+  const mirrorRadius = WATER_RADIUS * 2 - playerRadius;
+  reflection.position.copy(flightUp).multiplyScalar(mirrorRadius);
+  reflection.quaternion.copy(flightPlayer.player.quaternion);
+  reflection.scale.set(1, -1, 1);
+  const surfaceFade = THREE.MathUtils.smoothstep(altitudeAboveWater, 0.2, 2.2);
+  const opacity = (0.12 + surfaceFade * 0.28) * visibility;
+  for (const material of reflection.userData.materials) material.opacity = opacity;
+}
+
+function createWaterNormalTexture(size, repeatX = 18, repeatY = 9) {
   const textureCanvas = document.createElement("canvas");
   textureCanvas.width = size;
   textureCanvas.height = size;
@@ -699,7 +1060,7 @@ function createWaterNormalTexture(size) {
   const texture = new THREE.CanvasTexture(textureCanvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(18, 9);
+  texture.repeat.set(repeatX, repeatY);
   texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   textureDisposables.push(texture);
   return texture;
@@ -1163,7 +1524,6 @@ function addSurfaceDetails() {
   const random = createSeededRandom(89173);
   if (settings.mode !== "realism" && planetLoad.crackCount) addCracks(random);
   addDust(random);
-  addClouds(random);
 }
 
 function addFloatingArtifacts(random) {
@@ -1542,9 +1902,9 @@ function addDust(random) {
 function addClouds(random) {
   const layers = settings.mode === "realism"
     ? [
-      { ratio: 0.5, altitude: [24, 42], size: 82, opacity: 0.62, color: 0xf4eee4 },
-      { ratio: 0.31, altitude: [40, 66], size: 110, opacity: 0.52, color: 0xdce7e8 },
-      { ratio: 0.19, altitude: [62, 94], size: 138, opacity: 0.44, color: 0xc8d8dd },
+      { ratio: 0.5, altitude: [24, 44], size: 154, opacity: 0.92, color: 0xe7e3db },
+      { ratio: 0.31, altitude: [42, 70], size: 218, opacity: 0.84, color: 0xd2dcde },
+      { ratio: 0.19, altitude: [66, 102], size: 286, opacity: 0.72, color: 0xc2d0d4 },
     ]
     : [{ ratio: 1, altitude: [20, 72], size: 34, opacity: 0.3, color: 0xe3eef0 }];
   const clusters = createDirectionClusters(random, settings.mode === "realism" ? 15 : 12);
@@ -1589,11 +1949,11 @@ function createCloudMaterial(layer) {
       void main() {
         vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
         float distanceToCamera = length(viewPosition.xyz);
-        float nearFade = smoothstep(38.0, 70.0, distanceToCamera);
+        float nearFade = smoothstep(20.0, 54.0, distanceToCamera);
         float farFade = 1.0 - smoothstep(760.0, 1120.0, distanceToCamera);
         vCloudFade = nearFade * farFade;
         vCloudAlpha = cloudAlpha;
-        gl_PointSize = min(cloudSize * cloudScale * (250.0 / max(distanceToCamera, 1.0)), 190.0);
+        gl_PointSize = min(cloudSize * cloudScale * (280.0 / max(distanceToCamera, 1.0)), 330.0);
         gl_Position = projectionMatrix * viewPosition;
       }
     `,
@@ -1608,7 +1968,7 @@ function createCloudMaterial(layer) {
         vec4 cloudSample = texture2D(cloudMap, gl_PointCoord);
         float alpha = cloudSample.a * cloudOpacity * vCloudFade * vCloudAlpha;
         if (alpha < 0.018) discard;
-        vec3 shadedColor = cloudColor * mix(0.72, 1.0, cloudSample.a);
+        vec3 shadedColor = cloudColor * mix(0.66, 1.0, cloudSample.a);
         gl_FragColor = vec4(shadedColor, alpha);
       }
     `,
@@ -1628,7 +1988,7 @@ function getCloudTexture() {
 }
 
 function createCloudPointGeometry(count, random, clusters, minimumAltitude, maximumAltitude) {
-  const puffsPerBank = 1;
+  const puffsPerBank = settings.mode === "realism" ? 3 : 1;
   const positions = new Float32Array(count * puffsPerBank * 3);
   const cloudScales = new Float32Array(count * puffsPerBank);
   const cloudAlphas = new Float32Array(count * puffsPerBank);
@@ -1648,8 +2008,8 @@ function createCloudPointGeometry(count, random, clusters, minimumAltitude, maxi
     if (side.lengthSq() < 0.001) side.crossVectors(direction, FEATURE_AXIS_A);
     side.normalize();
     across.crossVectors(direction, side).normalize();
-    const bankRadius = 13 + altitude * 0.16;
-    cloudVolumes.push({ position: center.clone(), radius: bankRadius * 1.15 });
+    const bankRadius = settings.mode === "realism" ? 32 + altitude * 0.26 : 13 + altitude * 0.16;
+    cloudVolumes.push({ position: center.clone(), radius: bankRadius * 1.48 });
     for (let puff = 0; puff < puffsPerBank; puff += 1) {
       const puffIndex = index * puffsPerBank + puff;
       const puffAngle = random() * Math.PI * 2;
@@ -1661,8 +2021,12 @@ function createCloudPointGeometry(count, random, clusters, minimumAltitude, maxi
       positions[puffIndex * 3] = puffPosition.x;
       positions[puffIndex * 3 + 1] = puffPosition.y;
       positions[puffIndex * 3 + 2] = puffPosition.z;
-      cloudScales[puffIndex] = 0.6 + random() * 0.62;
-      cloudAlphas[puffIndex] = 0.58 + random() * 0.42;
+      cloudScales[puffIndex] = settings.mode === "realism"
+        ? 0.78 + random() * 0.58
+        : 0.6 + random() * 0.62;
+      cloudAlphas[puffIndex] = settings.mode === "realism"
+        ? 0.72 + random() * 0.28
+        : 0.58 + random() * 0.42;
     }
   }
   const geometry = new THREE.BufferGeometry();
@@ -1955,6 +2319,7 @@ function createSky() {
       nightHorizon: { value: new THREE.Color(0x3d6684) },
       sunColor: { value: new THREE.Color(0xffbd78) },
       cloudMist: { value: 0 },
+      spaceMix: { value: 0 },
     },
     vertexShader: `
       varying vec3 vWorldPosition;
@@ -1977,6 +2342,7 @@ function createSky() {
       uniform vec3 nightHorizon;
       uniform vec3 sunColor;
       uniform float cloudMist;
+      uniform float spaceMix;
       varying vec3 vWorldPosition;
       void main() {
         vec3 ray = normalize(vWorldPosition - cameraPos);
@@ -2013,6 +2379,7 @@ function createSky() {
         color += sunColor * pow(sunAmount, 34.0) * 0.13 * sunVisibility;
         color += sunColor * pow(sunAmount, 920.0) * 1.08 * sunVisibility;
         color = mix(color, vec3(0.91, 0.94, 0.95), cloudMist * 0.82);
+        color = mix(color, vec3(0.0), smoothstep(0.0, 1.0, spaceMix));
         gl_FragColor = vec4(color, 1.0);
       }
     `,
@@ -2096,15 +2463,34 @@ function addLighting() {
   scene.add(sun, sun.target);
   if (settings.mode === "realism") {
     const moon = new THREE.DirectionalLight(0x91bde4, 1.35);
+    moonKeyLight = moon;
     moon.position.copy(SUN_DIRECTION).multiplyScalar(-540);
     moon.target.position.set(0, 0, 0);
     scene.add(moon, moon.target);
   }
 }
 
+function updateWorldInversion(delta) {
+  worldInversionMix = THREE.MathUtils.damp(
+    worldInversionMix,
+    worldInversionTarget,
+    0.82,
+    delta,
+  );
+  WORLD_SUN_DIRECTION.copy(SUN_DIRECTION)
+    .applyAxisAngle(FEATURE_AXIS_A, Math.PI * worldInversionMix)
+    .normalize();
+  if (sky) sky.material.uniforms.sunDirection.value.copy(WORLD_SUN_DIRECTION);
+  if (atmosphere) atmosphere.material.uniforms.sunDirection.value.copy(WORLD_SUN_DIRECTION);
+  if (sunKeyLight && !flightShadowLight) {
+    sunKeyLight.position.copy(WORLD_SUN_DIRECTION).multiplyScalar(620);
+  }
+  if (moonKeyLight) moonKeyLight.position.copy(WORLD_SUN_DIRECTION).multiplyScalar(-540);
+}
+
 function updateFlightShadow() {
   if (!flightShadowLight || settings.view !== "flight") return;
-  flightShadowLight.position.copy(flight.position).addScaledVector(SUN_DIRECTION, 180);
+  flightShadowLight.position.copy(flight.position).addScaledVector(WORLD_SUN_DIRECTION, 180);
   flightShadowLight.target.position.copy(flight.position);
   flightShadowLight.target.updateMatrixWorld();
 }
@@ -2124,6 +2510,184 @@ function updateOrbit(delta) {
     Math.cos(orbit.yaw) * planarDistance,
   );
   camera.lookAt(0, 0, 0);
+}
+
+function moveTowards(current, target, maxDelta) {
+  if (current < target) return Math.min(current + maxDelta, target);
+  return Math.max(current - maxDelta, target);
+}
+
+function scanTerrainAssist(currentRadius) {
+  const config = FLIGHT_PHYSICS;
+  const times = config.TERRAIN_ASSIST_TIMES;
+  const longestLookAhead = times[times.length - 1];
+  let centerRisk = 0;
+  let leftRisk = 0;
+  let rightRisk = 0;
+  let requiredVerticalSpeed = -config.TERRAIN_ASSIST_MAX_DESCENT_SPEED;
+  let minimumClearance = Infinity;
+  let timeToRisk = 0;
+
+  flightRight.crossVectors(flightUp, flight.forward).normalize();
+  for (const time of times) {
+    const forwardAngle = (flight.speed * time) / currentRadius;
+    terrainAssistDirection.copy(flightUp)
+      .applyAxisAngle(flightRight, forwardAngle)
+      .normalize();
+    terrainAssistLaneRight.crossVectors(terrainAssistDirection, flight.forward).normalize();
+    for (const lane of TERRAIN_ASSIST_LANES) {
+      terrainAssistLaneDirection.copy(terrainAssistDirection);
+      if (lane !== 0) {
+        terrainAssistLaneDirection
+          .addScaledVector(terrainAssistLaneRight, lane * config.TERRAIN_ASSIST_LANE_ANGLE * time)
+          .normalize();
+      }
+      const requiredRadius = getSurfaceRadius(terrainAssistLaneDirection)
+        + PLAYER_CLEARANCE
+        + config.TERRAIN_ASSIST_SAFE_CLEARANCE;
+      const projectedRadius = currentRadius + flight.radialSpeed * time;
+      const clearance = projectedRadius - requiredRadius;
+      const clearanceRisk = THREE.MathUtils.smoothstep(
+        config.TERRAIN_ASSIST_START_MARGIN - clearance,
+        0,
+        config.TERRAIN_ASSIST_START_MARGIN + config.TERRAIN_ASSIST_SAFE_CLEARANCE,
+      );
+      // Near obstacles matter most, while distant terrain starts a gentler preparation arc.
+      const urgency = THREE.MathUtils.lerp(1, 0.58, time / longestLookAhead);
+      const risk = clearanceRisk * urgency;
+      if (lane < 0) leftRisk = Math.max(leftRisk, risk);
+      else if (lane > 0) rightRisk = Math.max(rightRisk, risk);
+      else {
+        centerRisk = Math.max(centerRisk, risk);
+        if (clearance < minimumClearance) {
+          minimumClearance = clearance;
+          timeToRisk = time;
+        }
+        requiredVerticalSpeed = Math.max(
+          requiredVerticalSpeed,
+          (requiredRadius - currentRadius) / Math.max(time, 0.001),
+        );
+      }
+    }
+  }
+
+  terrainAssist.targetStrength = centerRisk;
+  terrainAssist.minimumClearance = minimumClearance;
+  terrainAssist.timeToRisk = timeToRisk;
+
+  if (terrainAssist.targetStrength > 0.02) {
+    terrainAssist.targetVerticalSpeed = THREE.MathUtils.clamp(
+      requiredVerticalSpeed,
+      -config.TERRAIN_ASSIST_MAX_DESCENT_SPEED,
+      config.TERRAIN_ASSIST_MAX_ASCENT_SPEED,
+    );
+    if (terrainAssist.targetVerticalSpeed > 0.1) {
+      terrainAssist.summitHold = config.TERRAIN_ASSIST_SUMMIT_HOLD_SECONDS;
+    }
+    if (terrainAssist.sideHold <= 0 && terrainAssist.targetStrength > 0.28) {
+      const preferredSide = leftRisk + 0.14 < rightRisk
+        ? -1
+        : rightRisk + 0.14 < leftRisk
+          ? 1
+          : 0;
+      if (preferredSide !== terrainAssist.side) {
+        terrainAssist.side = preferredSide;
+        terrainAssist.sideHold = config.TERRAIN_ASSIST_SIDE_HOLD_SECONDS;
+      }
+    }
+  } else if (terrainAssist.summitHold <= 0) {
+    terrainAssist.targetVerticalSpeed = 0;
+    if (terrainAssist.sideHold <= 0) terrainAssist.side = 0;
+  }
+  const yawRisk = THREE.MathUtils.smoothstep(terrainAssist.targetStrength, 0.25, 0.9);
+  terrainAssist.targetYawRate = terrainAssist.side
+    * config.TERRAIN_ASSIST_MAX_YAW_RATE
+    * yawRisk;
+  terrainAssist.phase = terrainAssist.targetStrength > 0.65
+    ? "avoid"
+    : terrainAssist.targetStrength > 0.02
+      ? "prepare"
+      : terrainAssist.summitHold > 0
+        ? "hold"
+        : "recover";
+}
+
+function updateTerrainAssist(delta, currentRadius, controlIntent) {
+  const config = FLIGHT_PHYSICS;
+  terrainAssist.scanElapsed += delta;
+  terrainAssist.sideHold = Math.max(0, terrainAssist.sideHold - delta);
+  terrainAssist.summitHold = Math.max(0, terrainAssist.summitHold - delta);
+  if (terrainAssist.scanElapsed >= config.TERRAIN_ASSIST_SCAN_INTERVAL) {
+    terrainAssist.scanElapsed = 0;
+    scanTerrainAssist(currentRadius);
+  }
+  const strengthRate = terrainAssist.targetStrength > terrainAssist.strength
+    ? config.TERRAIN_ASSIST_STRENGTH_RISE
+    : config.TERRAIN_ASSIST_STRENGTH_FALL;
+  terrainAssist.strength = THREE.MathUtils.damp(
+    terrainAssist.strength,
+    terrainAssist.targetStrength,
+    strengthRate,
+    delta,
+  );
+  const verticalTargetResponse = terrainAssist.targetVerticalSpeed > terrainAssist.verticalSpeed
+    ? config.TERRAIN_ASSIST_TARGET_RISE
+    : config.TERRAIN_ASSIST_TARGET_FALL;
+  terrainAssist.verticalSpeed = THREE.MathUtils.damp(
+    terrainAssist.verticalSpeed,
+    terrainAssist.targetVerticalSpeed,
+    verticalTargetResponse,
+    delta,
+  );
+  if (
+    terrainAssist.targetStrength <= 0.001
+    && terrainAssist.strength <= 0.02
+    && terrainAssist.summitHold <= 0
+  ) terrainAssist.phase = "normal";
+  terrainAssist.yawRate = moveTowards(
+    terrainAssist.yawRate,
+    terrainAssist.targetYawRate
+      * terrainAssist.strength
+      * THREE.MathUtils.lerp(
+        config.TERRAIN_ASSIST_IDLE_STRENGTH,
+        config.TERRAIN_ASSIST_CONTROL_STRENGTH,
+        controlIntent,
+      ),
+    config.TERRAIN_ASSIST_MAX_YAW_ACCEL
+      * THREE.MathUtils.lerp(1, config.TERRAIN_ASSIST_CONTROL_ACCEL_MULTIPLIER, controlIntent)
+      * delta,
+  );
+}
+
+function applyTerrainAssistToVerticalSpeed(delta, controlIntent) {
+  const config = FLIGHT_PHYSICS;
+  const holdTarget = terrainAssist.summitHold > 0
+    ? Math.max(0, terrainAssist.verticalSpeed)
+    : terrainAssist.verticalSpeed;
+  const appliedStrength = THREE.MathUtils.clamp(
+    terrainAssist.strength * THREE.MathUtils.lerp(
+      config.TERRAIN_ASSIST_IDLE_STRENGTH,
+      config.TERRAIN_ASSIST_CONTROL_STRENGTH,
+      controlIntent,
+    ),
+    0,
+    1,
+  );
+  const ascentAcceleration = config.TERRAIN_ASSIST_MAX_ASCENT_ACCEL
+    * THREE.MathUtils.lerp(1, config.TERRAIN_ASSIST_CONTROL_ACCEL_MULTIPLIER, controlIntent);
+  const desiredAcceleration = THREE.MathUtils.clamp(
+    (holdTarget - flight.radialSpeed)
+      * config.TERRAIN_ASSIST_VERTICAL_RESPONSE
+      * appliedStrength,
+    -config.TERRAIN_ASSIST_MAX_DESCENT_ACCEL,
+    ascentAcceleration,
+  );
+  terrainAssist.verticalAcceleration = moveTowards(
+    terrainAssist.verticalAcceleration,
+    desiredAcceleration,
+    config.TERRAIN_ASSIST_MAX_VERTICAL_JERK * delta,
+  );
+  flight.radialSpeed += terrainAssist.verticalAcceleration * delta;
 }
 
 function updateFlight(delta) {
@@ -2182,21 +2746,43 @@ function updateFlight(delta) {
     -1,
     1,
   );
-  const climbInput = THREE.MathUtils.clamp(
+  const smoothedClimbInput = THREE.MathUtils.clamp(
     flight.stickSmooth.y + flight.keySmooth.y + dragLift,
     -1,
     1,
   );
+  const verticalIntent = THREE.MathUtils.clamp(
+    flightStickTarget.y + flightKeyTarget.y + dragLift,
+    -1,
+    1,
+  );
+  const terrainAssistControl = THREE.MathUtils.clamp(
+    Math.max(-verticalIntent, Math.abs(turnInput) * 0.45),
+    0,
+    1,
+  );
+  // Smoothed input must not keep accelerating vertically after the control is released.
+  const climbInput = Math.abs(verticalIntent) > 0.025
+    ? smoothedClimbInput
+    : 0;
   flight.directTurnX = 0;
   flight.directTurnY = 0;
 
-  flightUp.copy(flight.position).normalize();
+  const returnState = experience?.getReturnState();
+  const spaceReturnActive = returnState?.spaceFlightActive
+    && returnState.spaceUp.lengthSq() > 0.0001
+    && !returnState.ending;
+  flightUp.copy(spaceReturnActive ? returnState.spaceUp : flight.position).normalize();
   flight.forward.applyAxisAngle(
     flightUp,
-    dragYaw + turnInput * 0.0252 * delta * 60,
+    dragYaw + (turnInput * 0.0252 * 60 + terrainAssist.yawRate) * delta,
   ).normalize();
   flight.forward.addScaledVector(flightUp, -flight.forward.dot(flightUp)).normalize();
 
+  const currentRadius = flight.position.length();
+  const currentSurface = getSurfaceRadius(flightUp) + PLAYER_CLEARANCE;
+  const altitude = currentRadius - currentSurface;
+  updateTerrainAssist(delta, currentRadius, terrainAssistControl);
   const accelerating = flight.keys.has("Space") || flight.accelPointers.size > 0;
   if (accelerating) {
     flight.holdAccel += FLIGHT_PHYSICS.HOLD_ACCEL_RATE * delta;
@@ -2206,15 +2792,16 @@ function updateFlight(delta) {
       flight.holdAccel - FLIGHT_PHYSICS.LOCK_ACCEL_DECAY * delta,
     );
   }
-  const speedTarget = Math.max(
+  const baseSpeedTarget = Math.max(
     FLIGHT_PHYSICS.MIN_FORWARD_SPEED,
     flight.speedSelection
       + Math.max(0, climbInput) * FLIGHT_PHYSICS.STICK_BOOST
       + flight.holdAccel,
   );
+  const speedTarget = baseSpeedTarget;
   const speedResponse = speedTarget > flight.speed
-    ? FLIGHT_PHYSICS.LOCK_SPEED_ACCEL
-    : FLIGHT_PHYSICS.LOCK_SPEED_SETTLE;
+      ? FLIGHT_PHYSICS.LOCK_SPEED_ACCEL
+      : FLIGHT_PHYSICS.LOCK_SPEED_SETTLE;
   flight.speed = THREE.MathUtils.damp(
     flight.speed,
     speedTarget,
@@ -2222,24 +2809,139 @@ function updateFlight(delta) {
     delta,
   );
 
-  const currentRadius = flight.position.length();
-  const currentSurface = getSurfaceRadius(flightUp) + PLAYER_CLEARANCE;
-  const altitude = currentRadius - currentSurface;
-  const descendInput = Math.max(0, -climbInput);
-  if (!flight.onGround && climbInput > 0) {
-    flight.radialSpeed += climbInput * FLIGHT_PHYSICS.STICK_CLIMB * delta;
-  } else if (!flight.onGround && climbInput < 0) {
-    const descendTarget = -descendInput * Math.max(
-      FLIGHT_PHYSICS.DESCEND_TARGET_MIN,
-      flight.speed * FLIGHT_PHYSICS.DESCEND_TARGET_RATIO,
+  if (spaceReturnActive) {
+    updateSpaceReturnFlight(delta, turnInput, climbInput, returnState);
+    return;
+  }
+
+  const lowToMidDescentMix = THREE.MathUtils.smoothstep(
+    altitude,
+    FLIGHT_PHYSICS.DESCENT_ALTITUDE_BLEND_START,
+    FLIGHT_PHYSICS.DESCENT_MID_ALTITUDE,
+  ) ** 2;
+  const midToHighDescentMix = THREE.MathUtils.smoothstep(
+    altitude,
+    FLIGHT_PHYSICS.DESCENT_MID_ALTITUDE,
+    FLIGHT_PHYSICS.DESCENT_HIGH_ALTITUDE,
+  );
+  const descentSpeedMix = THREE.MathUtils.smoothstep(
+    flight.speed,
+    30,
+    120,
+  );
+  const lowToMidDescentAngle = THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.DESCENT_LOW_ALTITUDE_ANGLE,
+    FLIGHT_PHYSICS.DESCENT_MID_ALTITUDE_ANGLE,
+    lowToMidDescentMix,
+  );
+  const altitudeDescentAngle = THREE.MathUtils.lerp(
+    lowToMidDescentAngle,
+    FLIGHT_PHYSICS.DESCENT_HIGH_ALTITUDE_ANGLE,
+    midToHighDescentMix,
+  );
+  const descentAngleLimit = altitudeDescentAngle * THREE.MathUtils.lerp(
+    1,
+    FLIGHT_PHYSICS.DESCENT_HIGH_SPEED_ANGLE_SCALE,
+    descentSpeedMix,
+  );
+  const minimumSurfaceTime = THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.DESCENT_MIN_TIME_LOW_SPEED,
+    FLIGHT_PHYSICS.DESCENT_MIN_TIME_HIGH_SPEED,
+    descentSpeedMix,
+  );
+  const surfaceLimitedSinkSpeed = Math.max(
+    FLIGHT_PHYSICS.DESCENT_MIN_SINK_SPEED,
+    (altitude - FLIGHT_PHYSICS.DESCENT_SURFACE_RESERVE) / minimumSurfaceTime,
+  );
+  const angleLimitedSinkSpeed = flight.speed * Math.tan(descentAngleLimit);
+  const nearSurfaceGuard = 1 - THREE.MathUtils.smoothstep(
+    altitude,
+    FLIGHT_PHYSICS.DESCENT_SURFACE_GUARD_START,
+    FLIGHT_PHYSICS.DESCENT_SURFACE_GUARD_END,
+  );
+  const commandedMaxDescendSpeed = THREE.MathUtils.lerp(
+    angleLimitedSinkSpeed,
+    Math.min(angleLimitedSinkSpeed, surfaceLimitedSinkSpeed),
+    nearSurfaceGuard,
+  );
+  const ascentInput = verticalIntent > 0.025 ? Math.max(0, climbInput) : 0;
+  const descendInput = verticalIntent < -0.025 ? Math.max(0, -climbInput) : 0;
+  if (descendInput > 0.05 && !flight.descendHeld) {
+    flight.descentElapsed = 0;
+    flight.descentKick = THREE.MathUtils.clamp(
+      flight.radialSpeed / FLIGHT_PHYSICS.DESCENT_TRANSITION_KICK_SPEED,
+      0,
+      1,
     );
-    flight.radialSpeed += climbInput * FLIGHT_PHYSICS.STICK_DESCEND * delta;
-    flight.radialSpeed = THREE.MathUtils.lerp(
+  }
+  flight.descendHeld = descendInput > 0.05;
+  if (!flight.onGround && ascentInput > 0) {
+    flight.descentElapsed = 0;
+    flight.descentPose = THREE.MathUtils.damp(
+      flight.descentPose,
+      0,
+      FLIGHT_PHYSICS.DESCENT_POSE_RETURN,
+      delta,
+    );
+    flight.descentKick = 0;
+    flight.radialSpeed += ascentInput * FLIGHT_PHYSICS.STICK_CLIMB * delta;
+  } else if (!flight.onGround && descendInput > 0) {
+    flight.descentElapsed += delta;
+    const descentPoseIntent = Math.max(
+      THREE.MathUtils.smoothstep(descendInput, 0.05, 0.45),
+      flight.descentKick,
+    );
+    const descentPoseRamp = THREE.MathUtils.smoothstep(
+      flight.descentElapsed,
+      FLIGHT_PHYSICS.DESCENT_POSE_RAMP_START,
+      FLIGHT_PHYSICS.DESCENT_POSE_RAMP_END,
+    );
+    flight.descentPose = THREE.MathUtils.damp(
+      flight.descentPose,
+      descentPoseIntent * descentPoseRamp,
+      FLIGHT_PHYSICS.DESCENT_POSE_RESPONSE,
+      delta,
+    );
+    flight.descentKick = THREE.MathUtils.damp(
+      flight.descentKick,
+      0,
+      FLIGHT_PHYSICS.DESCENT_TRANSITION_KICK_DECAY,
+      delta,
+    );
+    const gravityMix = THREE.MathUtils.smoothstep(
+      flight.descentElapsed,
+      FLIGHT_PHYSICS.DESCENT_FLOAT_DURATION,
+      FLIGHT_PHYSICS.DESCENT_FLOAT_DURATION
+        + FLIGHT_PHYSICS.DESCENT_GRAVITY_RAMP_DURATION,
+    );
+    // Releasing lift preserves momentum for a short weightless beat, then gravity eases in.
+    flight.radialSpeed *= Math.max(
+      0,
+      1 - FLIGHT_PHYSICS.DESCENT_FLOAT_DRAG * (1 - gravityMix) * delta,
+    );
+    flight.radialSpeed -= descendInput
+      * FLIGHT_PHYSICS.DESCENT_GRAVITY
+      * gravityMix
+      * delta;
+    const descendTarget = -descendInput * commandedMaxDescendSpeed;
+    const descendResponse = descendTarget > flight.radialSpeed
+      ? FLIGHT_PHYSICS.DESCEND_SHALLOW_RESPONSE
+      : FLIGHT_PHYSICS.DESCEND_RESPONSE;
+    flight.radialSpeed = THREE.MathUtils.damp(
       flight.radialSpeed,
       descendTarget,
-      1 - Math.exp(-FLIGHT_PHYSICS.DESCEND_RESPONSE * delta),
+      descendResponse * gravityMix,
+      delta,
     );
   } else if (!flight.onGround) {
+    flight.descentElapsed = 0;
+    flight.descentPose = THREE.MathUtils.damp(
+      flight.descentPose,
+      0,
+      FLIGHT_PHYSICS.DESCENT_POSE_RETURN,
+      delta,
+    );
+    flight.descentKick = 0;
     flightRight.crossVectors(flightUp, flight.forward).normalize();
     const lookAheadSeconds = FLIGHT_PHYSICS.TERRAIN_LOOK_AHEAD_SECONDS;
     const lookAheadAngle = flight.speed * lookAheadSeconds / currentRadius;
@@ -2250,23 +2952,40 @@ function updateFlight(delta) {
       -FLIGHT_PHYSICS.TERRAIN_FOLLOW_DESCENT_MAX,
       FLIGHT_PHYSICS.TERRAIN_FOLLOW_ASCENT_MAX,
     );
-    const altitudeError = Math.abs(altitude - flight.cruiseAltitude)
-      <= FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_DEADZONE
-      ? 0
-      : altitude - flight.cruiseAltitude;
     const altitudeReturnSpeed = THREE.MathUtils.clamp(
-      -altitudeError * FLIGHT_PHYSICS.TERRAIN_FOLLOW_ALTITUDE_RETURN,
-      -FLIGHT_PHYSICS.TERRAIN_FOLLOW_ALTITUDE_MAX,
-      FLIGHT_PHYSICS.TERRAIN_FOLLOW_ALTITUDE_MAX,
+      (FLIGHT_PHYSICS.NEUTRAL_ALTITUDE - altitude)
+        * FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_RETURN,
+      -FLIGHT_PHYSICS.NEUTRAL_DESCEND_MAX,
+      FLIGHT_PHYSICS.NEUTRAL_ASCEND_MAX,
     );
-    const neutralTarget = THREE.MathUtils.clamp(
+    let neutralTarget = THREE.MathUtils.clamp(
       terrainFollowSpeed + altitudeReturnSpeed,
       -FLIGHT_PHYSICS.TERRAIN_FOLLOW_DESCENT_MAX,
       FLIGHT_PHYSICS.TERRAIN_FOLLOW_ASCENT_MAX,
     );
-    const neutralResponse = flight.radialSpeed > neutralTarget
-      ? FLIGHT_PHYSICS.NEUTRAL_ASCENT_BRAKE
-      : FLIGHT_PHYSICS.NEUTRAL_RETURN;
+    if (
+      altitude > FLIGHT_PHYSICS.NEUTRAL_ALTITUDE
+        + FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_DEADZONE
+    ) {
+      // Above ALT10, terrain-following must not create another ascent after release.
+      neutralTarget = THREE.MathUtils.clamp(
+        neutralTarget,
+        -FLIGHT_PHYSICS.NEUTRAL_DESCEND_MAX,
+        Math.min(0, altitudeReturnSpeed),
+      );
+    }
+    const followingTerrainDrop = terrainFollowSpeed < -0.8
+      && altitude <= FLIGHT_PHYSICS.NEUTRAL_ALTITUDE
+        + FLIGHT_PHYSICS.NEUTRAL_ALTITUDE_DEADZONE;
+    const coastingFromDescent = !followingTerrainDrop
+      && flight.radialSpeed < neutralTarget - 0.1;
+    const neutralResponse = followingTerrainDrop
+      ? FLIGHT_PHYSICS.TERRAIN_FOLLOW_DESCENT_RESPONSE
+      : coastingFromDescent
+        ? FLIGHT_PHYSICS.DESCENT_COAST_RESPONSE
+        : flight.radialSpeed > neutralTarget
+          ? FLIGHT_PHYSICS.NEUTRAL_ASCENT_BRAKE
+          : FLIGHT_PHYSICS.NEUTRAL_RETURN;
     flight.radialSpeed = THREE.MathUtils.lerp(
       flight.radialSpeed,
       neutralTarget,
@@ -2274,10 +2993,23 @@ function updateFlight(delta) {
     );
   } else {
     flight.radialSpeed = 0;
+    flight.descentPose = THREE.MathUtils.damp(
+      flight.descentPose,
+      0,
+      FLIGHT_PHYSICS.DESCENT_POSE_RETURN,
+      delta,
+    );
+    flight.descentKick = 0;
   }
+
+  applyTerrainAssistToVerticalSpeed(delta, terrainAssistControl);
   flight.radialSpeed *= 1 - FLIGHT_PHYSICS.GLIDE_DRAG * delta;
   const maxAscentSpeed = flight.speed * Math.tan(FLIGHT_PHYSICS.MAX_ASCENT_ANGLE);
-  flight.radialSpeed = Math.min(flight.radialSpeed, maxAscentSpeed);
+  flight.radialSpeed = THREE.MathUtils.clamp(
+    flight.radialSpeed,
+    -commandedMaxDescendSpeed,
+    maxAscentSpeed,
+  );
 
   flightRight.crossVectors(flightUp, flight.forward).normalize();
   const moveAngle = (flight.speed * delta) / currentRadius;
@@ -2287,32 +3019,75 @@ function updateFlight(delta) {
   const nextSurface = getSurfaceRadius(flightNextUp) + PLAYER_CLEARANCE;
   let nextRadius = currentRadius + flight.radialSpeed * delta;
   let surfaceGap = nextRadius - nextSurface;
-  if (!flight.onGround && surfaceGap < FLIGHT_PHYSICS.SOFT_GROUND_RANGE) {
-    const repel = THREE.MathUtils.clamp(
-      1 - surfaceGap / FLIGHT_PHYSICS.SOFT_GROUND_RANGE,
+  terrainAssistDirection.copy(flightUp)
+    .applyAxisAngle(
+      flightRight,
+      (flight.speed * FLIGHT_PHYSICS.TERRAIN_OBSTACLE_AHEAD_SECONDS) / currentRadius,
+    )
+    .normalize();
+  const terrainAheadSurface = getSurfaceRadius(terrainAssistDirection) + PLAYER_CLEARANCE;
+  const terrainRiseAhead = terrainAheadSurface - currentSurface;
+  const terrainObstacleAhead = terrainRiseAhead
+    > FLIGHT_PHYSICS.TERRAIN_OBSTACLE_RISE_THRESHOLD;
+  const emergencySoftRange = FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_SOFT_RANGE;
+  const closingSpeed = Math.max(0, -flight.radialSpeed);
+  const timeToGround = closingSpeed > 0.001
+    ? (surfaceGap - FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_CLEARANCE) / closingSpeed
+    : Infinity;
+  if (
+    !flight.onGround
+    && surfaceGap < emergencySoftRange
+    && timeToGround < FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_BRAKE_TIME
+  ) {
+    // Detect from 20 units out, but only brake when the current descent would hit soon.
+    const emergencyMix = THREE.MathUtils.smoothstep(
+      FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_BRAKE_TIME - timeToGround,
       0,
-      1,
+      FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_BRAKE_TIME,
     );
-    const repelSquared = repel * repel;
-    flight.radialSpeed += repelSquared * FLIGHT_PHYSICS.SOFT_GROUND_FORCE * delta;
-    if (flight.radialSpeed < 0) {
-      flight.radialSpeed = THREE.MathUtils.lerp(
-        flight.radialSpeed,
-        0,
-        repelSquared * FLIGHT_PHYSICS.SOFT_GROUND_DAMP * delta,
+    const safeRadialSpeed = -Math.max(
+      0,
+      (surfaceGap - FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_CLEARANCE)
+        / FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_BRAKE_TIME,
+    );
+    const emergencySpeedTarget = THREE.MathUtils.lerp(
+      flight.speed,
+      Math.max(
+        FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_MIN_SPEED,
+        flight.speedSelection * 0.35,
+      ),
+      emergencyMix,
+    );
+    if (terrainObstacleAhead && emergencyMix > 0.001) {
+      flight.speed = THREE.MathUtils.damp(
+        flight.speed,
+        Math.min(flight.speed, emergencySpeedTarget),
+        FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_SPEED_RESPONSE * emergencyMix,
+        delta,
       );
     }
-    nextRadius = Math.max(
-      nextRadius,
-      nextSurface + FLIGHT_PHYSICS.SOFT_GROUND_MIN_ALT,
-    );
-    surfaceGap = nextRadius - nextSurface;
+    if (flight.radialSpeed < safeRadialSpeed) {
+      flight.radialSpeed = moveTowards(
+        flight.radialSpeed,
+        safeRadialSpeed,
+        FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_RECOVERY_ACCEL * emergencyMix * delta,
+      );
+      nextRadius = currentRadius + flight.radialSpeed * delta;
+      surfaceGap = nextRadius - nextSurface;
+    }
+  }
+  if (!flight.onGround && surfaceGap < FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_CLEARANCE) {
+    // Last-resort guard only. Normal terrain avoidance changes velocity before this point.
+    nextRadius = nextSurface + FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_CLEARANCE;
+    if (flight.radialSpeed < 0) flight.radialSpeed = 0;
+    surfaceGap = FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_CLEARANCE;
+    terrainAssist.phase = "emergency";
   }
 
   const canLand = !accelerating
     && Math.abs(climbInput) < 0.08
     && flight.speed < FLIGHT_PHYSICS.GROUND_SPEED + 0.45
-    && surfaceGap <= FLIGHT_PHYSICS.SOFT_GROUND_LAND_ALT;
+      && surfaceGap <= FLIGHT_PHYSICS.TERRAIN_ASSIST_EMERGENCY_CLEARANCE;
   if (canLand) {
     nextRadius = nextSurface;
     flight.radialSpeed = 0;
@@ -2338,21 +3113,41 @@ function updateFlight(delta) {
     delta,
   );
 
-  const bodyPitchTarget = THREE.MathUtils.clamp(
-    Math.atan2(flight.radialSpeed, Math.max(flight.speed, 1))
-      - descendInput * FLIGHT_PHYSICS.DESCEND_INPUT_PITCH
-      + FLIGHT_PHYSICS.CRUISE_BODY_PITCH,
-    -Math.PI * 0.5,
-    FLIGHT_PHYSICS.MAX_BODY_PITCH,
+  // The visible body trails the physical path slightly, so assist changes stay fluid.
+  const flightPathPitch = THREE.MathUtils.clamp(
+      Math.atan2(flight.radialSpeed, Math.max(flight.speed, 1))
+        + FLIGHT_PHYSICS.CRUISE_BODY_PITCH,
+      -descentAngleLimit,
+      FLIGHT_PHYSICS.MAX_ASCENT_ANGLE,
+    );
+  // The body follows the real flight vector; terrain assist may lead it slightly into a safe turn.
+  const assistedPitch = Math.atan2(
+    terrainAssist.verticalSpeed,
+    Math.max(flight.speed, 1),
   );
-  const bodyPitchResponse = bodyPitchTarget < flight.bodyPitch
-    ? FLIGHT_PHYSICS.BODY_DESCEND_PITCH_RESPONSE
-    : FLIGHT_PHYSICS.BODY_PITCH_RESPONSE;
+  const bodyPitchTarget = terrainAssist.strength > 0.02
+    ? THREE.MathUtils.lerp(flightPathPitch, assistedPitch, terrainAssist.strength * 0.24)
+    : flightPathPitch;
+  const bodyPitchResponse = bodyPitchTarget > flight.bodyPitch
+    ? FLIGHT_PHYSICS.BODY_PITCH_ASCENT_RESPONSE
+    : bodyPitchTarget < flight.bodyPitch
+      ? FLIGHT_PHYSICS.BODY_PITCH_DESCENT_RESPONSE
+      : FLIGHT_PHYSICS.BODY_PITCH_RESPONSE;
   flight.bodyPitch = THREE.MathUtils.damp(
     flight.bodyPitch,
     bodyPitchTarget,
     bodyPitchResponse,
     delta,
+  );
+  const descentPresentationLead = flight.descentPose * THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.DESCENT_POSE_MIN_LEAD,
+    FLIGHT_PHYSICS.DESCENT_POSE_MAX_LEAD,
+    flight.descentKick,
+  );
+  const playerBodyPitch = THREE.MathUtils.clamp(
+    flight.bodyPitch - descentPresentationLead,
+    -Math.PI * 0.48,
+    FLIGHT_PHYSICS.MAX_ASCENT_ANGLE,
   );
 
   flightRight.crossVectors(flightNextUp, flight.forward).normalize();
@@ -2360,27 +3155,164 @@ function updateFlight(delta) {
     position: flight.position,
     forward: flight.forward,
     up: flightNextUp,
-    bodyPitch: flight.bodyPitch,
+    bodyPitch: playerBodyPitch,
     roll: flight.roll,
+    descentPivot: flight.descentPose,
     turnInput,
     climbInput,
     altitude: Math.max(0, nextRadius - nextSurface),
     surfaceRadius: nextSurface - PLAYER_CLEARANCE,
     delta,
   });
+  updateWaterPlayerReflection();
   updateFlightCamera(delta);
   updateFlightEnvironment(flightNextUp, delta);
 
   flight.readoutElapsed += delta;
   if (flight.readoutElapsed >= 0.12) {
     const nextAltitude = Math.max(0, nextRadius - nextSurface);
-    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}`;
+    const assistDebug = terrainAssistDebugEnabled
+      ? `<br>DIVE ${THREE.MathUtils.radToDeg(descentAngleLimit).toFixed(0)}° P${(flight.descentPose * 100).toFixed(0)}%<br>ASSIST ${terrainAssist.phase} ${(terrainAssist.strength * 100).toFixed(0)}% S${terrainAssist.side}<br>CLR ${terrainAssist.minimumClearance.toFixed(1)} T${terrainAssist.timeToRisk.toFixed(1)} V ${flight.radialSpeed.toFixed(1)}>${terrainAssist.verticalSpeed.toFixed(1)}`
+      : "";
+    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}${assistDebug}`;
+    flight.readoutElapsed = 0;
+  }
+}
+
+function updateSpaceReturnFlight(delta, turnInput, climbInput, returnState) {
+  flightUp.copy(returnState.spaceUp).normalize();
+  flightEarthDirection.copy(returnState.earthPosition).sub(flight.position);
+  const earthDistance = flightEarthDirection.length();
+  if (earthDistance > 0.0001) flightEarthDirection.multiplyScalar(1 / earthDistance);
+  flightEarthProjected.copy(flightEarthDirection)
+    .addScaledVector(flightUp, -flightEarthDirection.dot(flightUp));
+  if (flightEarthProjected.lengthSq() > 0.0001) flightEarthProjected.normalize();
+
+  const inputStrength = THREE.MathUtils.clamp(
+    Math.max(Math.abs(turnInput), Math.abs(climbInput)),
+    0,
+    1,
+  );
+  const earthGuide = 1 - inputStrength * 0.92;
+  if (flightEarthProjected.lengthSq() > 0.0001 && earthGuide > 0.001) {
+    flight.forward.lerp(
+      flightEarthProjected,
+      1 - Math.exp(-1.35 * earthGuide * delta),
+    ).normalize();
+  }
+  flight.forward.addScaledVector(flightUp, -flight.forward.dot(flightUp)).normalize();
+
+  if (Math.abs(climbInput) > 0.025) {
+    const verticalTarget = climbInput * Math.max(5.5, flight.speed * 0.12);
+    flight.radialSpeed = THREE.MathUtils.damp(
+      flight.radialSpeed,
+      verticalTarget,
+      2.8,
+      delta,
+    );
+  } else {
+    const axisDistance = Math.max(
+      0,
+      flightBeamOffset.copy(flight.position)
+        .sub(returnState.beamOrigin)
+        .dot(returnState.beamDirection),
+    );
+    flightBeamClosestPoint.copy(returnState.beamOrigin)
+      .addScaledVector(returnState.beamDirection, axisDistance);
+    const beamAltitude = flightBeamOffset.copy(flight.position)
+      .sub(flightBeamClosestPoint)
+      .dot(flightUp);
+    const verticalTarget = THREE.MathUtils.clamp(-beamAltitude * 0.08, -2.2, 2.2);
+    flight.radialSpeed = THREE.MathUtils.damp(
+      flight.radialSpeed,
+      verticalTarget,
+      1.25,
+      delta,
+    );
+  }
+
+  flight.position.addScaledVector(flight.forward, flight.speed * delta);
+  flight.position.addScaledVector(flightUp, flight.radialSpeed * delta);
+  if (earthDistance > 0.0001 && earthGuide > 0.001) {
+    flight.position.addScaledVector(flightEarthDirection, 12 * earthGuide * delta);
+  }
+
+  flight.roll = THREE.MathUtils.damp(
+    flight.roll,
+    -turnInput * FLIGHT_PHYSICS.MAX_BANK * 0.82,
+    FLIGHT_PHYSICS.ROLL_RESPONSE,
+    delta,
+  );
+  const bodyPitchTarget = THREE.MathUtils.clamp(
+    Math.atan2(flight.radialSpeed, Math.max(flight.speed, 1)),
+    -0.32,
+    0.32,
+  );
+  flight.bodyPitch = THREE.MathUtils.damp(
+    flight.bodyPitch,
+    bodyPitchTarget,
+    FLIGHT_PHYSICS.BODY_PITCH_RESPONSE,
+    delta,
+  );
+  updateFlightPlayer(flightPlayer, {
+    position: flight.position,
+    forward: flight.forward,
+    up: flightUp,
+    bodyPitch: flight.bodyPitch,
+    roll: flight.roll,
+    turnInput,
+    climbInput,
+    altitude: 80,
+    surfaceRadius: flight.position.length(),
+    delta,
+  });
+  updateWaterPlayerReflection();
+  updateFlightCamera(delta);
+  flightNextUp.copy(flight.position).normalize();
+  updateFlightEnvironment(flightNextUp, delta);
+
+  flight.readoutElapsed += delta;
+  if (flight.readoutElapsed >= 0.12) {
+    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>EARTH ${Math.max(0, earthDistance).toFixed(0)}<br>RETURN`;
+    flight.readoutElapsed = 0;
+  }
+}
+
+function updateGuidedFlight(delta) {
+  flightUp.copy(flight.position).normalize();
+  updateFlightPlayer(flightPlayer, {
+    position: flight.position,
+    forward: flight.forward,
+    up: flightUp,
+    bodyPitch: flight.bodyPitch,
+    roll: flight.roll,
+    turnInput: 0,
+    climbInput: 0,
+    altitude: getFlightAltitude(flight.position),
+    surfaceRadius: getSurfaceRadius(flightUp),
+    delta,
+  });
+  updateWaterPlayerReflection();
+  updateFlightCamera(delta);
+  updateFlightEnvironment(flightUp, delta);
+  flight.readoutElapsed += delta;
+  if (flight.readoutElapsed >= 0.12) {
+    flightReadout.innerHTML = `SPEED ${Math.round(flight.speed)}<br>ALT ${getFlightAltitude(flight.position).toFixed(1)}<br>GUIDE`;
     flight.readoutElapsed = 0;
   }
 }
 
 function updateFlightCamera(delta, snap = false) {
-  flightUp.copy(flight.position).normalize();
+  const returnState = experience?.getReturnState();
+  const targetFar = returnState?.phase === "sanctuary" ? 7000 : 1500;
+  if (camera.far !== targetFar) {
+    camera.far = targetFar;
+    camera.updateProjectionMatrix();
+  }
+  const spaceReturnActive = returnState?.spaceFlightActive
+    && returnState.spaceUp.lengthSq() > 0.0001
+    && !returnState.ending;
+  flightUp.copy(spaceReturnActive ? returnState.spaceUp : flight.position).normalize();
   flightRight.crossVectors(flightUp, flight.forward).normalize();
   flightVisualForward.copy(flight.forward)
     .applyAxisAngle(flightRight, -flight.bodyPitch)
@@ -2400,17 +3332,57 @@ function updateFlightCamera(delta, snap = false) {
     .normalize();
   const distance = FLIGHT_PHYSICS.CAMERA_DISTANCE
     + flight.speed * FLIGHT_PHYSICS.CAMERA_DISTANCE_SPEED;
+  const altitude = spaceReturnActive
+    ? 0
+    : Math.max(
+      0,
+      flight.position.length() - getSurfaceRadius(flightUp) - PLAYER_CLEARANCE,
+    );
+  const returnRouteActive = returnState?.phase === "sanctuary";
+  const highAltitudeLook = returnRouteActive || spaceReturnActive
+    ? 0
+    : THREE.MathUtils.clamp(altitude / 200, 0, 1);
+  const baseCameraPitch = Math.atan2(1.6, Math.max(distance, 0.001));
+  const cameraPitch = THREE.MathUtils.lerp(
+    baseCameraPitch,
+    THREE.MathUtils.degToRad(80),
+    highAltitudeLook,
+  );
   flightCameraTarget.copy(flight.position)
     .addScaledVector(flightUp, FLIGHT_PHYSICS.CAMERA_HEIGHT);
-  flightCameraDesired.copy(flightCameraTarget)
-    .addScaledVector(flightCameraForward, -distance)
-    .addScaledVector(flightUp, 1.6);
+  if (spaceReturnActive) {
+    flightCameraDesired.copy(flight.position)
+      .addScaledVector(flightCameraForward, -(distance + 5.5))
+      .addScaledVector(flightUp, 3.1);
+  } else {
+    flightCameraFocus.copy(flightCameraTarget).lerp(flight.position, highAltitudeLook);
+    const cameraDistance = distance + highAltitudeLook * 13;
+    flightCameraOrbitForward.copy(flightCameraForward)
+      .lerp(flight.forward, highAltitudeLook)
+      .normalize();
+    flightCameraDesired.copy(flightCameraFocus)
+      .addScaledVector(flightCameraOrbitForward, -Math.cos(cameraPitch) * cameraDistance)
+      .addScaledVector(flightUp, Math.sin(cameraPitch) * cameraDistance);
+  }
 
+  const cameraSmooth = THREE.MathUtils.lerp(
+    FLIGHT_PHYSICS.CAMERA_SMOOTH,
+    FLIGHT_PHYSICS.CAMERA_HIGH_ALTITUDE_SMOOTH,
+    highAltitudeLook,
+  );
   const smooth = snap
     ? 1
-    : 1 - Math.pow(1 - FLIGHT_PHYSICS.CAMERA_SMOOTH, delta * 60);
+    : 1 - Math.pow(1 - cameraSmooth, delta * 60);
   camera.position.lerp(flightCameraDesired, smooth);
-  camera.up.lerp(flightUp, smooth).normalize();
+  if (spaceReturnActive) {
+    flightCameraUpTarget.copy(flightUp);
+  } else {
+    flightCameraUpTarget.copy(flight.forward)
+      .multiplyScalar(Math.sin(cameraPitch))
+      .addScaledVector(flightUp, Math.cos(cameraPitch))
+      .normalize();
+  }
+  camera.up.lerp(flightCameraUpTarget, smooth).normalize();
   const speedFactor = THREE.MathUtils.clamp(
     (flight.speed - FLIGHT_PHYSICS.MIN_FORWARD_SPEED) / 5.75,
     0,
@@ -2419,12 +3391,33 @@ function updateFlightCamera(delta, snap = false) {
   const targetFov = FLIGHT_PHYSICS.BASE_FOV + speedFactor * FLIGHT_PHYSICS.SPEED_FOV;
   camera.fov = THREE.MathUtils.lerp(camera.fov, targetFov, smooth);
   camera.updateProjectionMatrix();
-  camera.lookAt(flightCameraTarget);
+  if (spaceReturnActive) {
+    flightLookTarget.copy(flight.position)
+      .addScaledVector(flight.forward, 18)
+      .addScaledVector(flightUp, 0.9);
+  } else {
+    flightLookTarget.copy(flightCameraFocus);
+  }
+  const lookSmooth = snap
+    ? 1
+    : 1 - Math.pow(1 - FLIGHT_PHYSICS.CAMERA_LOOK_SMOOTH, delta * 60);
+  if (snap || flightCameraLookSmoothed.lengthSq() < 0.0001) {
+    flightCameraLookSmoothed.copy(flightLookTarget);
+  } else {
+    flightCameraLookSmoothed.lerp(flightLookTarget, lookSmooth);
+  }
+  camera.lookAt(flightCameraLookSmoothed);
+  canvas.dataset.highAltitudeLook = highAltitudeLook >= 0.99
+    ? "limit"
+    : highAltitudeLook > 0.05
+      ? "active"
+      : "level";
 }
 
 function updateFlightEnvironment(up, delta = 1 / 60) {
   if (!scene.fog) return;
-  const sunHeight = up.dot(SUN_DIRECTION);
+  const spaceMix = experience?.getReturnState()?.spaceTransition || 0;
+  const sunHeight = up.dot(WORLD_SUN_DIRECTION);
   const dayMix = THREE.MathUtils.smoothstep(sunHeight, -0.16, 0.18);
   const duskMix = 1 - THREE.MathUtils.smoothstep(Math.abs(sunHeight), 0.055, 0.5);
   flightFogColor.copy(flightFogNight).lerp(flightFogDay, dayMix);
@@ -2445,12 +3438,17 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
   scene.fog.color.lerp(flightFogColor, 1 - Math.exp(-5 * delta));
   scene.fog.density = THREE.MathUtils.damp(
     scene.fog.density,
-    0.0036 + cloudPassageMix * 0.028,
+    (0.0036 + cloudPassageMix * 0.028) * (1 - spaceMix),
     3.6,
     delta,
   );
+  scene.background.copy(flightBackgroundGround).lerp(flightBackgroundSpace, spaceMix);
   canvas.dataset.cloudMist = cloudPassageMix > 0.08 ? "active" : "clear";
-  if (sky) sky.material.uniforms.cloudMist.value = cloudPassageMix;
+  if (sky) {
+    sky.material.uniforms.cloudMist.value = cloudPassageMix;
+    sky.material.uniforms.spaceMix.value = spaceMix;
+    sky.visible = spaceMix < 0.999;
+  }
   if (twilightFillLight) {
     twilightFillLight.intensity = THREE.MathUtils.lerp(
       twilightFillLight.intensity,
@@ -2490,18 +3488,23 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
 }
 
 function resetFlight() {
+  experience?.reset();
   const params = new URLSearchParams(window.location.search);
-  const startPreset = params.get("start") || "dusk";
+  const startPreset = params.get("start") || "day";
   const sprayPreview = startPreset === "water" && params.get("spray") === "1";
   const cloudPreview = startPreset === "cloud" ? cloudVolumes[0] : null;
   const cloudAltitude = cloudPreview
     ? cloudPreview.position.length() - getSurfaceRadius(cloudPreview.position.clone().normalize())
     : FLIGHT_PHYSICS.NEUTRAL_ALTITUDE;
   flight.cruiseAltitude = sprayPreview ? 1.35 : cloudAltitude;
+  const debugAltitude = Number(params.get("alt"));
+  if (Number.isFinite(debugAltitude) && debugAltitude >= 0) {
+    flight.cruiseAltitude = debugAltitude;
+  }
   const isSunsetStart = startPreset === "sunset";
   const targetDirection = (isSunsetStart ? specialLandmarks.directions.dusk : null)
     || specialLandmarks.directions[startPreset]
-    || specialLandmarks.directions.dusk;
+    || specialLandmarks.directions.day;
   const isDuskStart = startPreset === "dusk";
   const approach = isDuskStart
     ? new THREE.Vector3().crossVectors(SUN_DIRECTION, targetDirection).normalize()
@@ -2538,15 +3541,46 @@ function resetFlight() {
     flight.forward.copy(SUN_DIRECTION)
       .addScaledVector(startDirection, -SUN_DIRECTION.dot(startDirection))
       .normalize();
+  } else if (startPreset === "day") {
+    flight.forward.crossVectors(startDirection, targetDirection).normalize();
   } else {
     flight.forward.copy(targetDirection)
       .addScaledVector(startDirection, -targetDirection.dot(startDirection))
       .normalize();
   }
-  flight.speedSelection = Number(flightSpeedSlider.value) || 40;
+  let resetUp = startDirection;
+  let resetSurfaceRadius = startRadius - PLAYER_CLEARANCE - flight.cruiseAltitude;
+  if (params.get("route") === "space") {
+    const beamLength = specialLandmarks.getSanctuaryBeamRay(flightBeamClosestPoint, flightEarthDirection);
+    const routeOffset = params.get("earth") === "near" ? Math.max(300, beamLength - 220) : 1050;
+    flight.position.copy(flightBeamClosestPoint).addScaledVector(flightEarthDirection, routeOffset);
+    flightAltitudeDirection.copy(flight.position).normalize();
+    flightUp.copy(flightAltitudeDirection)
+      .addScaledVector(flightEarthDirection, -flightAltitudeDirection.dot(flightEarthDirection));
+    if (flightUp.lengthSq() < 0.0001) flightUp.crossVectors(WORLD_UP, flightEarthDirection);
+    resetUp = flightUp.normalize();
+    resetSurfaceRadius = getSurfaceRadius(flightAltitudeDirection);
+    flight.cruiseAltitude = getFlightAltitude(flight.position);
+    flight.forward.copy(flightEarthDirection);
+  }
+  flight.speedSelection = Number(flightSpeedSlider.value) || 30;
   flight.speed = flight.speedSelection;
   flight.holdAccel = 0;
   flight.radialSpeed = 0;
+  terrainAssist.scanElapsed = Infinity;
+  terrainAssist.strength = 0;
+  terrainAssist.targetStrength = 0;
+  terrainAssist.targetVerticalSpeed = 0;
+  terrainAssist.verticalSpeed = 0;
+  terrainAssist.verticalAcceleration = 0;
+  terrainAssist.yawRate = 0;
+  terrainAssist.targetYawRate = 0;
+  terrainAssist.side = 0;
+  terrainAssist.sideHold = 0;
+  terrainAssist.summitHold = 0;
+  terrainAssist.phase = "normal";
+  terrainAssist.minimumClearance = Infinity;
+  terrainAssist.timeToRisk = 0;
   flight.bodyPitch = FLIGHT_PHYSICS.CRUISE_BODY_PITCH;
   flight.roll = 0;
   flight.cameraLift = 0;
@@ -2556,26 +3590,31 @@ function resetFlight() {
   flight.keySmooth.set(0, 0);
   flight.directTurnX = 0;
   flight.directTurnY = 0;
+  flight.descendHeld = false;
+  flight.descentElapsed = 0;
+  flight.descentPose = 0;
+  flight.descentKick = 0;
   flightStickKnob.style.transform = "translate(-50%, -50%)";
-  flightSpeedValue.value = String(Math.round(flight.speedSelection));
+  syncFlightSpeedUi();
   flight.readoutElapsed = 1;
   if (waterSpray) resetWaterSpray(waterSpray);
-  flightUp.copy(startDirection);
-  flightNextUp.copy(startDirection);
+  flightUp.copy(resetUp);
+  flightNextUp.copy(resetUp);
   updateFlightPlayer(flightPlayer, {
     position: flight.position,
     forward: flight.forward,
-    up: startDirection,
+    up: resetUp,
     bodyPitch: flight.bodyPitch,
     roll: 0,
+    descentPivot: 0,
     turnInput: 0,
     climbInput: 0,
     altitude: flight.cruiseAltitude,
-    surfaceRadius: startRadius - PLAYER_CLEARANCE - flight.cruiseAltitude,
+    surfaceRadius: resetSurfaceRadius,
     delta: 0,
   });
   updateFlightCamera(1 / 60, true);
-  updateFlightEnvironment(startDirection);
+  updateFlightEnvironment(resetUp);
 }
 
 function applyDeadzone(value) {
@@ -2583,6 +3622,15 @@ function applyDeadzone(value) {
   if (magnitude <= FLIGHT_STICK_DEADZONE) return 0;
   const scaled = (magnitude - FLIGHT_STICK_DEADZONE) / (1 - FLIGHT_STICK_DEADZONE);
   return Math.sign(value) * THREE.MathUtils.clamp(scaled, 0, 1);
+}
+
+function syncFlightSpeedUi() {
+  const value = Number(flightSpeedSlider.value) || 30;
+  const minimum = Number(flightSpeedSlider.min) || 12;
+  const maximum = Number(flightSpeedSlider.max) || 120;
+  const ratio = THREE.MathUtils.clamp((value - minimum) / (maximum - minimum), 0, 1);
+  flightSpeedValue.value = String(Math.round(value));
+  flightSpeedPanel?.style.setProperty("--speed-ratio", ratio.toFixed(4));
 }
 
 function setupInteraction() {
@@ -2697,7 +3745,7 @@ function setupFlightInteraction() {
   });
   flightSpeedSlider.addEventListener("input", () => {
     flight.speedSelection = Number(flightSpeedSlider.value);
-    flightSpeedValue.value = String(Math.round(flight.speedSelection));
+    syncFlightSpeedUi();
   });
   flightSpeedSlider.addEventListener("keydown", (event) => event.stopPropagation());
   flightSpeedSlider.addEventListener("keyup", (event) => event.stopPropagation());

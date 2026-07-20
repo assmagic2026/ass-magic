@@ -115,24 +115,6 @@ function createMaterial(color, realism, options = {}) {
   });
 }
 
-function createContactShadow(radius, opacity) {
-  const geometry = new THREE.CircleGeometry(radius, 28);
-  geometry.rotateX(-Math.PI * 0.5);
-  const shadow = new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({
-      color: 0x080604,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-    }),
-  );
-  shadow.renderOrder = 1;
-  return shadow;
-}
-
 function createBook(realism) {
   const group = new THREE.Group();
   const pivot = new THREE.Group();
@@ -282,6 +264,7 @@ function createRecordPlayer(realism) {
     group.add(knob);
   }
   group.userData.recordDisc = recordDisc;
+  group.userData.playing = true;
   return group;
 }
 
@@ -299,18 +282,88 @@ function createCompass() {
   rotor.add(north, south);
   group.add(rotor);
   group.userData.rotor = rotor;
+  group.userData.targetWorld = null;
   return group;
 }
 
-function createSphere(radius, color, realism) {
+function createSphere(radius, color, realism, type) {
+  const geometry = new THREE.SphereGeometry(radius, 32, 22);
+  if (type === "black") {
+    const blackSphere = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      toneMapped: false,
+      fog: false,
+    }));
+    blackSphere.castShadow = false;
+    blackSphere.receiveShadow = false;
+    blackSphere.userData.noShadow = true;
+    return blackSphere;
+  }
+  if (type === "white") {
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      toneMapped: false,
+      fog: false,
+    }));
+    core.castShadow = false;
+    core.receiveShadow = false;
+    core.userData.noShadow = true;
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: createRadialGlowTexture(),
+      color: 0xe5faff,
+      transparent: true,
+      opacity: realism ? 0.72 : 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+      toneMapped: false,
+      fog: false,
+    }));
+    glow.scale.setScalar(radius * 4.2);
+    glow.renderOrder = 3;
+    const light = new THREE.PointLight(
+      0xd9f7ff,
+      realism ? 3900 : 35,
+      radius * 7.5,
+      1.65,
+    );
+    light.castShadow = false;
+    group.add(core, glow, light);
+    group.userData.light = light;
+    group.userData.glow = glow;
+    group.userData.noShadow = true;
+    return group;
+  }
   const material = realism
     ? new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0 })
     : new THREE.MeshBasicMaterial({ color, toneMapped: false, fog: false });
-  return new THREE.Mesh(new THREE.SphereGeometry(radius, 28, 18), material);
+  return new THREE.Mesh(geometry, material);
+}
+
+function createRadialGlowTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  const gradient = context.createRadialGradient(64, 64, 4, 64, 64, 62);
+  gradient.addColorStop(0, "rgba(255,255,255,0.96)");
+  gradient.addColorStop(0.22, "rgba(225,248,255,0.54)");
+  gradient.addColorStop(0.58, "rgba(160,224,255,0.16)");
+  gradient.addColorStop(1, "rgba(120,200,255,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 128, 128);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
 function createSanctuary(realism) {
+  const beamLength = 4200;
   const group = new THREE.Group();
+  const launcher = new THREE.Group();
+  launcher.rotation.x = Math.PI * 0.41;
+  group.add(launcher);
   const shell = createMaterial(0x111a26, realism, { roughness: 0.52, metalness: 0.25 });
   const cyan = createMaterial(0x5ddce6, realism, {
     roughness: 0.3,
@@ -331,7 +384,7 @@ function createSanctuary(realism) {
   core.position.y = 18;
   const cap = new THREE.Mesh(new THREE.OctahedronGeometry(4.8, 1), warm);
   cap.position.y = 31;
-  group.add(base, ring, core, cap);
+  launcher.add(base, ring, core, cap);
 
   const halos = [];
   for (let index = 0; index < 8; index += 1) {
@@ -340,7 +393,7 @@ function createSanctuary(realism) {
     halo.position.y = 16 + index * 7;
     halo.userData.spin = (index % 2 ? -1 : 1) * (0.12 + index * 0.025);
     halos.push(halo);
-    group.add(halo);
+    launcher.add(halo);
   }
 
   const spokeCount = 28;
@@ -362,8 +415,41 @@ function createSanctuary(realism) {
   }
   towers.instanceMatrix.needsUpdate = true;
   glows.instanceMatrix.needsUpdate = true;
-  group.add(towers, glows);
+  launcher.add(towers, glows);
+
+  const beamGroup = new THREE.Group();
+  beamGroup.position.y = 0.6;
+  beamGroup.scale.y = 0.0001;
+  beamGroup.visible = false;
+  const beamCoreMaterial = new THREE.MeshBasicMaterial({
+    color: 0xd9ffff,
+    transparent: true,
+    opacity: 0.76,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const beamGlowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x54e6f4,
+    transparent: true,
+    opacity: 0.16,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const beamCore = new THREE.Mesh(new THREE.CylinderGeometry(0.56, 0.82, beamLength, 12), beamCoreMaterial);
+  const beamGlow = new THREE.Mesh(new THREE.CylinderGeometry(1.65, 2.15, beamLength, 12), beamGlowMaterial);
+  beamCore.position.y = beamLength * 0.5;
+  beamGlow.position.y = beamLength * 0.5;
+  beamCore.renderOrder = 4;
+  beamGlow.renderOrder = 3;
+  beamGroup.add(beamGlow, beamCore);
+  launcher.add(beamGroup);
   group.userData.halos = halos;
+  group.userData.beamGroup = beamGroup;
+  group.userData.activationTarget = 0;
+  group.userData.activation = 0;
+  group.userData.beamLength = beamLength;
   return group;
 }
 
@@ -480,6 +566,8 @@ function createBlackBox(realism) {
     new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.9, 1.9), shell),
     new THREE.Mesh(new THREE.BoxGeometry(1.46, 1.46, 1.46), core),
   );
+  group.userData.grounded = false;
+  group.userData.opened = false;
   return group;
 }
 
@@ -522,30 +610,21 @@ export function createSpecialLandmarks({
   const recordPlayer = createRecordPlayer(realism);
   placeOnSphere(recordPlayer, dayObjectDirection, nightAxisB, 0.45, getSurfaceRadius);
   root.add(recordPlayer);
-  const recordShadow = createContactShadow(28, 0.22);
-  placeOnSphere(recordShadow, dayObjectDirection, nightAxisB, 0.08, getSurfaceRadius);
-  root.add(recordShadow);
 
   const book = createBook(realism);
   const bookForward = sun.clone().addScaledVector(bookDirection, -sun.dot(bookDirection)).normalize();
   placeOnSphere(book, bookDirection, bookForward, 0.04, getSurfaceRadius, 0.06);
   root.add(book);
-  const bookShadow = createContactShadow(8.8, 0.24);
-  placeOnSphere(bookShadow, bookDirection, bookForward, 0.075, getSurfaceRadius, 0.06);
-  root.add(bookShadow);
   const bookReady = bookModelUrl ? loadBookModel(book, bookModelUrl, castShadow) : null;
 
-  const blackSphere = createSphere(18, 0x090909, realism);
+  const blackSphere = createSphere(18, 0x000000, realism, "black");
   const blackForward = compassDirection.clone().addScaledVector(sun, -compassDirection.dot(sun)).normalize();
   placeOnSphere(blackSphere, sun, blackForward, 40, getSurfaceRadius);
   root.add(blackSphere);
 
-  const whiteSphere = createSphere(18, 0xf7f7f2, realism);
+  const whiteSphere = createSphere(18, 0xffffff, realism, "white");
   placeOnSphere(whiteSphere, night, nightAxisA, 40, getSurfaceRadius);
   root.add(whiteSphere);
-
-  const nightBeacons = createNightBeacons(night, nightAxisA, nightAxisB, getSurfaceRadius);
-  root.add(nightBeacons);
 
   const compass = createCompass();
   compass.scale.setScalar(2.8);
@@ -556,21 +635,30 @@ export function createSpecialLandmarks({
   const sanctuary = createSanctuary(realism);
   placeOnSphere(sanctuary, sanctuaryDirection, nightAxisA, 0.9, getSurfaceRadius, 0.24);
   root.add(sanctuary);
-  const sanctuaryShadow = createContactShadow(29, 0.27);
-  placeOnSphere(sanctuaryShadow, sanctuaryDirection, nightAxisA, 0.09, getSurfaceRadius, 0.24);
-  root.add(sanctuaryShadow);
 
   const blackBox = createBlackBox(realism);
   root.add(blackBox);
   let blackBoxAngle = 2.15;
   const blackBoxDirection = new THREE.Vector3();
   const blackBoxForward = new THREE.Vector3();
+  const compassLocalTarget = new THREE.Vector3();
+  const beamWorldQuaternion = new THREE.Quaternion();
+  const beamLocalAxis = new THREE.Vector3(0, 1, 0);
 
   scene.add(root);
   return {
     root,
     ready: bookReady,
     compassDirection,
+    objects: {
+      recordPlayer,
+      book,
+      blackSphere,
+      whiteSphere,
+      compass,
+      sanctuary,
+      blackBox,
+    },
     directions: {
       day: sun,
       night,
@@ -578,32 +666,79 @@ export function createSpecialLandmarks({
       recordPlayer: dayObjectDirection,
       book: bookDirection,
       sanctuary: sanctuaryDirection,
-      lights: nightBeacons.userData.previewDirection,
+    },
+    getSanctuaryBeamRay(origin, direction) {
+      sanctuary.userData.beamGroup.updateWorldMatrix(true, false);
+      sanctuary.userData.beamGroup.getWorldPosition(origin);
+      sanctuary.userData.beamGroup.getWorldQuaternion(beamWorldQuaternion);
+      direction.copy(beamLocalAxis).applyQuaternion(beamWorldQuaternion).normalize();
+      return sanctuary.userData.beamLength;
+    },
+    isBlackBoxMoving() {
+      return !blackBox.userData.grounded;
+    },
+    predictBlackBoxDirection(seconds, target = new THREE.Vector3()) {
+      const angle = blackBoxAngle + Math.max(0, seconds) * 0.54;
+      return target.copy(sun).multiplyScalar(Math.cos(angle))
+        .addScaledVector(nightAxisA, Math.sin(angle))
+        .normalize();
     },
     update(delta) {
-      recordPlayer.userData.recordDisc.rotation.y += delta * 1.55;
-      compass.userData.rotor.rotation.y += delta * 0.42;
-      for (const halo of sanctuary.userData.halos) halo.rotation.z += delta * halo.userData.spin;
-      nightBeacons.userData.spotlights.forEach((spotlight, index) => {
-        spotlight.intensity = nightBeacons.userData.baseIntensities[index]
-          * (0.88 + Math.sin(blackBoxAngle * (0.82 + index * 0.07) + index) * 0.12);
-      });
+      if (recordPlayer.userData.playing) {
+        recordPlayer.userData.recordDisc.rotation.y += delta * 1.55;
+      }
 
-      blackBoxAngle += delta * 0.54;
-      blackBoxDirection.copy(sun).multiplyScalar(Math.cos(blackBoxAngle))
-        .addScaledVector(nightAxisA, Math.sin(blackBoxAngle))
-        .normalize();
-      blackBoxForward.copy(sun).multiplyScalar(-Math.sin(blackBoxAngle))
-        .addScaledVector(nightAxisA, Math.cos(blackBoxAngle))
-        .normalize();
-      placeOnSphere(
-        blackBox,
-        blackBoxDirection,
-        blackBoxForward,
-        0.4,
-        getSurfaceRadius,
-        Math.PI * 0.2,
+      const compassTarget = compass.userData.targetWorld;
+      if (compassTarget) {
+        compassLocalTarget.copy(compassTarget);
+        compass.worldToLocal(compassLocalTarget);
+        compassLocalTarget.y = 0;
+        if (compassLocalTarget.lengthSq() > 0.0001) {
+          const targetAngle = Math.atan2(compassLocalTarget.x, compassLocalTarget.z);
+          const currentAngle = compass.userData.rotor.rotation.y;
+          const angleDelta = Math.atan2(
+            Math.sin(targetAngle - currentAngle),
+            Math.cos(targetAngle - currentAngle),
+          );
+          compass.userData.rotor.rotation.y += angleDelta * (1 - Math.exp(-6.8 * delta));
+        }
+      } else {
+        compass.userData.rotor.rotation.y += delta * 0.42;
+      }
+
+      sanctuary.userData.activation = THREE.MathUtils.damp(
+        sanctuary.userData.activation,
+        sanctuary.userData.activationTarget,
+        sanctuary.userData.activationTarget > sanctuary.userData.activation ? 1.9 : 5,
+        delta,
       );
+      const activation = sanctuary.userData.activation;
+      sanctuary.userData.beamGroup.visible = activation > 0.003;
+      sanctuary.userData.beamGroup.scale.y = Math.max(0.0001, activation);
+      for (const halo of sanctuary.userData.halos) {
+        halo.rotation.z += delta * halo.userData.spin * (1 + activation * 7);
+      }
+      const whitePulse = 0.92 + Math.sin(performance.now() * 0.0018) * 0.08;
+      whiteSphere.userData.light.intensity = (realism ? 3900 : 35) * whitePulse;
+      whiteSphere.userData.glow.material.opacity = (realism ? 0.72 : 0.5) * whitePulse;
+      blackBoxAngle += delta * 0.54;
+
+      if (!blackBox.userData.grounded) {
+        blackBoxDirection.copy(sun).multiplyScalar(Math.cos(blackBoxAngle))
+          .addScaledVector(nightAxisA, Math.sin(blackBoxAngle))
+          .normalize();
+        blackBoxForward.copy(sun).multiplyScalar(-Math.sin(blackBoxAngle))
+          .addScaledVector(nightAxisA, Math.cos(blackBoxAngle))
+          .normalize();
+        placeOnSphere(
+          blackBox,
+          blackBoxDirection,
+          blackBoxForward,
+          0.4,
+          getSurfaceRadius,
+          Math.PI * 0.2,
+        );
+      }
     },
   };
 }

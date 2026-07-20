@@ -2,6 +2,7 @@ import * as THREE from "../../three.module.js";
 import { GLTFLoader } from "./vendor/GLTFLoader.js";
 
 const FORWARD_AXIS = new THREE.Vector3(0, 0, 1);
+const RIGHT_AXIS = new THREE.Vector3(1, 0, 0);
 const poseBonePosition = new THREE.Vector3();
 const poseChildPosition = new THREE.Vector3();
 const poseDirection = new THREE.Vector3();
@@ -10,6 +11,9 @@ const poseDelta = new THREE.Quaternion();
 const poseWorldQuaternion = new THREE.Quaternion();
 const poseParentQuaternion = new THREE.Quaternion();
 const poseFrameQuaternion = new THREE.Quaternion();
+const waistMeasureA = new THREE.Vector3();
+const waistMeasureB = new THREE.Vector3();
+const headMeasure = new THREE.Vector3();
 
 export function createFlightPlayer(scene, options = {}) {
   const player = new THREE.Group();
@@ -57,13 +61,15 @@ export function createFlightPlayer(scene, options = {}) {
   visual.add(armLeftRoot, armRightRoot);
   for (const [root, side] of [[armLeftRoot, -1], [armRightRoot, 1]]) {
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.105, 0.58, 4, 8), coatMaterial);
-    arm.position.y = -0.34;
+    arm.position.y = -0.408;
     arm.rotation.z = side * -0.13;
+    arm.scale.y = 1.2;
     const hand = new THREE.Mesh(new THREE.SphereGeometry(0.115, 8, 6), skinMaterial);
-    hand.position.set(side * 0.08, -0.72, 0);
+    hand.position.set(side * 0.08, -0.864, 0);
     root.add(arm, hand);
   }
 
+  const legRoots = [];
   for (const side of [-1, 1]) {
     const legRoot = new THREE.Group();
     legRoot.position.set(side * 0.17, -0.42, 0);
@@ -73,6 +79,7 @@ export function createFlightPlayer(scene, options = {}) {
     shoe.position.set(0, -0.82, 0.1);
     legRoot.add(leg, shoe);
     visual.add(legRoot);
+    legRoots.push(legRoot);
   }
 
   // The fallback uses the same head-first horizontal silhouette as the GLB.
@@ -102,6 +109,7 @@ export function createFlightPlayer(scene, options = {}) {
     ready: null,
     armLeftRoot,
     armRightRoot,
+    legRoots,
     bobPhase: 1.7,
     basis: new THREE.Matrix4(),
     quaternion: new THREE.Quaternion(),
@@ -110,6 +118,11 @@ export function createFlightPlayer(scene, options = {}) {
     correctedUp: new THREE.Vector3(),
     visualForward: new THREE.Vector3(),
     shadowDirection: new THREE.Vector3(),
+    // The procedural figure's pelvis sits slightly behind its local origin.
+    waistLocal: new THREE.Vector3(0, 0, -0.22),
+    headLocal: new THREE.Vector3(0, -0.015, 1.13),
+    pivotLocal: new THREE.Vector3(),
+    pivotOffset: new THREE.Vector3(),
   };
 
   if (options.modelUrl) {
@@ -145,13 +158,47 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
       if (object.material?.map) object.material.map.anisotropy = 8;
     });
 
+    extendImportedArms(imported, 1.2);
     poseSuperman(imported, rig.player);
+    measureImportedAnchors(imported, rig);
     rig.modelVisual = modelVisual;
     disposeVisual(rig.proceduralVisual);
   }).catch((error) => {
     console.warn("Realism human GLB could not be loaded; using the lightweight human.", error);
     throw error;
   });
+}
+
+function measureImportedAnchors(imported, rig) {
+  const rightHip = imported.getObjectByName("leg_joint_R_1");
+  const leftHip = imported.getObjectByName("leg_joint_L_1");
+  rig.player.updateWorldMatrix(true, false);
+  if (rightHip && leftHip) {
+    rightHip.getWorldPosition(waistMeasureA);
+    leftHip.getWorldPosition(waistMeasureB);
+    waistMeasureA.add(waistMeasureB).multiplyScalar(0.5);
+    rig.waistLocal.copy(rig.player.worldToLocal(waistMeasureA));
+  }
+  const headAnchor = imported.getObjectByName("Skeleton_neck_joint_2");
+  if (headAnchor) {
+    headAnchor.getWorldPosition(headMeasure);
+    rig.headLocal.copy(rig.player.worldToLocal(headMeasure))
+      .addScaledVector(FORWARD_AXIS, 0.14);
+  }
+}
+
+function extendImportedArms(imported, factor) {
+  const movableArmBones = [
+    "Skeleton_arm_joint_R__2_",
+    "Skeleton_arm_joint_R__3_",
+    "Skeleton_arm_joint_L__3_",
+    "Skeleton_arm_joint_L__2_",
+  ];
+  for (const boneName of movableArmBones) {
+    const bone = imported.getObjectByName(boneName);
+    if (bone) bone.position.multiplyScalar(factor);
+  }
+  imported.updateWorldMatrix(true, true);
 }
 
 function poseSuperman(imported, targetFrame) {
@@ -213,6 +260,7 @@ export function updateFlightPlayer(rig, state) {
     up,
     bodyPitch,
     roll,
+    descentPivot = 0,
     altitude,
     surfaceRadius,
     delta,
@@ -224,11 +272,19 @@ export function updateFlightPlayer(rig, state) {
   rig.basis.makeBasis(rig.right, rig.correctedUp, rig.visualForward);
   rig.quaternion.setFromRotationMatrix(rig.basis);
   rig.rollQuaternion.setFromAxisAngle(FORWARD_AXIS, roll);
-  rig.player.quaternion.copy(rig.quaternion).multiply(rig.rollQuaternion);
+  rig.player.quaternion.copy(rig.quaternion)
+    .multiply(rig.rollQuaternion);
 
   rig.bobPhase += delta * 0.7;
   const bob = Math.sin(rig.bobPhase) * 0.16 + Math.sin(rig.bobPhase * 0.37 + 1.1) * 0.05;
-  rig.player.position.copy(position).addScaledVector(up, bob);
+  // On descent, keep the head at the flight point so the torso and legs float upward around it.
+  const descentPivotMix = Math.max(
+    THREE.MathUtils.clamp(descentPivot, 0, 1),
+    THREE.MathUtils.smoothstep(-bodyPitch, 0.015, 0.28),
+  );
+  rig.pivotLocal.copy(rig.waistLocal).lerp(rig.headLocal, descentPivotMix);
+  rig.pivotOffset.copy(rig.pivotLocal).applyQuaternion(rig.player.quaternion);
+  rig.player.position.copy(position).addScaledVector(up, bob).sub(rig.pivotOffset);
   if (rig.mixer) rig.mixer.update(delta);
 
   rig.shadowDirection.copy(position).normalize();

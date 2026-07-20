@@ -8669,6 +8669,16 @@ for (const button of menuNavButtons) {
   });
 }
 
+// The world input layer intentionally suppresses native pointer defaults.
+// Route this test-only menu card explicitly so its link still works on touch.
+for (const link of document.querySelectorAll('a[data-menu-route][href]')) {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.location.assign(link.href);
+  });
+}
+
 for (const control of [
   bookBackdrop,
   bookPanel,
