@@ -5,7 +5,7 @@ import {
   getExperimentSettings,
 } from "./quality.js";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-1";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-2";
 import {
   createFlightPlayer,
   updateFlightPlayer,

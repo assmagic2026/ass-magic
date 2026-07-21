@@ -511,7 +511,11 @@ export function createEnvironmentPhasing({
         state.safeElapsed = 0;
         if (state.phase === "safe-check") setPhase("phasing");
       }
-      if (state.totalElapsed >= PHASE_CONFIG.maximumSeconds && state.phase !== "fallback") {
+      if (
+        state.totalElapsed >= PHASE_CONFIG.maximumSeconds
+        && state.phase !== "fallback"
+        && state.phase !== "rematerializing"
+      ) {
         startFallback(up);
       }
     } else if (!safe) {
