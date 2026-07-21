@@ -10,6 +10,13 @@ const placementForward = new THREE.Vector3();
 const dummy = new THREE.Object3D();
 let surfaceTextures = null;
 
+const BLACK_BOX_FLIGHT_ALTITUDE = 20;
+const BLACK_BOX_TERRAIN_LOOKAHEAD_SECONDS = 1.45;
+const BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES = 16;
+const BLACK_BOX_ORBIT_ANGULAR_SPEED = 0.54;
+const BLACK_BOX_ASCENT_RESPONSE = 2.8;
+const BLACK_BOX_DESCENT_RESPONSE = 0.58;
+
 function textureNoise(x, y, seed) {
   let value = Math.imul(x + seed, 374761393) ^ Math.imul(y + seed * 3, 668265263);
   value = Math.imul(value ^ (value >>> 13), 1274126177);
@@ -639,8 +646,10 @@ export function createSpecialLandmarks({
   const blackBox = createBlackBox(realism);
   root.add(blackBox);
   let blackBoxAngle = 2.15;
+  let blackBoxFlightRadius = 0;
   const blackBoxDirection = new THREE.Vector3();
   const blackBoxForward = new THREE.Vector3();
+  const blackBoxLookaheadDirection = new THREE.Vector3();
   const compassLocalTarget = new THREE.Vector3();
   const beamWorldQuaternion = new THREE.Quaternion();
   const beamLocalAxis = new THREE.Vector3(0, 1, 0);
@@ -678,7 +687,7 @@ export function createSpecialLandmarks({
       return !blackBox.userData.grounded;
     },
     predictBlackBoxDirection(seconds, target = new THREE.Vector3()) {
-      const angle = blackBoxAngle + Math.max(0, seconds) * 0.54;
+      const angle = blackBoxAngle + Math.max(0, seconds) * BLACK_BOX_ORBIT_ANGULAR_SPEED;
       return target.copy(sun).multiplyScalar(Math.cos(angle))
         .addScaledVector(nightAxisA, Math.sin(angle))
         .normalize();
@@ -721,7 +730,7 @@ export function createSpecialLandmarks({
       const whitePulse = 0.92 + Math.sin(performance.now() * 0.0018) * 0.08;
       whiteSphere.userData.light.intensity = (realism ? 3900 : 35) * whitePulse;
       whiteSphere.userData.glow.material.opacity = (realism ? 0.72 : 0.5) * whitePulse;
-      blackBoxAngle += delta * 0.54;
+      blackBoxAngle += delta * BLACK_BOX_ORBIT_ANGULAR_SPEED;
 
       if (!blackBox.userData.grounded) {
         blackBoxDirection.copy(sun).multiplyScalar(Math.cos(blackBoxAngle))
@@ -730,14 +739,50 @@ export function createSpecialLandmarks({
         blackBoxForward.copy(sun).multiplyScalar(-Math.sin(blackBoxAngle))
           .addScaledVector(nightAxisA, Math.cos(blackBoxAngle))
           .normalize();
+
+        // Look well ahead along the orbit and begin gaining height before a
+        // mountain reaches the box.  The slower descent response prevents the
+        // opposite edge of a peak from producing a matching downward snap.
+        const currentSurfaceRadius = getSurfaceRadius(blackBoxDirection);
+        let safeFlightRadius = currentSurfaceRadius + BLACK_BOX_FLIGHT_ALTITUDE;
+        for (let index = 1; index <= BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES; index += 1) {
+          const lookaheadRatio = index / BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES;
+          const lookaheadAngle = blackBoxAngle
+            + BLACK_BOX_ORBIT_ANGULAR_SPEED
+              * BLACK_BOX_TERRAIN_LOOKAHEAD_SECONDS
+              * lookaheadRatio;
+          blackBoxLookaheadDirection.copy(sun).multiplyScalar(Math.cos(lookaheadAngle))
+            .addScaledVector(nightAxisA, Math.sin(lookaheadAngle))
+            .normalize();
+          safeFlightRadius = Math.max(
+            safeFlightRadius,
+            getSurfaceRadius(blackBoxLookaheadDirection) + BLACK_BOX_FLIGHT_ALTITUDE,
+          );
+        }
+        if (blackBoxFlightRadius <= 0) blackBoxFlightRadius = safeFlightRadius;
+        blackBoxFlightRadius = THREE.MathUtils.damp(
+          blackBoxFlightRadius,
+          safeFlightRadius,
+          safeFlightRadius > blackBoxFlightRadius
+            ? BLACK_BOX_ASCENT_RESPONSE
+            : BLACK_BOX_DESCENT_RESPONSE,
+          delta,
+        );
+        blackBoxFlightRadius = Math.max(
+          blackBoxFlightRadius,
+          currentSurfaceRadius + BLACK_BOX_FLIGHT_ALTITUDE,
+        );
         placeOnSphere(
           blackBox,
           blackBoxDirection,
           blackBoxForward,
-          0.4,
+          BLACK_BOX_FLIGHT_ALTITUDE,
           getSurfaceRadius,
           Math.PI * 0.2,
         );
+        blackBox.position.copy(blackBoxDirection).multiplyScalar(blackBoxFlightRadius);
+        blackBox.userData.flightAltitude = blackBoxFlightRadius - currentSurfaceRadius;
+        blackBox.userData.flightTargetAltitude = safeFlightRadius - currentSurfaceRadius;
       }
     },
   };

@@ -10,9 +10,9 @@ const PHASE_CONFIG = Object.freeze({
   safeClearance: 2.8,
   predictedSafeClearance: 2.1,
   safeConfirmSeconds: 0.22,
-  dematerializeSeconds: 0.13,
+  dematerializeSeconds: 0.24,
   exitSearchSeconds: 0.11,
-  rematerializeSeconds: 0.2,
+  rematerializeSeconds: 0.34,
   recoverySeconds: 0.52,
   cooldownSeconds: 0.72,
   maximumSeconds: 3.4,
@@ -34,8 +34,6 @@ const EXIT_CANDIDATES = Object.freeze([
 
 const PREDICTION_SAMPLES = Object.freeze([0.42, 0.7, 1]);
 const EXIT_SAMPLES = 7;
-const PHASE_COLOR = new THREE.Color(0x8feaff);
-
 function createGlowTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = 64;
@@ -53,6 +51,96 @@ function createGlowTexture() {
   return texture;
 }
 
+function createBurstRingTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  const ring = context.createRadialGradient(128, 128, 76, 128, 128, 126);
+  ring.addColorStop(0, "rgba(114,142,157,0)");
+  ring.addColorStop(0.54, "rgba(135,169,185,0.025)");
+  ring.addColorStop(0.71, "rgba(211,228,233,0.42)");
+  ring.addColorStop(0.75, "rgba(126,162,180,0.62)");
+  ring.addColorStop(0.8, "rgba(86,111,130,0.14)");
+  ring.addColorStop(1, "rgba(29,39,55,0)");
+  context.fillStyle = ring;
+  context.fillRect(0, 0, 256, 256);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createEventHorizonTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 128;
+  const context = canvas.getContext("2d");
+  const horizon = context.createRadialGradient(64, 64, 2, 64, 64, 62);
+  horizon.addColorStop(0, "rgba(0,2,7,0.96)");
+  horizon.addColorStop(0.34, "rgba(1,5,12,0.92)");
+  horizon.addColorStop(0.52, "rgba(6,13,23,0.82)");
+  horizon.addColorStop(0.62, "rgba(172,204,216,0.38)");
+  horizon.addColorStop(0.68, "rgba(78,106,124,0.16)");
+  horizon.addColorStop(0.82, "rgba(29,46,64,0.045)");
+  horizon.addColorStop(1, "rgba(0,0,0,0)");
+  context.fillStyle = horizon;
+  context.fillRect(0, 0, 128, 128);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function createSpacetimeVortexTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const context = canvas.getContext("2d");
+  context.translate(256, 256);
+  context.scale(1, 0.76);
+  const arms = [
+    [0, 4.8, "rgba(210,224,228,0.56)"],
+    [Math.PI * 0.34, 3.4, "rgba(111,139,154,0.46)"],
+    [Math.PI * 0.68, 4.1, "rgba(171,183,197,0.44)"],
+    [Math.PI, 3.1, "rgba(86,109,126,0.42)"],
+    [Math.PI * 1.34, 3.8, "rgba(198,211,214,0.4)"],
+    [Math.PI * 1.68, 2.8, "rgba(105,119,143,0.38)"],
+  ];
+  for (const [phase, width, color] of arms) {
+    for (let trail = 0; trail < 3; trail += 1) {
+      context.globalAlpha = 1 - trail * 0.26;
+      context.strokeStyle = color;
+      context.lineWidth = width * (1 - trail * 0.18);
+      context.lineCap = "round";
+      context.beginPath();
+      for (let step = 0; step <= 150; step += 1) {
+        const ratio = step / 150;
+        const angle = phase + trail * 0.042 + ratio * Math.PI * 3.65;
+        const radius = 12 + trail * 3.6 + Math.pow(ratio, 0.82) * 218;
+        const turbulence = Math.sin(ratio * Math.PI * 9 + phase * 1.7) * (2 + ratio * 5.5);
+        const x = Math.cos(angle) * (radius + turbulence);
+        const y = Math.sin(angle) * (radius - turbulence * 0.42);
+        if (step === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.stroke();
+    }
+  }
+  context.globalAlpha = 1;
+  context.globalCompositeOperation = "lighter";
+  for (let index = 0; index < 7; index += 1) {
+    const radius = 44 + index * 24;
+    const start = index * 0.77;
+    context.strokeStyle = `rgba(171,194,203,${0.14 - index * 0.012})`;
+    context.lineWidth = Math.max(0.55, 1.3 - index * 0.1);
+    context.beginPath();
+    context.arc(0, 0, radius, start, start + Math.PI * (0.72 + index * 0.035));
+    context.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function smoothstep01(value) {
   const clamped = THREE.MathUtils.clamp(value, 0, 1);
   return clamped * clamped * (3 - 2 * clamped);
@@ -64,6 +152,7 @@ export function createEnvironmentPhasing({
   flight,
   playerObject,
   camera,
+  renderer,
   quality = "standard",
   getSurfaceRadius,
   playerClearance,
@@ -90,9 +179,11 @@ export function createEnvironmentPhasing({
     exitForward: new THREE.Vector3(),
     collisionNormal: new THREE.Vector3(),
     fallbackTarget: new THREE.Vector3(),
+    playerVisibleBeforePhase: playerObject.visible,
   };
 
   const materialStates = new Map();
+  const meshStates = new Map();
   const protectedWorldPosition = new THREE.Vector3();
   const up = new THREE.Vector3();
   const right = new THREE.Vector3();
@@ -107,33 +198,107 @@ export function createEnvironmentPhasing({
   const nextForward = new THREE.Vector3();
   const fallbackUp = new THREE.Vector3();
   const cameraUp = new THREE.Vector3();
-
-  const glowTexture = createGlowTexture();
-  const visualRoot = new THREE.Group();
-  visualRoot.name = "EnvironmentPhaseVisual";
-  visualRoot.visible = false;
-  const auraMaterial = new THREE.SpriteMaterial({
-    map: glowTexture,
-    color: 0xa8efff,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.AdditiveBlending,
+  const warpRenderSize = new THREE.Vector2();
+  const warpScreenPosition = new THREE.Vector3();
+  const warpPlayerEdge = new THREE.Vector3();
+  const warpTarget = new THREE.WebGLRenderTarget(1, 1, {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    depthBuffer: true,
+    stencilBuffer: false,
   });
-  auraMaterial.toneMapped = false;
-  const aura = new THREE.Sprite(auraMaterial);
-  visualRoot.add(aura);
-  const trailCount = quality === "high" ? 4 : quality === "standard" ? 2 : 1;
-  const trails = [];
-  for (let index = 0; index < trailCount; index += 1) {
-    const material = auraMaterial.clone();
-    material.opacity = 0;
-    const sprite = new THREE.Sprite(material);
-    visualRoot.add(sprite);
-    trails.push(sprite);
-  }
-  scene.add(visualRoot);
+  warpTarget.texture.name = "EnvironmentSpacetimeSource";
+  warpTarget.texture.colorSpace = THREE.SRGBColorSpace;
+  const warpBackgroundTarget = warpTarget.clone();
+  warpBackgroundTarget.texture.name = "EnvironmentSpacetimeBackground";
+  const warpUniforms = {
+    sourceTexture: { value: warpTarget.texture },
+    backgroundTexture: { value: warpBackgroundTarget.texture },
+    center: { value: new THREE.Vector2(0.5, 0.5) },
+    resolution: { value: new THREE.Vector2(1, 1) },
+    strength: { value: 0 },
+    pinch: { value: 0 },
+    direction: { value: 1 },
+    time: { value: 0 },
+    radius: { value: 0.32 },
+  };
+  const warpMaterial = new THREE.ShaderMaterial({
+    uniforms: warpUniforms,
+    depthTest: false,
+    depthWrite: false,
+    transparent: false,
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      uniform sampler2D sourceTexture;
+      uniform sampler2D backgroundTexture;
+      uniform vec2 center;
+      uniform vec2 resolution;
+      uniform float strength;
+      uniform float pinch;
+      uniform float direction;
+      uniform float time;
+      uniform float radius;
+      varying vec2 vUv;
+
+      mat2 rotate2d(float angle) {
+        float sine = sin(angle);
+        float cosine = cos(angle);
+        return mat2(cosine, -sine, sine, cosine);
+      }
+
+      void main() {
+        float aspect = resolution.x / max(resolution.y, 1.0);
+        vec2 delta = vUv - center;
+        vec2 metric = vec2(delta.x * aspect * 1.16, delta.y);
+        float distanceFromCenter = length(metric);
+        float influence = 1.0 - smoothstep(radius * 0.12, radius, distanceFromCenter);
+        float coreInfluence = influence * influence;
+        float wave = sin(distanceFromCenter * 118.0 - time * 72.0) * 0.018;
+        float twist = direction
+          * (strength * (1.2 + coreInfluence * 6.75) + time * 9.0 * strength)
+          * coreInfluence;
+        float radialScale = 1.0 + pinch * coreInfluence + wave * strength * influence;
+        vec2 warpedMetric = rotate2d(twist) * metric * radialScale;
+        vec2 warpedDelta = vec2(warpedMetric.x / (aspect * 1.16), warpedMetric.y);
+        vec2 warpedUv = clamp(center + warpedDelta, vec2(0.001), vec2(0.999));
+        vec2 radialDirection = normalize(delta + vec2(0.000001));
+        vec2 blurOffset = radialDirection * strength * influence * 0.007;
+        vec4 originalBackground = texture2D(backgroundTexture, vUv);
+        vec4 warpedColor = texture2D(sourceTexture, warpedUv) * 0.46;
+        warpedColor += texture2D(sourceTexture, clamp(warpedUv + blurOffset, vec2(0.001), vec2(0.999))) * 0.27;
+        warpedColor += texture2D(sourceTexture, clamp(warpedUv - blurOffset, vec2(0.001), vec2(0.999))) * 0.27;
+        vec4 warpedBackground = texture2D(backgroundTexture, warpedUv) * 0.46;
+        warpedBackground += texture2D(backgroundTexture, clamp(warpedUv + blurOffset, vec2(0.001), vec2(0.999))) * 0.27;
+        warpedBackground += texture2D(backgroundTexture, clamp(warpedUv - blurOffset, vec2(0.001), vec2(0.999))) * 0.27;
+        float bodyDifference = length(warpedColor.rgb - warpedBackground.rgb)
+          + abs(warpedColor.a - warpedBackground.a) * 0.4;
+        float bodyMask = smoothstep(0.0025, 0.032, bodyDifference) * influence;
+        float haloMask = smoothstep(0.00035, 0.014, bodyDifference) * influence;
+        float whiteGlow = pow(bodyMask, 0.62) * strength;
+        warpedColor.rgb = mix(warpedColor.rgb, vec3(1.0), whiteGlow * 0.88);
+        warpedColor.rgb += vec3(whiteGlow * whiteGlow * 0.34);
+        vec4 composited = mix(originalBackground, warpedColor, bodyMask);
+        float halo = max(0.0, haloMask - bodyMask * 0.42) * strength;
+        composited.rgb += vec3(halo * 0.82);
+        gl_FragColor = composited;
+      }
+    `,
+  });
+  warpMaterial.toneMapped = false;
+  const warpScene = new THREE.Scene();
+  const warpCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const warpGeometry = new THREE.PlaneGeometry(2, 2);
+  const warpQuad = new THREE.Mesh(warpGeometry, warpMaterial);
+  warpQuad.frustumCulled = false;
+  warpScene.add(warpQuad);
 
   function setPhase(nextPhase) {
     state.phase = nextPhase;
@@ -183,6 +348,7 @@ export function createEnvironmentPhasing({
   function collectPlayerMaterials() {
     playerObject.traverse((object) => {
       if (!object.isMesh || !object.material) return;
+      if (!meshStates.has(object)) meshStates.set(object, { castShadow: object.castShadow });
       if (Array.isArray(object.material)) object.material.forEach(rememberMaterial);
       else rememberMaterial(object.material);
     });
@@ -190,17 +356,15 @@ export function createEnvironmentPhasing({
 
   function applyPlayerMaterials(mix) {
     if (mix > 0.001) collectPlayerMaterials();
+    const fade = 1 - smoothstep01((mix - 0.52) / 0.48);
     for (const [material, original] of materialStates) {
-      material.opacity = THREE.MathUtils.lerp(original.opacity, Math.max(0.18, original.opacity * 0.28), mix);
-      if (original.emissive && material.emissive) {
-        material.emissive.copy(original.emissive).lerp(PHASE_COLOR, mix * 0.72);
-        material.emissiveIntensity = THREE.MathUtils.lerp(
-          Number.isFinite(original.emissiveIntensity) ? original.emissiveIntensity : 0,
-          quality === "high" ? 2.4 : quality === "standard" ? 1.65 : 1.05,
-          mix,
-        );
-      }
+      material.opacity = original.opacity * fade;
     }
+    for (const [mesh, original] of meshStates) {
+      mesh.castShadow = mix < 0.38 ? original.castShadow : false;
+    }
+    playerObject.visible = state.playerVisibleBeforePhase && mix < 0.999;
+    canvas.dataset.environmentPlayerVisible = playerObject.visible ? "visible" : "hidden";
   }
 
   function restorePlayerMaterials() {
@@ -213,26 +377,87 @@ export function createEnvironmentPhasing({
       if (Number.isFinite(original.emissiveIntensity)) material.emissiveIntensity = original.emissiveIntensity;
       material.needsUpdate = true;
     }
+    for (const [mesh, original] of meshStates) mesh.castShadow = original.castShadow;
+    meshStates.clear();
+    playerObject.visible = state.playerVisibleBeforePhase;
+    canvas.dataset.environmentPlayerVisible = playerObject.visible ? "visible" : "hidden";
     materialStates.clear();
   }
 
   function updateVisual() {
     const mix = THREE.MathUtils.clamp(state.visualMix, 0, 1);
     applyPlayerMaterials(mix);
-    visualRoot.visible = mix > 0.01;
     document.body.classList.toggle("is-environment-phasing", mix > 0.01);
-    if (!visualRoot.visible) return;
-    const pulse = 0.92 + Math.sin(state.totalElapsed * 18) * 0.08;
-    aura.position.copy(flight.position);
-    aura.scale.setScalar((quality === "high" ? 6.8 : quality === "standard" ? 5.8 : 4.8) * pulse);
-    aura.material.opacity = mix * (quality === "low" ? 0.34 : 0.48);
-    for (let index = 0; index < trails.length; index += 1) {
-      const trail = trails[index];
-      const distance = (index + 1) * (0.7 + Math.min(1.6, flight.speed * 0.012));
-      trail.position.copy(flight.position).addScaledVector(flight.forward, -distance);
-      trail.scale.setScalar((4.2 - index * 0.54) * (quality === "low" ? 0.72 : 1));
-      trail.material.opacity = mix * Math.max(0.07, 0.28 - index * 0.052);
+    const isVanish = state.phase === "dematerializing";
+    const isMaterialize = state.phase === "rematerializing";
+    const isBurst = isVanish || isMaterialize;
+    const duration = isVanish
+      ? PHASE_CONFIG.dematerializeSeconds
+      : PHASE_CONFIG.rematerializeSeconds;
+    const progress = isBurst
+      ? THREE.MathUtils.clamp(state.phaseElapsed / duration, 0, 1)
+      : 0;
+    canvas.dataset.environmentPhaseVisual = isVanish
+      ? "vanish"
+      : isMaterialize
+        ? "materialize"
+        : mix > 0.999
+          ? "invisible"
+          : "normal";
+    canvas.dataset.environmentPhaseVisualProgress = isBurst ? progress.toFixed(3) : "0";
+  }
+
+  function renderWarpedFrame() {
+    const isVanish = state.phase === "dematerializing";
+    const isMaterialize = state.phase === "rematerializing";
+    if (!isVanish && !isMaterialize) return false;
+    const duration = isVanish
+      ? PHASE_CONFIG.dematerializeSeconds
+      : PHASE_CONFIG.rematerializeSeconds;
+    const progress = THREE.MathUtils.clamp(state.phaseElapsed / duration, 0, 1);
+    const boundary = Math.max(0, Math.sin(Math.PI * progress));
+    const strength = Math.pow(boundary, 0.54);
+    if (strength < 0.002) return false;
+    const collapseProgress = isVanish
+      ? smoothstep01(progress)
+      : smoothstep01(1 - progress);
+    const renderScale = quality === "high" ? 1 : quality === "standard" ? 0.8 : 0.62;
+    renderer.getDrawingBufferSize(warpRenderSize);
+    const targetWidth = Math.max(1, Math.round(warpRenderSize.x * renderScale));
+    const targetHeight = Math.max(1, Math.round(warpRenderSize.y * renderScale));
+    if (warpTarget.width !== targetWidth || warpTarget.height !== targetHeight) {
+      warpTarget.setSize(targetWidth, targetHeight);
+      warpBackgroundTarget.setSize(targetWidth, targetHeight);
     }
+    warpScreenPosition.copy(flight.position).project(camera);
+    const centerY = THREE.MathUtils.clamp(warpScreenPosition.y * 0.5 + 0.5, 0.06, 0.94);
+    warpUniforms.center.value.set(
+      THREE.MathUtils.clamp(warpScreenPosition.x * 0.5 + 0.5, 0.06, 0.94),
+      centerY,
+    );
+    warpPlayerEdge.copy(camera.up).normalize().multiplyScalar(2.45).add(flight.position).project(camera);
+    const playerScreenRadius = Math.abs(warpPlayerEdge.y * 0.5 + 0.5 - centerY);
+    warpUniforms.resolution.value.set(targetWidth, targetHeight);
+    warpUniforms.strength.value = strength;
+    warpUniforms.pinch.value = collapseProgress * strength * (quality === "low" ? 2.2 : 3.35);
+    warpUniforms.direction.value = isVanish ? 1 : -1;
+    warpUniforms.time.value = state.phaseElapsed;
+    warpUniforms.radius.value = THREE.MathUtils.clamp(playerScreenRadius * 1.28, 0.035, 0.115);
+
+    const previousTarget = renderer.getRenderTarget();
+    const playerWasVisible = playerObject.visible;
+    try {
+      renderer.setRenderTarget(warpTarget);
+      renderer.render(scene, camera);
+      playerObject.visible = false;
+      renderer.setRenderTarget(warpBackgroundTarget);
+      renderer.render(scene, camera);
+    } finally {
+      playerObject.visible = playerWasVisible;
+      renderer.setRenderTarget(previousTarget);
+    }
+    renderer.render(warpScene, warpCamera);
+    return true;
   }
 
   function restoreNormalState() {
@@ -240,7 +465,6 @@ export function createEnvironmentPhasing({
     setPhase("normal");
     state.safeElapsed = 0;
     document.body.classList.remove("is-environment-phasing");
-    visualRoot.visible = false;
     restorePlayerMaterials();
   }
 
@@ -286,6 +510,7 @@ export function createEnvironmentPhasing({
   }
 
   function beginPhase({ up: upDirection, forward, currentRadius, turnInput, collisionDirection }) {
+    state.playerVisibleBeforePhase = playerObject.visible;
     state.startPosition.copy(flight.position);
     if (state.lastSafePosition.lengthSq() < 0.0001) state.lastSafePosition.copy(flight.position);
     state.entryForward.copy(forward);
@@ -568,19 +793,23 @@ export function createEnvironmentPhasing({
 
   function dispose() {
     reset();
-    visualRoot.removeFromParent();
-    auraMaterial.dispose();
-    for (const trail of trails) trail.material.dispose();
-    glowTexture.dispose();
+    warpTarget.dispose();
+    warpBackgroundTarget.dispose();
+    warpMaterial.dispose();
+    warpGeometry.dispose();
   }
 
   canvas.dataset.environmentPhase = "normal";
+  canvas.dataset.environmentPhaseVisual = "normal";
+  canvas.dataset.environmentPhaseVisualProgress = "0";
+  canvas.dataset.environmentPlayerVisible = playerObject.visible ? "visible" : "hidden";
   return {
     state,
     predict,
     updateControlled,
     observeSafePosition,
     beginFrame,
+    renderWarpedFrame,
     reset,
     dispose,
     isMovementControlled,

@@ -70,6 +70,13 @@ const DEVIL_ROUTE_MIN_DURATION = 2.8;
 const DEVIL_ROUTE_MAX_DURATION = 13;
 const DEVIL_ROUTE_CLEARANCE = 18;
 const DEVIL_ROUTE_LEAD_DISTANCE = 12;
+const DEVIL_BLACK_BOX_ALTITUDE = 20;
+const DEVIL_BLACK_BOX_ROUTE_CLEARANCE = 26;
+const DEVIL_BLACK_BOX_PURSUIT_SAMPLES = 12;
+const DEVIL_BLACK_BOX_PURSUIT_RESPONSE = 2.45;
+const DEVIL_BLACK_BOX_PURSUIT_ASCENT_RESPONSE = 5.6;
+const DEVIL_BLACK_BOX_PURSUIT_DESCENT_RESPONSE = 1.15;
+const DEVIL_BLACK_BOX_FORWARD_RESPONSE = 4.2;
 const DEVIL_BLACK_BOX_ARRIVAL_LEAD = 3.2;
 const DEVIL_BLACK_BOX_WAIT_TIMEOUT = 28;
 const DEVIL_ROUTE_PLANNER = Object.freeze({
@@ -84,7 +91,7 @@ const DEVIL_DESTINATIONS = [
   { id: "blackSphere", label: "黒い球体", stopDistance: 30, endAltitude: 40, focusHeight: 0 },
   { id: "compass", label: "羅針盤", stopDistance: 15, endAltitude: 24, focusHeight: 0 },
   { id: "sanctuary", label: "太陽光式集光遠達装置", stopDistance: 72, endAltitude: 12, focusHeight: 18 },
-  { id: "blackBox", label: "高速移動する黒い箱", stopDistance: 15, endAltitude: 2, focusHeight: 2, special: "blackBox" },
+  { id: "blackBox", label: "高速移動する黒い箱", stopDistance: 15, endAltitude: DEVIL_BLACK_BOX_ALTITUDE, focusHeight: 2, special: "blackBox" },
 ];
 const DEVIL_ESCAPE_COPY = "昼のエリアに黒い球、夜のエリアに白い球がある。\n\nどちらかの球に触れた後、一度も他の物体に触れることなく、もう一方の球に触れることで昼夜が逆転する。\n\nその後、白い球の近くの巨大な装置を起動させれば脱出の道標が現れる。";
 
@@ -1379,6 +1386,8 @@ export function createWholePlanetExperience({
 
   function buildDevilRoutePlan(navigation) {
     const planner = DEVIL_ROUTE_PLANNER[quality] || DEVIL_ROUTE_PLANNER.standard;
+    const isBlackBoxRoute = navigation.destination?.special === "blackBox";
+    const sampleCount = isBlackBoxRoute ? planner.samples * 2 : planner.samples;
     const start = navigation.startDirection;
     const end = navigation.endDirection;
     const routeAxis = new THREE.Vector3().crossVectors(start, end);
@@ -1407,8 +1416,8 @@ export function createWholePlanetExperience({
       let previousSurface = getSurfaceRadius(start);
       let previousDirection = start;
 
-      for (let index = 0; index <= planner.samples; index += 1) {
-        const t = index / planner.samples;
+      for (let index = 0; index <= sampleCount; index += 1) {
+        const t = index / sampleCount;
         const oneMinusT = 1 - t;
         const direction = start.clone().multiplyScalar(oneMinusT * oneMinusT)
           .addScaledVector(control, 2 * oneMinusT * t)
@@ -1439,7 +1448,7 @@ export function createWholePlanetExperience({
           directions,
           surfaces,
           routeDistance,
-          risk: maximumRise + totalSlope / Math.max(1, planner.samples) * 2.2,
+          risk: maximumRise + totalSlope / Math.max(1, sampleCount) * 2.2,
           sideOffset,
         };
       }
@@ -1449,27 +1458,70 @@ export function createWholePlanetExperience({
     const cumulative = [0];
     let pathLength = 0;
     const endRadius = best.surfaces[best.surfaces.length - 1] + 0.9 + navigation.endAltitude;
-    let arcLift = 0;
-    for (let index = 1; index < best.directions.length - 1; index += 1) {
-      const t = index / Math.max(1, best.directions.length - 1);
-      const baseline = THREE.MathUtils.lerp(startRadius, endRadius, t);
-      const parabolaWeight = 4 * t * (1 - t);
-      const requiredRadius = best.surfaces[index] + 0.9 + DEVIL_ROUTE_CLEARANCE;
-      arcLift = Math.max(arcLift, (requiredRadius - baseline) / Math.max(0.0001, parabolaWeight));
+    const routeClearance = isBlackBoxRoute
+      ? DEVIL_BLACK_BOX_ROUTE_CLEARANCE
+      : DEVIL_ROUTE_CLEARANCE;
+    if (isBlackBoxRoute) {
+      // For the fast target, build a terrain envelope rather than one tall
+      // global parabola. Future peaks propagate backward with a limited climb
+      // grade, so avoidance begins far away without sending the player far
+      // above the scene. The forward pass makes the descent even shallower.
+      const lastIndex = best.directions.length - 1;
+      for (let index = 0; index <= lastIndex; index += 1) {
+        radii[index] = index === 0
+          ? startRadius
+          : best.surfaces[index] + 0.9 + routeClearance;
+      }
+      radii[lastIndex] = Math.max(endRadius, radii[lastIndex]);
+      for (let index = lastIndex - 1; index >= 1; index -= 1) {
+        const angle = Math.acos(THREE.MathUtils.clamp(
+          best.directions[index].dot(best.directions[index + 1]),
+          -1,
+          1,
+        ));
+        const segmentDistance = angle * Math.max(
+          1,
+          (best.surfaces[index] + best.surfaces[index + 1]) * 0.5,
+        );
+        radii[index] = Math.max(radii[index], radii[index + 1] - segmentDistance * 0.18);
+      }
+      for (let index = 1; index <= lastIndex; index += 1) {
+        const angle = Math.acos(THREE.MathUtils.clamp(
+          best.directions[index - 1].dot(best.directions[index]),
+          -1,
+          1,
+        ));
+        const segmentDistance = angle * Math.max(
+          1,
+          (best.surfaces[index - 1] + best.surfaces[index]) * 0.5,
+        );
+        radii[index] = Math.max(radii[index], radii[index - 1] - segmentDistance * 0.1);
+      }
+    } else {
+      let arcLift = 0;
+      for (let index = 1; index < best.directions.length - 1; index += 1) {
+        const t = index / Math.max(1, best.directions.length - 1);
+        const baseline = THREE.MathUtils.lerp(startRadius, endRadius, t);
+        const parabolaWeight = 4 * t * (1 - t);
+        const requiredRadius = best.surfaces[index] + 0.9 + routeClearance;
+        arcLift = Math.max(arcLift, (requiredRadius - baseline) / Math.max(0.0001, parabolaWeight));
+      }
+      // A single low parabola clears every sampled point on the already-detoured
+      // route, keeping the devil framed instead of pinning the whole trip high.
+      arcLift = Math.max(0, arcLift) + 2.5;
+      for (let index = 0; index < best.directions.length; index += 1) {
+        const t = index / Math.max(1, best.directions.length - 1);
+        const baseline = THREE.MathUtils.lerp(startRadius, endRadius, t);
+        const parabolicRadius = baseline + 4 * t * (1 - t) * arcLift;
+        radii[index] = index === 0
+          ? startRadius
+          : index === best.directions.length - 1
+            ? endRadius
+            : parabolicRadius;
+      }
     }
-    // A single low parabola clears every sampled point on the already-detoured
-    // route, keeping the devil framed instead of pinning the whole trip high.
-    arcLift = Math.max(0, arcLift) + 2.5;
     for (let index = 0; index < best.directions.length; index += 1) {
-      const t = index / Math.max(1, best.directions.length - 1);
-      const baseline = THREE.MathUtils.lerp(startRadius, endRadius, t);
-      const parabolicRadius = baseline + 4 * t * (1 - t) * arcLift;
-      const radius = index === 0
-        ? startRadius
-        : index === best.directions.length - 1
-          ? endRadius
-          : parabolicRadius;
-      radii.push(radius);
+      const radius = radii[index];
       if (index > 0) {
         const angle = Math.acos(THREE.MathUtils.clamp(
           best.directions[index - 1].dot(best.directions[index]),
@@ -1668,20 +1720,47 @@ export function createWholePlanetExperience({
         // orbit, use a short, terrain-safe pursuit instead of waiting at a
         // stale point in space.
         targetDirection.copy(worldPosition).normalize();
-        const pursuitRadius = getSurfaceRadius(targetDirection) + 0.9 + navigation.endAltitude;
-        const pursuitBlend = 1 - Math.exp(-7.2 * delta);
-        devilRouteDirection.copy(flight.position).normalize()
+        devilRouteDirection.copy(flight.position).normalize();
+        let pursuitRadius = Math.max(
+          worldPosition.length(),
+          getSurfaceRadius(targetDirection) + 0.9 + navigation.endAltitude,
+        );
+        // Sample the whole remaining pursuit arc so a mountain raises the
+        // route while it is still distant, rather than causing a last-second
+        // vertical correction near the slope.
+        for (let index = 1; index <= DEVIL_BLACK_BOX_PURSUIT_SAMPLES; index += 1) {
+          const lookaheadMix = index / DEVIL_BLACK_BOX_PURSUIT_SAMPLES;
+          devilTarget.copy(devilRouteDirection)
+            .lerp(targetDirection, lookaheadMix)
+            .normalize();
+          pursuitRadius = Math.max(
+            pursuitRadius,
+            getSurfaceRadius(devilTarget) + 0.9 + DEVIL_BLACK_BOX_ROUTE_CLEARANCE,
+          );
+        }
+        const pursuitBlend = 1 - Math.exp(-DEVIL_BLACK_BOX_PURSUIT_RESPONSE * delta);
+        devilRouteDirection
           .lerp(targetDirection, pursuitBlend)
           .normalize();
-        flight.position.copy(devilRouteDirection).multiplyScalar(
-          THREE.MathUtils.lerp(flight.position.length(), pursuitRadius, pursuitBlend),
+        const currentRadius = flight.position.length();
+        const radialResponse = pursuitRadius > currentRadius
+          ? DEVIL_BLACK_BOX_PURSUIT_ASCENT_RESPONSE
+          : DEVIL_BLACK_BOX_PURSUIT_DESCENT_RESPONSE;
+        const radialBlend = 1 - Math.exp(-radialResponse * delta);
+        const localSafeRadius = getSurfaceRadius(devilRouteDirection)
+          + 0.9
+          + DEVIL_BLACK_BOX_ROUTE_CLEARANCE;
+        const nextRadius = Math.max(
+          localSafeRadius,
+          THREE.MathUtils.lerp(currentRadius, pursuitRadius, radialBlend),
         );
+        flight.position.copy(devilRouteDirection).multiplyScalar(nextRadius);
         devilRouteForward.copy(targetDirection)
           .addScaledVector(devilRouteDirection, -targetDirection.dot(devilRouteDirection))
           .normalize();
         if (devilRouteForward.lengthSq() > 0.0001) flight.forward.lerp(
           devilRouteForward,
-          1 - Math.exp(-8.5 * delta),
+          1 - Math.exp(-DEVIL_BLACK_BOX_FORWARD_RESPONSE * delta),
         ).normalize();
         flight.speed = Math.max(30, navigation.plannedSpeed * 0.82);
       } else {
@@ -1801,7 +1880,6 @@ export function createWholePlanetExperience({
       openProductionBlackBox();
       return;
     }
-    showToast(`${devilUi.navigationDestination.textContent}に到着した。`, 2600);
     stopDevilRoute(true);
   }
 
@@ -2169,7 +2247,6 @@ export function createWholePlanetExperience({
       state.challengeTimeRemaining = 0;
       landmarks.objects.compass.userData.targetWorld = null;
       triggerChallengeFlash("is-failure");
-      showToast("モノクロチャレンジ終了。もう一度、どちらかの球から始める。", 4200);
       return;
     }
     state.phase = "inverted";
@@ -2179,7 +2256,6 @@ export function createWholePlanetExperience({
     landmarks.objects.compass.userData.targetWorld = null;
     onWorldInversion?.(true);
     triggerChallengeFlash("is-success");
-    showToast("昼と夜が逆転した。白い球の近くの巨大な装置へ。", 4600);
   }
 
   function startChallenge(id) {
@@ -2196,7 +2272,6 @@ export function createWholePlanetExperience({
     clockAudio.currentTime = 0;
     void clockAudio.play().catch((error) => console.warn("Clock audio is waiting for a gesture.", error));
     triggerChallengeFlash("is-start");
-    showToast("モノクロ開始。30秒以内に、もう一方の球へ。", 4200);
   }
 
   function triggerChallengeFlash(kind) {
@@ -2225,7 +2300,6 @@ export function createWholePlanetExperience({
 
   function activateSanctuary() {
     if (state.phase !== "inverted") {
-      showToast("装置はまだ眠っている。先に黒い球と白い球を結ぶ。", 3800);
       return;
     }
     state.phase = "sanctuary";
@@ -2237,7 +2311,6 @@ export function createWholePlanetExperience({
       landmarks.objects.blackBox.getWorldPosition(targetPosition);
       landmarks.objects.compass.userData.targetWorld = targetPosition.clone();
     }
-    showToast("巨大な装置が起動した。光の道標が宇宙へ伸びていく。", 4800);
   }
 
   function beginSpaceReturn() {
@@ -2263,7 +2336,6 @@ export function createWholePlanetExperience({
     syncMusicUi();
     playEffectAudio(spaceReturnAudio, true);
     canvas.dataset.returnBgm = "space-return";
-    showToast("宇宙帰還モード。光の先の地球へ。", 4200);
   }
 
   function triggerReturnEnding() {

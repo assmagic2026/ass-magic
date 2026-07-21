@@ -5,13 +5,13 @@ import {
   getExperimentSettings,
 } from "./quality.js";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-2";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-10";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-136";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-148";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-137";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-152";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -522,6 +522,7 @@ if (settings.mode === "realism" && settings.view === "flight") {
     flight,
     playerObject: flightPlayer.player,
     camera,
+    renderer,
     quality: settings.quality,
     getSurfaceRadius,
     playerClearance: PLAYER_CLEARANCE,
@@ -586,7 +587,7 @@ renderer.setAnimationLoop(() => {
   }
   if (adaptiveDpr.sample(delta)) resize();
   updateFlightShadow();
-  renderer.render(scene, camera);
+  if (!environmentPhasing?.renderWarpedFrame()) renderer.render(scene, camera);
   perfHud.update(delta, adaptiveDpr.ratio);
 });
 
