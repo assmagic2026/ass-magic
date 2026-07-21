@@ -65,17 +65,17 @@ const DEVIL_TERRAIN_RESPONSE = 4.2;
 // Realistic terrain adds vertical variation, so use a more forgiving encounter radius.
 const DEVIL_CONTACT_RADIUS = 15;
 const MONOCHROME_CHALLENGE_DURATION = 30;
-const DEVIL_ROUTE_SPEED = 95;
+const DEVIL_ROUTE_SPEED = 72;
 const DEVIL_ROUTE_MIN_DURATION = 2.8;
 const DEVIL_ROUTE_MAX_DURATION = 13;
 const DEVIL_ROUTE_CLEARANCE = 18;
 const DEVIL_ROUTE_LEAD_DISTANCE = 12;
 const DEVIL_BLACK_BOX_ARRIVAL_LEAD = 3.2;
-const DEVIL_BLACK_BOX_WAIT_TIMEOUT = 16;
+const DEVIL_BLACK_BOX_WAIT_TIMEOUT = 28;
 const DEVIL_ROUTE_PLANNER = Object.freeze({
-  low: { samples: 18, offsets: [0, -0.28, 0.28] },
-  standard: { samples: 26, offsets: [0, -0.18, 0.18, -0.36, 0.36] },
-  high: { samples: 36, offsets: [0, -0.14, 0.14, -0.28, 0.28, -0.44, 0.44] },
+  low: { samples: 18, offsets: [0, -0.32, 0.32, -0.56, 0.56] },
+  standard: { samples: 26, offsets: [0, -0.2, 0.2, -0.4, 0.4, -0.64, 0.64] },
+  high: { samples: 36, offsets: [0, -0.16, 0.16, -0.32, 0.32, -0.52, 0.52, -0.74, 0.74] },
 });
 const DEVIL_DESTINATIONS = [
   { id: "recordPlayer", label: "レコードプレイヤー", stopDistance: 31, endAltitude: 5, focusHeight: 5 },
@@ -463,9 +463,11 @@ export function createWholePlanetExperience({
   scene,
   camera,
   flight,
+  playerObject = null,
   landmarks,
   getAltitude,
   getSurfaceRadius,
+  isEnvironmentPhasing = null,
   quality = "standard",
   onGuideSpeedChange,
   onWorldInversion,
@@ -909,6 +911,13 @@ export function createWholePlanetExperience({
 
   function updateCatCompanion(delta) {
     if (state.catJoinPhase !== "joining" && !state.catFollowing) return;
+    if (state.catFollowing && catCompanion.parent === playerObject) {
+      // Once the jump has completed, make the cat part of the player rig. This
+      // keeps it in the same pivot, bob, roll, and descent frame as the body.
+      catCompanion.position.set(CAT_ROUTE_MOUNT_SIDE, 0.02, 0.12);
+      catCompanion.quaternion.identity();
+      return;
+    }
     getCatMountTransform();
     if (state.catJoinPhase === "joining") {
       state.catJoinElapsed += delta;
@@ -928,6 +937,11 @@ export function createWholePlanetExperience({
         state.catPosition.copy(catDesiredPosition);
         catCompanion.position.copy(catDesiredPosition);
         catCompanion.quaternion.copy(catTargetQuaternion);
+        if (playerObject) {
+          playerObject.add(catCompanion);
+          catCompanion.position.set(CAT_ROUTE_MOUNT_SIDE, 0.02, 0.12);
+          catCompanion.quaternion.identity();
+        }
         refreshCatRouteAvailability();
         showToast("猫が肩に飛び乗った。", 3000);
       }
@@ -1351,6 +1365,12 @@ export function createWholePlanetExperience({
     if (completed) {
       onGuideSpeedChange?.(12);
       flight.speed = 12;
+    } else if (destination.special === "blackBox") {
+      // A grounded box must end at the actual object, not at the generic
+      // destination's approach radius. Otherwise the second visit stops just
+      // outside the contact sphere and never opens the box.
+      navigation.endDirection.copy(targetPosition).normalize();
+      navigation.focusPoint.copy(targetPosition);
     } else {
       onGuideSpeedChange?.(navigation.savedSpeedSelection);
       flight.speed = navigation.savedSpeed;
@@ -1402,8 +1422,9 @@ export function createWholePlanetExperience({
         }
         maximumRise = Math.max(maximumRise, rise);
         totalSlope += slope;
-        // Terrain is intentionally much more expensive than a slightly longer detour.
-        terrainCost += rise * rise * 0.12 + slope * 8.5;
+        // Prefer a broad side-route before raising the guide high enough to
+        // leave the player's view near steep terrain.
+        terrainCost += rise * rise * 0.32 + slope * 12.5;
         directions.push(direction);
         surfaces.push(surface);
         previousSurface = surface;
@@ -1427,26 +1448,27 @@ export function createWholePlanetExperience({
     const radii = [];
     const cumulative = [0];
     let pathLength = 0;
+    const endRadius = best.surfaces[best.surfaces.length - 1] + 0.9 + navigation.endAltitude;
+    let arcLift = 0;
+    for (let index = 1; index < best.directions.length - 1; index += 1) {
+      const t = index / Math.max(1, best.directions.length - 1);
+      const baseline = THREE.MathUtils.lerp(startRadius, endRadius, t);
+      const parabolaWeight = 4 * t * (1 - t);
+      const requiredRadius = best.surfaces[index] + 0.9 + DEVIL_ROUTE_CLEARANCE;
+      arcLift = Math.max(arcLift, (requiredRadius - baseline) / Math.max(0.0001, parabolaWeight));
+    }
+    // A single low parabola clears every sampled point on the already-detoured
+    // route, keeping the devil framed instead of pinning the whole trip high.
+    arcLift = Math.max(0, arcLift) + 2.5;
     for (let index = 0; index < best.directions.length; index += 1) {
       const t = index / Math.max(1, best.directions.length - 1);
-      const windowStart = Math.max(0, index - 2);
-      const windowEnd = Math.min(best.surfaces.length - 1, index + 3);
-      let terrainAhead = best.surfaces[index];
-      for (let sample = windowStart; sample <= windowEnd; sample += 1) {
-        terrainAhead = Math.max(terrainAhead, best.surfaces[sample]);
-      }
-      const endRadius = best.surfaces[best.surfaces.length - 1] + 0.9 + navigation.endAltitude;
       const baseline = THREE.MathUtils.lerp(startRadius, endRadius, t);
-      const clearance = 3.5 + Math.sin(t * Math.PI) * THREE.MathUtils.clamp(
-        DEVIL_ROUTE_CLEARANCE + best.risk * 0.22,
-        DEVIL_ROUTE_CLEARANCE,
-        38,
-      );
+      const parabolicRadius = baseline + 4 * t * (1 - t) * arcLift;
       const radius = index === 0
         ? startRadius
         : index === best.directions.length - 1
           ? endRadius
-          : Math.max(baseline, terrainAhead + 0.9 + clearance);
+          : parabolicRadius;
       radii.push(radius);
       if (index > 0) {
         const angle = Math.acos(THREE.MathUtils.clamp(
@@ -1466,11 +1488,7 @@ export function createWholePlanetExperience({
     navigation.pathCumulative = cumulative;
     navigation.pathLength = pathLength;
     navigation.routeRisk = best.risk;
-    navigation.plannedSpeed = THREE.MathUtils.clamp(
-      DEVIL_ROUTE_SPEED - best.risk * 0.62,
-      52,
-      DEVIL_ROUTE_SPEED,
-    );
+    navigation.plannedSpeed = DEVIL_ROUTE_SPEED;
     navigation.routeAxis.copy(routeAxis);
     navigation.arcAngle = Math.acos(THREE.MathUtils.clamp(start.dot(end), -1, 1));
     canvas.dataset.guideRouteSide = best.sideOffset.toFixed(2);
@@ -1624,12 +1642,65 @@ export function createWholePlanetExperience({
       return;
     }
 
+    // The route clock pauses while the shared flight controller is passing
+    // through terrain, so the guide cannot pull the player back into it.
+    if (isEnvironmentPhasing?.()) {
+      navigation.phaseInterrupted = true;
+      flight.speed = Math.max(flight.speed, DEVIL_ROUTE_SPEED * 0.58);
+      return;
+    }
+    if (navigation.phaseInterrupted) {
+      const savedSpeedSelection = navigation.savedSpeedSelection;
+      const savedSpeed = navigation.savedSpeed;
+      navigation.phaseInterrupted = false;
+      startDevilRoute(route);
+      navigation.savedSpeedSelection = savedSpeedSelection;
+      navigation.savedSpeed = savedSpeed;
+      return;
+    }
+
     if (state.devil.phase === "route-wait") {
       navigation.waitElapsed += delta;
-      flight.speed = 0;
+      const blackBox = landmarks.objects.blackBox;
+      blackBox?.getWorldPosition(worldPosition);
+      if (blackBox && landmarks.isBlackBoxMoving?.()) {
+        // The prediction gets the route close; while the box continues to
+        // orbit, use a short, terrain-safe pursuit instead of waiting at a
+        // stale point in space.
+        targetDirection.copy(worldPosition).normalize();
+        const pursuitRadius = getSurfaceRadius(targetDirection) + 0.9 + navigation.endAltitude;
+        const pursuitBlend = 1 - Math.exp(-7.2 * delta);
+        devilRouteDirection.copy(flight.position).normalize()
+          .lerp(targetDirection, pursuitBlend)
+          .normalize();
+        flight.position.copy(devilRouteDirection).multiplyScalar(
+          THREE.MathUtils.lerp(flight.position.length(), pursuitRadius, pursuitBlend),
+        );
+        devilRouteForward.copy(targetDirection)
+          .addScaledVector(devilRouteDirection, -targetDirection.dot(devilRouteDirection))
+          .normalize();
+        if (devilRouteForward.lengthSq() > 0.0001) flight.forward.lerp(
+          devilRouteForward,
+          1 - Math.exp(-8.5 * delta),
+        ).normalize();
+        flight.speed = Math.max(30, navigation.plannedSpeed * 0.82);
+      } else {
+        flight.speed = 0;
+      }
       flight.radialSpeed = 0;
-      if (!landmarks.isBlackBoxMoving?.() || navigation.waitElapsed >= DEVIL_BLACK_BOX_WAIT_TIMEOUT) {
-        stopDevilRoute();
+      if (
+        (blackBox && flight.position.distanceTo(worldPosition) <= 18)
+      ) {
+        stopDevilRoute(true);
+        openProductionBlackBox();
+        return;
+      }
+      if (navigation.waitElapsed >= DEVIL_BLACK_BOX_WAIT_TIMEOUT) {
+        // The box can keep orbiting while the route is in progress.  The
+        // guide is still an intentional interaction, so finish it instead
+        // of silently dropping the player back into free flight.
+        stopDevilRoute(true);
+        openProductionBlackBox();
       }
       return;
     }
@@ -1723,6 +1794,11 @@ export function createWholePlanetExperience({
       state.devil.phase = "route-wait";
       navigation.waitElapsed = 0;
       flight.speed = 0;
+      return;
+    }
+    if (route.special === "blackBox") {
+      stopDevilRoute(true);
+      openProductionBlackBox();
       return;
     }
     showToast(`${devilUi.navigationDestination.textContent}に到着した。`, 2600);
@@ -2351,7 +2427,9 @@ export function createWholePlanetExperience({
   }
 
   function updateContacts() {
-    if (state.modalOpen || state.ending) return;
+    // Environment phasing must not collect, open, start, or complete event
+    // objects while the body is intentionally non-solid.
+    if (state.modalOpen || state.ending || isEnvironmentPhasing?.()) return;
     if (state.devil.phase === "route") return;
     if (state.devil.phase === "route-wait") {
       const blackBox = landmarks.objects.blackBox;
@@ -2558,7 +2636,13 @@ export function createWholePlanetExperience({
       state.catPendingJoin = false;
       state.reachedEarthWithCat = false;
       state.returnRecorded = false;
+      if (catCompanion.parent !== scene) scene.add(catCompanion);
       catCompanion.visible = catDebugFollowing;
+      if (catDebugFollowing && playerObject) {
+        playerObject.add(catCompanion);
+        catCompanion.position.set(CAT_ROUTE_MOUNT_SIDE, 0.02, 0.12);
+        catCompanion.quaternion.identity();
+      }
       state.challengeStart = null;
       state.challengeTimeRemaining = 0;
       state.spaceFlightActive = false;

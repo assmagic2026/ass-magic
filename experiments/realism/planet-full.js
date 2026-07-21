@@ -5,12 +5,13 @@ import {
   getExperimentSettings,
 } from "./quality.js";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-1";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-136";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-144";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-148";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -287,7 +288,7 @@ const lightDaySun = new THREE.Color(0xffe0b0);
 const lightDuskSun = new THREE.Color(0xff6336);
 const lightDaySky = new THREE.Color(0xbad9e7);
 const lightDuskSky = new THREE.Color(0xffa260);
-const lightNightSky = new THREE.Color(0x7398bf);
+const lightNightSky = new THREE.Color(0x111827);
 const lightDayGround = new THREE.Color(0x425369);
 const lightDuskGround = new THREE.Color(0x8c3528);
 const lightNightGround = new THREE.Color(0x1d2a42);
@@ -478,6 +479,7 @@ const FLIGHT_PHYSICS = Object.freeze({
   SPEED_FOV: 7,
 });
 
+let environmentPhasing = null;
 const experience = settings.view === "flight"
   ? createWholePlanetExperience({
     canvas,
@@ -488,6 +490,7 @@ const experience = settings.view === "flight"
     landmarks: specialLandmarks,
     getAltitude: getFlightAltitude,
     getSurfaceRadius,
+    isEnvironmentPhasing: () => environmentPhasing?.isCollisionSuppressed() === true,
     quality: settings.quality,
     onGuideSpeedChange(speed) {
       flight.speedSelection = speed;
@@ -499,6 +502,33 @@ const experience = settings.view === "flight"
     },
   })
   : null;
+
+if (settings.mode === "realism" && settings.view === "flight") {
+  const protectedZoneSpecs = [
+    ["blackSphere", 28],
+    ["whiteSphere", 28],
+    ["recordPlayer", 35],
+    ["book", 18],
+    ["compass", 21],
+    ["sanctuary", 40],
+    ["blackBox", 14],
+  ];
+  const protectedZones = protectedZoneSpecs
+    .map(([id, radius]) => ({ object: specialLandmarks.objects[id], radius }))
+    .filter(({ object }) => object);
+  environmentPhasing = createEnvironmentPhasing({
+    scene,
+    canvas,
+    flight,
+    playerObject: flightPlayer.player,
+    camera,
+    quality: settings.quality,
+    getSurfaceRadius,
+    playerClearance: PLAYER_CLEARANCE,
+    minimumRadius: WATER_RADIUS,
+    protectedZones,
+  });
+}
 
 if (settings.view === "flight") {
   document.body.classList.add("flight-mode");
@@ -532,6 +562,9 @@ renderer.setAnimationLoop(() => {
   elapsed += delta;
   updateWorldInversion(delta);
   specialLandmarks.update(delta);
+  environmentPhasing?.beginFrame(delta, {
+    paused: experience?.isPaused() === true && experience?.isGuideNavigating() !== true,
+  });
   experience?.update(delta);
   if (settings.view === "flight") {
     if (experience?.isGuideNavigating()) updateGuidedFlight(delta);
@@ -1000,7 +1033,7 @@ function createWaterSurface() {
   const basinGradient = createWaterBasinGradientTexture();
   const primaryMaterial = new THREE.MeshPhysicalMaterial({
     color: 0xffffff,
-    roughness: 0.11,
+    roughness: 0.16,
     metalness: 0,
     clearcoat: 1,
     clearcoatRoughness: 0.06,
@@ -1009,14 +1042,14 @@ function createWaterSurface() {
     specularIntensity: 1,
     specularColor: 0xfff8e8,
     envMap: environmentMap,
-    envMapIntensity: 0.78,
+    envMapIntensity: 0.5,
     iridescence: 0.58,
     iridescenceIOR: 1.32,
     iridescenceThicknessRange: [100, 520],
     normalMap,
-    normalScale: new THREE.Vector2(0.23, 0.23),
+    normalScale: new THREE.Vector2(0.18, 0.18),
     transparent: true,
-    opacity: 0.96,
+    opacity: 0.55,
     depthWrite: false,
   });
   const detailMaterial = new THREE.MeshPhysicalMaterial({
@@ -1029,19 +1062,21 @@ function createWaterSurface() {
     specularIntensity: 1,
     specularColor: 0xffffff,
     envMap: environmentMap,
-    envMapIntensity: 0.92,
+    envMapIntensity: 0.62,
     iridescence: 0.86,
     iridescenceIOR: 1.3,
     iridescenceThicknessRange: [120, 700],
     normalMap: detailNormalMap,
     normalScale: new THREE.Vector2(0.32, 0.32),
     transparent: true,
-    opacity: 0.24,
+    opacity: 0.1,
     depthWrite: false,
     blending: THREE.NormalBlending,
   });
-  applyWaterWaveShader(primaryMaterial, basinGradient.texture, 0.11, 0.032, 0.74);
-  applyWaterWaveShader(detailMaterial, basinGradient.texture, 0.055, 0.061, -1.08);
+  // Gentle, low-frequency displacement prevents faceting while the normal maps
+  // retain a continuous water shimmer.
+  applyWaterWaveShader(primaryMaterial, basinGradient.texture, 0.65, 0.035, 0.46);
+  applyWaterWaveShader(detailMaterial, basinGradient.texture, 0.22, 0.07, -0.62);
   const primary = new THREE.Mesh(
     new THREE.SphereGeometry(WATER_RADIUS, widthSegments, heightSegments),
     primaryMaterial,
@@ -1107,12 +1142,12 @@ function createWaterPrismMaterial(gradientMap) {
         float gradientCoord = clamp(basinData.r + drift, 0.0, 1.0);
         float pinkMix = smoothstep(0.02, 0.54, gradientCoord);
         float yellowMix = smoothstep(0.46, 0.98, gradientCoord);
-        vec3 aqua = vec3(0.18, 0.66, 0.94);
-        vec3 pink = vec3(0.96, 0.46, 0.69);
-        vec3 yellow = vec3(1.0, 0.8, 0.34);
+        vec3 aqua = vec3(0.57, 0.85, 0.96);
+        vec3 pink = vec3(0.99, 0.72, 0.84);
+        vec3 yellow = vec3(1.0, 0.91, 0.66);
         vec3 pastel = mix(aqua, pink, pinkMix);
         pastel = mix(pastel, yellow, yellowMix);
-        gl_FragColor = vec4(pastel * (0.45 + fresnel * 0.24), 0.065 + fresnel * 0.1);
+        gl_FragColor = vec4(pastel * (0.3 + fresnel * 0.16), 0.055 + fresnel * 0.09);
       }
     `,
     transparent: true,
@@ -1157,17 +1192,17 @@ function applyWaterWaveShader(material, gradientMap, amplitude, frequency, speed
         float gradientCoord = clamp(basinData.r + drift, 0.0, 1.0);
         float pinkMix = smoothstep(0.02, 0.54, gradientCoord);
         float yellowMix = smoothstep(0.46, 0.98, gradientCoord);
-        vec3 waterAqua = vec3(0.18, 0.66, 0.94);
-        vec3 waterPink = vec3(0.96, 0.46, 0.69);
-        vec3 waterYellow = vec3(1.0, 0.8, 0.34);
+        vec3 waterAqua = vec3(0.57, 0.85, 0.96);
+        vec3 waterPink = vec3(0.99, 0.72, 0.84);
+        vec3 waterYellow = vec3(1.0, 0.91, 0.66);
         vec3 pastelGradient = mix(waterAqua, waterPink, pinkMix);
         pastelGradient = mix(pastelGradient, waterYellow, yellowMix);
-        float pearl = 0.96 + 0.04 * sin((basinData.g * 1.15 + basinData.b * 0.65) * 6.2831853);
+        float pearl = 0.985 + 0.015 * sin((basinData.g * 1.15 + basinData.b * 0.65) * 6.2831853);
         diffuseColor.rgb = pastelGradient * pearl;`,
       )
       .replace(
         "#include <opaque_fragment>",
-        `outgoingLight = pastelGradient * 0.58 + outgoingLight * 0.12;
+        `outgoingLight = pastelGradient * 0.32 + outgoingLight * 0.1;
         #include <opaque_fragment>`,
       );
     material.userData.compiledWaterShader = shader;
@@ -2185,10 +2220,13 @@ function createCrystalMaterial(phaseIndex) {
     color: 0xffffff,
     vertexColors: true,
     flatShading: true,
-    roughness: settings.quality === "high" ? 0.27 : settings.quality === "standard" ? 0.34 : 0.46,
+    roughness: settings.quality === "high" ? 0.16 : settings.quality === "standard" ? 0.23 : 0.34,
     metalness: 0.04,
-    emissive: 0x10182b,
-    emissiveIntensity: settings.quality === "low" ? 0.2 : 0.28,
+    emissive: 0xe8f5ff,
+    emissiveIntensity: settings.quality === "low" ? 2.8 : 4.6,
+    transparent: true,
+    opacity: settings.quality === "high" ? 0.62 : settings.quality === "standard" ? 0.68 : 0.76,
+    depthWrite: false,
   };
   let material;
   if (settings.quality === "low") {
@@ -2201,12 +2239,46 @@ function createCrystalMaterial(phaseIndex) {
       ior: 1.46,
       specularIntensity: 0.74,
       specularColor: 0xd8eaff,
-      transparent: true,
-      opacity: settings.quality === "high" ? 0.88 : 0.93,
-      depthWrite: true,
+      transmission: settings.quality === "high" ? 0.24 : 0.12,
+      thickness: 0.86,
     });
   }
-  applyCrystalInteriorShader(material, phaseIndex, settings.quality === "low" ? 0.18 : 0.32);
+  applyCrystalInteriorShader(material, phaseIndex, settings.quality === "low" ? 4.8 : 7.5);
+  surfaceMaterialDisposables.push(material);
+  return material;
+}
+
+function createCrystalGlowMaterial() {
+  const material = new THREE.ShaderMaterial({
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+    vertexShader: `
+      attribute float glowSize;
+      varying vec3 vGlowColor;
+      void main() {
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        float distanceToCamera = max(1.0, -viewPosition.z);
+        vGlowColor = color;
+        gl_PointSize = min(280.0, glowSize * (560.0 / distanceToCamera));
+        gl_Position = projectionMatrix * viewPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vGlowColor;
+      void main() {
+        float radius = length(gl_PointCoord - vec2(0.5)) * 2.0;
+        if (radius >= 1.0) discard;
+        float halo = pow(1.0 - radius, 2.15);
+        float core = pow(max(0.0, 1.0 - radius * 2.7), 1.35);
+        vec3 paleColor = mix(vGlowColor, vec3(1.0), 0.58 + core * 0.36);
+        gl_FragColor = vec4(paleColor * (1.5 + core * 4.8), halo * 0.72 + core * 0.95);
+      }
+    `,
+  });
   surfaceMaterialDisposables.push(material);
   return material;
 }
@@ -2247,24 +2319,6 @@ function getTerrainSurfaceNormal(direction, target) {
   return target;
 }
 
-function createNightCrystalFields(random, fieldCount) {
-  const fields = [];
-  const direction = new THREE.Vector3();
-  let attempts = 0;
-  while (fields.length < fieldCount && attempts < fieldCount * 80) {
-    attempts += 1;
-    randomSphereDirection(random, direction);
-    const nightDepth = THREE.MathUtils.smoothstep(-direction.dot(WORLD_SUN_DIRECTION), 0.12, 0.92);
-    if (random() > Math.pow(nightDepth, 1.25)) continue;
-    if (getTerrainRadius(direction) <= WATER_RADIUS + 1.2) continue;
-    fields.push({
-      direction: direction.clone(),
-      spread: 0.075 + random() * 0.17,
-    });
-  }
-  return fields;
-}
-
 function isCrystalPlacementProtected(direction) {
   const protectedFeatures = [
     [MOUNTAIN_DIRECTION, 0.2],
@@ -2283,11 +2337,11 @@ function addRealismNightCrystals(random) {
     (_, geometryIndex) => createNaturalCrystalGeometry(7141 + geometryIndex * 1937),
   );
   const paletteDefinitions = [
-    0x517ac3,
-    0x4bb6bd,
-    0x7659b5,
-    0x94578f,
-    0x91a86c,
+    0xc4f6ff,
+    0xffefad,
+    0xffc4e2,
+    0xd8ceff,
+    0xdff4c1,
   ];
   const paletteCount = settings.quality === "high" ? 5 : settings.quality === "standard" ? 4 : 3;
   const palettes = paletteDefinitions.slice(0, paletteCount);
@@ -2296,11 +2350,13 @@ function addRealismNightCrystals(random) {
     { length: geometryCount },
     () => Array.from({ length: phaseCount }, () => []),
   );
-  const fieldCount = settings.quality === "high" ? 10 : settings.quality === "standard" ? 7 : 5;
-  const fields = createNightCrystalFields(random, fieldCount);
   const direction = new THREE.Vector3();
   const centerDirection = new THREE.Vector3();
-  const jitter = new THREE.Vector3();
+  const nightAxis = WORLD_SUN_DIRECTION.clone().multiplyScalar(-1).normalize();
+  const nightBasisA = new THREE.Vector3()
+    .crossVectors(Math.abs(nightAxis.y) < 0.9 ? WORLD_UP : FEATURE_AXIS_A, nightAxis)
+    .normalize();
+  const nightBasisB = new THREE.Vector3().crossVectors(nightAxis, nightBasisA).normalize();
   const tangentA = new THREE.Vector3();
   const tangentB = new THREE.Vector3();
   const surfaceNormal = new THREE.Vector3();
@@ -2312,40 +2368,45 @@ function addRealismNightCrystals(random) {
   const tiltAxis = new THREE.Vector3();
   const matrix = new THREE.Matrix4();
   const color = new THREE.Color();
+  const glowPositions = [];
+  const glowColors = [];
+  const glowSizes = [];
+  const placedCenters = [];
   const clusterTarget = planetLoad.crystalClusterCount;
   let clustersPlaced = 0;
   let placementAttempts = 0;
   let previewDirection = null;
 
-  while (clustersPlaced < clusterTarget && placementAttempts < clusterTarget * 90 && fields.length) {
+  while (clustersPlaced < clusterTarget && placementAttempts < clusterTarget * 90) {
     placementAttempts += 1;
-    const field = fields[Math.floor(random() * fields.length)];
-    jitter.set(random() - 0.5, random() - 0.5, random() - 0.5);
-    jitter.addScaledVector(field.direction, -jitter.dot(field.direction));
-    if (jitter.lengthSq() < 0.0001) continue;
-    jitter.normalize().multiplyScalar(field.spread * Math.sqrt(random()));
-    centerDirection.copy(field.direction).add(jitter).normalize();
-    const nightDepth = THREE.MathUtils.smoothstep(-centerDirection.dot(WORLD_SUN_DIRECTION), 0.08, 0.88);
-    if (random() > Math.pow(nightDepth, 1.35)) continue;
+    const nightDepth = 0.16 + random() * 0.84;
+    const nightRadius = Math.sqrt(Math.max(0, 1 - nightDepth * nightDepth));
+    const nightAngle = random() * Math.PI * 2;
+    centerDirection.copy(nightAxis).multiplyScalar(nightDepth)
+      .addScaledVector(nightBasisA, Math.cos(nightAngle) * nightRadius)
+      .addScaledVector(nightBasisB, Math.sin(nightAngle) * nightRadius)
+      .normalize();
+    if (placedCenters.some((placedCenter) => chordDistance(centerDirection, placedCenter) < 0.15)) continue;
     if (isCrystalPlacementProtected(centerDirection)) continue;
     const centerTerrainRadius = getTerrainRadius(centerDirection);
     if (centerTerrainRadius <= WATER_RADIUS + 1.1) continue;
     getTerrainSurfaceNormal(centerDirection, surfaceNormal);
     if (surfaceNormal.dot(centerDirection) < 0.74) continue;
     if (!previewDirection) previewDirection = centerDirection.clone();
+    placedCenters.push(centerDirection.clone());
 
-    const landmarkCluster = random() < 0.055;
+    const landmarkCluster = clustersPlaced < 3;
     const memberCount = landmarkCluster
-      ? (random() < 0.42 ? 1 : 4 + Math.floor(random() * 2))
+      ? 1
       : 2 + Math.floor(random() * (settings.quality === "low" ? 2 : 4));
-    const clusterSpread = landmarkCluster ? 2.4 + random() * 4.1 : 1.2 + random() * 3.4;
+    const clusterSpread = 1.2 + random() * 3.4;
     tangentA.crossVectors(Math.abs(centerDirection.y) < 0.9 ? WORLD_UP : FEATURE_AXIS_A, centerDirection).normalize();
     tangentB.crossVectors(centerDirection, tangentA).normalize();
     const clusterPaletteRoll = random();
-    const clusterPalette = clusterPaletteRoll < 0.31 ? 0
-      : clusterPaletteRoll < 0.57 ? Math.min(1, paletteCount - 1)
-        : clusterPaletteRoll < 0.84 ? Math.min(2, paletteCount - 1)
-          : clusterPaletteRoll < 0.96 ? Math.min(3, paletteCount - 1)
+    const clusterPalette = clusterPaletteRoll < 0.34 ? 0
+      : clusterPaletteRoll < 0.64 ? Math.min(1, paletteCount - 1)
+        : clusterPaletteRoll < 0.91 ? Math.min(2, paletteCount - 1)
+          : clusterPaletteRoll < 0.98 ? Math.min(3, paletteCount - 1)
             : paletteCount - 1;
 
     for (let memberIndex = 0; memberIndex < memberCount; memberIndex += 1) {
@@ -2361,10 +2422,9 @@ function addRealismNightCrystals(random) {
       getTerrainSurfaceNormal(direction, surfaceNormal);
       if (surfaceNormal.dot(direction) < 0.7) continue;
       const centralScale = memberIndex === 0 ? 1 : 0.45 + random() * 0.48;
-      const height = landmarkCluster && memberIndex === 0
-        ? 6.8 + random() * 5.4
-        : (1.25 + Math.pow(random(), 0.72) * 3.65) * centralScale;
-      const width = height * (0.13 + random() * 0.095);
+      const baseHeight = (1.8 + Math.pow(random(), 0.72) * 4.6) * centralScale;
+      const height = baseHeight * (landmarkCluster ? 10 : 3);
+      const width = height * (0.2 + random() * 0.12);
       position.copy(direction).multiplyScalar(terrainRadius - Math.min(0.42, height * 0.055));
       orientation.setFromUnitVectors(WORLD_UP, surfaceNormal);
       spin.setFromAxisAngle(surfaceNormal, random() * Math.PI * 2);
@@ -2385,9 +2445,12 @@ function addRealismNightCrystals(random) {
         ? Math.max(0, Math.min(paletteCount - 1, clusterPalette + (random() < 0.5 ? -1 : 1)))
         : clusterPalette;
       color.setHex(palettes[paletteJitter]);
-      color.offsetHSL((random() - 0.5) * 0.025, (random() - 0.5) * 0.08, (random() - 0.5) * 0.09);
+      color.offsetHSL((random() - 0.5) * 0.018, (random() - 0.5) * 0.035, (random() - 0.5) * 0.045);
       const phaseIndex = (clustersPlaced + memberIndex) % phaseCount;
       buckets[geometryIndex][phaseIndex].push({ matrix: matrix.clone(), color: color.clone() });
+      glowPositions.push(position.x, position.y, position.z);
+      glowColors.push(color.r, color.g, color.b);
+      glowSizes.push(Math.max(2.8, height * 1.28));
     }
     clustersPlaced += 1;
   }
@@ -2411,6 +2474,21 @@ function addRealismNightCrystals(random) {
       group.add(mesh);
       instanceCount += instances.length;
     }
+  }
+  if (glowSizes.length) {
+    const glowGeometry = new THREE.BufferGeometry();
+    glowGeometry.setAttribute("position", new THREE.Float32BufferAttribute(glowPositions, 3));
+    glowGeometry.setAttribute("color", new THREE.Float32BufferAttribute(glowColors, 3));
+    glowGeometry.setAttribute("glowSize", new THREE.Float32BufferAttribute(glowSizes, 1));
+    glowGeometry.computeBoundingSphere();
+    surfaceGeometryDisposables.push(glowGeometry);
+    const glowMaterial = createCrystalGlowMaterial();
+    const glow = new THREE.Points(glowGeometry, glowMaterial);
+    glow.name = "NightCrystalGlowHalos";
+    glow.frustumCulled = false;
+    glow.renderOrder = 3;
+    group.add(glow);
+    group.userData.glowMaterial = glowMaterial;
   }
   group.name = "NaturalNightCrystalFields";
   group.userData.materials = materials;
@@ -2840,8 +2918,8 @@ function createSky() {
       duskZenith: { value: new THREE.Color(0x382d50) },
       duskMid: { value: new THREE.Color(0xb96670) },
       duskHorizon: { value: new THREE.Color(0xf0a06f) },
-      nightZenith: { value: new THREE.Color(0x132e50) },
-      nightHorizon: { value: new THREE.Color(0x3d6684) },
+      nightZenith: { value: new THREE.Color(0x081321) },
+      nightHorizon: { value: new THREE.Color(0x17243a) },
       sunColor: { value: new THREE.Color(0xffbd78) },
       cloudMist: { value: 0 },
       spaceMix: { value: 0 },
@@ -2962,7 +3040,7 @@ function addLighting() {
     hemisphereLight = new THREE.HemisphereLight(0xbad9e7, 0x425369, 0.78);
     scene.add(hemisphereLight);
     twilightFillLight = new THREE.AmbientLight(0xff7047, 0.08);
-    nightFillLight = new THREE.AmbientLight(0x82acd2, 0.48);
+    nightFillLight = new THREE.AmbientLight(0x30445c, 0.1);
     scene.add(twilightFillLight, nightFillLight);
   } else {
     scene.add(new THREE.AmbientLight(0x5c6e89, 0.55));
@@ -2987,7 +3065,7 @@ function addLighting() {
   }
   scene.add(sun, sun.target);
   if (settings.mode === "realism") {
-    const moon = new THREE.DirectionalLight(0x91bde4, 1.35);
+    const moon = new THREE.DirectionalLight(0x789bc2, 0.34);
     moonKeyLight = moon;
     moon.position.copy(SUN_DIRECTION).multiplyScalar(-540);
     moon.target.position.set(0, 0, 0);
@@ -3228,6 +3306,70 @@ function applyTerrainAssistToVerticalSpeed(delta, controlIntent) {
   flight.radialSpeed += terrainAssist.verticalAcceleration * delta;
 }
 
+function suppressTerrainAssistForPhasing() {
+  terrainAssist.scanElapsed = Infinity;
+  terrainAssist.strength = 0;
+  terrainAssist.targetStrength = 0;
+  terrainAssist.targetVerticalSpeed = 0;
+  terrainAssist.verticalSpeed = 0;
+  terrainAssist.verticalAcceleration = 0;
+  terrainAssist.yawRate = 0;
+  terrainAssist.targetYawRate = 0;
+  terrainAssist.side = 0;
+  terrainAssist.sideHold = 0;
+  terrainAssist.summitHold = 0;
+  terrainAssist.phase = "phase";
+}
+
+function updatePhasedFlightPresentation(delta, turnInput = 0, climbInput = 0) {
+  flightUp.copy(flight.position).normalize();
+  const surfaceRadius = getSurfaceRadius(flightUp);
+  const altitude = Math.max(0, flight.position.length() - surfaceRadius - PLAYER_CLEARANCE);
+  flight.roll = THREE.MathUtils.damp(
+    flight.roll,
+    -turnInput * FLIGHT_PHYSICS.MAX_BANK * 0.38,
+    2.4,
+    delta,
+  );
+  flight.bodyPitch = THREE.MathUtils.damp(
+    flight.bodyPitch,
+    THREE.MathUtils.clamp(
+      Math.atan2(flight.radialSpeed, Math.max(flight.speed, 1)),
+      -0.26,
+      0.4,
+    ),
+    2.2,
+    delta,
+  );
+  flight.descentPose = THREE.MathUtils.damp(
+    flight.descentPose,
+    0,
+    2.5,
+    delta,
+  );
+  updateFlightPlayer(flightPlayer, {
+    position: flight.position,
+    forward: flight.forward,
+    up: flightUp,
+    bodyPitch: flight.bodyPitch,
+    roll: flight.roll,
+    descentPivot: flight.descentPose,
+    turnInput,
+    climbInput,
+    altitude,
+    surfaceRadius,
+    delta,
+  });
+  updateWaterPlayerReflection();
+  updateFlightCamera(delta);
+  updateFlightEnvironment(flightUp, delta);
+  flight.readoutElapsed += delta;
+  if (flight.readoutElapsed >= 0.12) {
+    flightReadout.innerHTML = `SPEED ${Math.round(flight.speed)}<br>ALT ${altitude.toFixed(1)}<br>PHASE`;
+    flight.readoutElapsed = 0;
+  }
+}
+
 function updateFlight(delta) {
   flightPreviousForward.copy(flight.forward);
   flightStickTarget.set(
@@ -3321,6 +3463,28 @@ function updateFlight(delta) {
   const currentSurface = getSurfaceRadius(flightUp) + PLAYER_CLEARANCE;
   const altitude = currentRadius - currentSurface;
   updateTerrainAssist(delta, currentRadius, terrainAssistControl);
+  if (!spaceReturnActive) {
+    flightRight.crossVectors(flightUp, flight.forward).normalize();
+    environmentPhasing?.observeSafePosition(flight.position);
+    environmentPhasing?.predict({
+      currentRadius,
+      up: flightUp,
+      forward: flight.forward,
+      right: flightRight,
+      speed: flight.speed,
+      radialSpeed: flight.radialSpeed,
+      turnInput,
+      terrainAssistStrength: Math.max(terrainAssist.strength, terrainAssist.targetStrength),
+    });
+    if (environmentPhasing?.isMovementControlled()) {
+      suppressTerrainAssistForPhasing();
+      environmentPhasing.updateControlled(delta, { turnInput, verticalIntent });
+      updatePhasedFlightPresentation(delta, turnInput, climbInput);
+      return;
+    }
+  } else if (environmentPhasing?.isCollisionSuppressed()) {
+    environmentPhasing.reset();
+  }
   const accelerating = flight.keys.has("Space") || flight.accelPointers.size > 0;
   if (accelerating) {
     flight.holdAccel += FLIGHT_PHYSICS.HOLD_ACCEL_RATE * delta;
@@ -3837,6 +4001,24 @@ function updateSpaceReturnFlight(delta, turnInput, climbInput, returnState) {
 
 function updateGuidedFlight(delta) {
   flightUp.copy(flight.position).normalize();
+  flightRight.crossVectors(flightUp, flight.forward).normalize();
+  environmentPhasing?.observeSafePosition(flight.position);
+  environmentPhasing?.predict({
+    currentRadius: flight.position.length(),
+    up: flightUp,
+    forward: flight.forward,
+    right: flightRight,
+    speed: flight.speed,
+    radialSpeed: flight.radialSpeed,
+    turnInput: 0,
+    terrainAssistStrength: 0,
+  });
+  if (environmentPhasing?.isMovementControlled()) {
+    suppressTerrainAssistForPhasing();
+    environmentPhasing.updateControlled(delta, { turnInput: 0, verticalIntent: 0 });
+    updatePhasedFlightPresentation(delta, 0, 0);
+    return;
+  }
   updateFlightPlayer(flightPlayer, {
     position: flight.position,
     forward: flight.forward,
@@ -3887,8 +4069,11 @@ function updateFlightCamera(delta, snap = false) {
   flightCameraForward.copy(flight.forward)
     .addScaledVector(flightUp, flight.cameraLift)
     .normalize();
-  const distance = FLIGHT_PHYSICS.CAMERA_DISTANCE
-    + flight.speed * FLIGHT_PHYSICS.CAMERA_DISTANCE_SPEED;
+  const phaseCameraMix = environmentPhasing?.getCameraSafetyMix() || 0;
+  const distance = (
+    FLIGHT_PHYSICS.CAMERA_DISTANCE
+      + flight.speed * FLIGHT_PHYSICS.CAMERA_DISTANCE_SPEED
+  ) * (environmentPhasing?.getCameraDistanceScale() || 1);
   const altitude = spaceReturnActive
     ? 0
     : Math.max(
@@ -3936,11 +4121,27 @@ function updateFlightCamera(delta, snap = false) {
       .addScaledVector(flightUp, Math.sin(cameraPitch) * cameraDistance);
   }
 
-  const cameraSmooth = THREE.MathUtils.lerp(
+  if (phaseCameraMix > 0.001 && !spaceReturnActive) {
+    flightAltitudeDirection.copy(flightCameraDesired).normalize();
+    const desiredCameraRadius = flightCameraDesired.length();
+    const safeCameraRadius = getSurfaceRadius(flightAltitudeDirection) + 0.55;
+    if (desiredCameraRadius < safeCameraRadius) {
+      flightCameraDesired.multiplyScalar(
+        THREE.MathUtils.lerp(
+          1,
+          safeCameraRadius / Math.max(desiredCameraRadius, 0.001),
+          phaseCameraMix,
+        ),
+      );
+    }
+  }
+
+  let cameraSmooth = THREE.MathUtils.lerp(
     FLIGHT_PHYSICS.CAMERA_SMOOTH,
     FLIGHT_PHYSICS.CAMERA_HIGH_ALTITUDE_SMOOTH,
     highAltitudeLook,
   );
+  cameraSmooth = THREE.MathUtils.lerp(cameraSmooth, 0.055, phaseCameraMix);
   const smooth = snap
     ? 1
     : 1 - Math.pow(1 - cameraSmooth, delta * 60);
@@ -4030,7 +4231,7 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
   if (nightFillLight) {
     nightFillLight.intensity = THREE.MathUtils.lerp(
       nightFillLight.intensity,
-      0.1 + (1 - dayMix) * 0.58 + duskMix * 0.08,
+      0.018 + (1 - dayMix) * 0.085 + duskMix * 0.06,
       0.08,
     );
   }
@@ -4052,13 +4253,14 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
     hemisphereLight.groundColor.lerp(flightHemisphereGroundColor, 0.08);
     hemisphereLight.intensity = THREE.MathUtils.lerp(
       hemisphereLight.intensity,
-      0.72 + duskMix * 0.34 + (1 - dayMix) * 0.1,
+      0.18 + dayMix * 0.56 + duskMix * 0.22,
       0.08,
     );
   }
 }
 
 function resetFlight() {
+  environmentPhasing?.reset();
   experience?.reset();
   const params = new URLSearchParams(window.location.search);
   const startPreset = params.get("start") || "day";
@@ -4342,8 +4544,13 @@ function resize() {
 
 window.addEventListener("pagehide", () => {
   renderer.setAnimationLoop(null);
+  environmentPhasing?.dispose();
   textureDisposables.forEach((texture) => texture.dispose());
   surfaceGeometryDisposables.forEach((geometry) => geometry.dispose());
   surfaceMaterialDisposables.forEach((material) => material.dispose());
   renderer.dispose();
 }, { once: true });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) environmentPhasing?.reset();
+});
