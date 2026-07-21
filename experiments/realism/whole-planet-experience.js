@@ -72,13 +72,8 @@ const DEVIL_ROUTE_CLEARANCE = 18;
 const DEVIL_ROUTE_LEAD_DISTANCE = 12;
 const DEVIL_BLACK_BOX_ALTITUDE = 20;
 const DEVIL_BLACK_BOX_ROUTE_CLEARANCE = 26;
-const DEVIL_BLACK_BOX_PURSUIT_SAMPLES = 12;
-const DEVIL_BLACK_BOX_PURSUIT_RESPONSE = 2.45;
-const DEVIL_BLACK_BOX_PURSUIT_ASCENT_RESPONSE = 5.6;
-const DEVIL_BLACK_BOX_PURSUIT_DESCENT_RESPONSE = 1.15;
-const DEVIL_BLACK_BOX_FORWARD_RESPONSE = 4.2;
 const DEVIL_BLACK_BOX_ARRIVAL_LEAD = 3.2;
-const DEVIL_BLACK_BOX_WAIT_TIMEOUT = 28;
+const DEVIL_BLACK_BOX_WAIT_TIMEOUT = 16;
 const DEVIL_ROUTE_PLANNER = Object.freeze({
   low: { samples: 18, offsets: [0, -0.32, 0.32, -0.56, 0.56] },
   standard: { samples: 26, offsets: [0, -0.2, 0.2, -0.4, 0.4, -0.64, 0.64] },
@@ -93,7 +88,7 @@ const DEVIL_DESTINATIONS = [
   { id: "sanctuary", label: "太陽光式集光遠達装置", stopDistance: 72, endAltitude: 12, focusHeight: 18 },
   { id: "blackBox", label: "高速移動する黒い箱", stopDistance: 15, endAltitude: DEVIL_BLACK_BOX_ALTITUDE, focusHeight: 2, special: "blackBox" },
 ];
-const DEVIL_ESCAPE_COPY = "昼のエリアに黒い球、夜のエリアに白い球がある。\n\nどちらかの球に触れた後、一度も他の物体に触れることなく、もう一方の球に触れることで昼夜が逆転する。\n\nその後、白い球の近くの巨大な装置を起動させれば脱出の道標が現れる。";
+const DEVIL_ESCAPE_COPY = "昼のエリアに黒い球、夜のエリアに白い球がある。\n\nどちらかの球に触れた後、30秒以内にもう片方の球に触れることで昼夜が逆転する。\n\nその後、白い球の近くの巨大な装置を起動させれば脱出の道標が現れる。";
 
 function createDevilModel() {
   const devil = new THREE.Group();
@@ -591,6 +586,10 @@ export function createWholePlanetExperience({
   const devilRouteDirection = new THREE.Vector3();
   const devilRouteForward = new THREE.Vector3();
   const devilRouteTowardStart = new THREE.Vector3();
+  const devilBlackBoxPreviousPosition = new THREE.Vector3();
+  const devilBlackBoxSegment = new THREE.Vector3();
+  const devilBlackBoxOffset = new THREE.Vector3();
+  const devilBlackBoxClosestPoint = new THREE.Vector3();
   const devilPreviousAnchor = new THREE.Vector3();
   const devilRelativeStart = new THREE.Vector3();
   const devilRelativeEnd = new THREE.Vector3();
@@ -1372,16 +1371,49 @@ export function createWholePlanetExperience({
     if (completed) {
       onGuideSpeedChange?.(12);
       flight.speed = 12;
-    } else if (destination.special === "blackBox") {
-      // A grounded box must end at the actual object, not at the generic
-      // destination's approach radius. Otherwise the second visit stops just
-      // outside the contact sphere and never opens the box.
-      navigation.endDirection.copy(targetPosition).normalize();
-      navigation.focusPoint.copy(targetPosition);
     } else {
       onGuideSpeedChange?.(navigation.savedSpeedSelection);
       flight.speed = navigation.savedSpeed;
     }
+  }
+
+  function alignFlightAtGuideDestination(navigation) {
+    const endRadius = getSurfaceRadius(navigation.endDirection) + 0.9 + navigation.endAltitude;
+    flight.position.copy(navigation.endDirection).multiplyScalar(endRadius);
+    devilRouteForward.copy(navigation.focusPoint).sub(flight.position)
+      .addScaledVector(
+        navigation.endDirection,
+        -devilRouteForward.dot(navigation.endDirection),
+      );
+    if (devilRouteForward.lengthSq() < 0.0001) {
+      const lastIndex = navigation.pathDirections.length - 1;
+      const previousIndex = Math.max(0, lastIndex - 1);
+      devilRouteForward.copy(navigation.pathDirections[lastIndex])
+        .sub(navigation.pathDirections[previousIndex])
+        .addScaledVector(
+          navigation.endDirection,
+          -devilRouteForward.dot(navigation.endDirection),
+        );
+    }
+    if (devilRouteForward.lengthSq() > 0.0001) flight.forward.copy(devilRouteForward).normalize();
+    flight.radialSpeed = 0;
+    flight.bodyPitch = 0;
+    flight.roll = 0;
+    flight.onGround = false;
+  }
+
+  function didBlackBoxCrossGuideTarget(start, end, radius) {
+    devilBlackBoxSegment.subVectors(end, start);
+    const lengthSq = devilBlackBoxSegment.lengthSq();
+    if (lengthSq < 0.000001) return start.distanceToSquared(flight.position) <= radius * radius;
+    devilBlackBoxOffset.subVectors(flight.position, start);
+    const ratio = THREE.MathUtils.clamp(
+      devilBlackBoxOffset.dot(devilBlackBoxSegment) / lengthSq,
+      0,
+      1,
+    );
+    devilBlackBoxClosestPoint.copy(start).addScaledVector(devilBlackBoxSegment, ratio);
+    return devilBlackBoxClosestPoint.distanceToSquared(flight.position) <= radius * radius;
   }
 
   function buildDevilRoutePlan(navigation) {
@@ -1578,8 +1610,28 @@ export function createWholePlanetExperience({
           DEVIL_ROUTE_MAX_DURATION,
         );
       }
-      navigation.focusPoint.copy(navigation.endDirection)
-        .multiplyScalar(getSurfaceRadius(navigation.endDirection) + 2.4);
+      const predictedSeconds = estimatedDuration + DEVIL_BLACK_BOX_ARRIVAL_LEAD;
+      if (landmarks.predictBlackBoxPosition) {
+        landmarks.predictBlackBoxPosition(predictedSeconds, targetPosition);
+        navigation.endDirection.copy(targetPosition).normalize();
+        navigation.endAltitude = Math.max(
+          DEVIL_BLACK_BOX_ALTITUDE,
+          targetPosition.length() - getSurfaceRadius(navigation.endDirection) - 0.9,
+        );
+        navigation.focusPoint.copy(targetPosition);
+      } else {
+        navigation.focusPoint.copy(navigation.endDirection)
+          .multiplyScalar(getSurfaceRadius(navigation.endDirection) + DEVIL_BLACK_BOX_ALTITUDE);
+      }
+    } else if (destination.special === "blackBox") {
+      // Once caught, the box stays at its exact last flight position. Arrive
+      // at that position instead of applying the generic stand-off angle.
+      navigation.endDirection.copy(targetPosition).normalize();
+      navigation.endAltitude = Math.max(
+        0,
+        targetPosition.length() - getSurfaceRadius(navigation.endDirection) - 0.9,
+      );
+      navigation.focusPoint.copy(targetPosition);
     } else {
       targetDirection.copy(targetPosition).normalize();
       devilRouteTowardStart.copy(navigation.startDirection)
@@ -1716,70 +1768,28 @@ export function createWholePlanetExperience({
       const blackBox = landmarks.objects.blackBox;
       blackBox?.getWorldPosition(worldPosition);
       if (blackBox && landmarks.isBlackBoxMoving?.()) {
-        // The prediction gets the route close; while the box continues to
-        // orbit, use a short, terrain-safe pursuit instead of waiting at a
-        // stale point in space.
-        targetDirection.copy(worldPosition).normalize();
-        devilRouteDirection.copy(flight.position).normalize();
-        let pursuitRadius = Math.max(
-          worldPosition.length(),
-          getSurfaceRadius(targetDirection) + 0.9 + navigation.endAltitude,
-        );
-        // Sample the whole remaining pursuit arc so a mountain raises the
-        // route while it is still distant, rather than causing a last-second
-        // vertical correction near the slope.
-        for (let index = 1; index <= DEVIL_BLACK_BOX_PURSUIT_SAMPLES; index += 1) {
-          const lookaheadMix = index / DEVIL_BLACK_BOX_PURSUIT_SAMPLES;
-          devilTarget.copy(devilRouteDirection)
-            .lerp(targetDirection, lookaheadMix)
-            .normalize();
-          pursuitRadius = Math.max(
-            pursuitRadius,
-            getSurfaceRadius(devilTarget) + 0.9 + DEVIL_BLACK_BOX_ROUTE_CLEARANCE,
+        devilRouteForward.copy(worldPosition).sub(flight.position)
+          .addScaledVector(
+            navigation.endDirection,
+            -devilRouteForward.dot(navigation.endDirection),
           );
+        if (devilRouteForward.lengthSq() > 0.0001) {
+          flight.forward.lerp(devilRouteForward.normalize(), 1 - Math.exp(-2.8 * delta)).normalize();
         }
-        const pursuitBlend = 1 - Math.exp(-DEVIL_BLACK_BOX_PURSUIT_RESPONSE * delta);
-        devilRouteDirection
-          .lerp(targetDirection, pursuitBlend)
-          .normalize();
-        const currentRadius = flight.position.length();
-        const radialResponse = pursuitRadius > currentRadius
-          ? DEVIL_BLACK_BOX_PURSUIT_ASCENT_RESPONSE
-          : DEVIL_BLACK_BOX_PURSUIT_DESCENT_RESPONSE;
-        const radialBlend = 1 - Math.exp(-radialResponse * delta);
-        const localSafeRadius = getSurfaceRadius(devilRouteDirection)
-          + 0.9
-          + DEVIL_BLACK_BOX_ROUTE_CLEARANCE;
-        const nextRadius = Math.max(
-          localSafeRadius,
-          THREE.MathUtils.lerp(currentRadius, pursuitRadius, radialBlend),
-        );
-        flight.position.copy(devilRouteDirection).multiplyScalar(nextRadius);
-        devilRouteForward.copy(targetDirection)
-          .addScaledVector(devilRouteDirection, -targetDirection.dot(devilRouteDirection))
-          .normalize();
-        if (devilRouteForward.lengthSq() > 0.0001) flight.forward.lerp(
-          devilRouteForward,
-          1 - Math.exp(-DEVIL_BLACK_BOX_FORWARD_RESPONSE * delta),
-        ).normalize();
-        flight.speed = Math.max(30, navigation.plannedSpeed * 0.82);
+        if (didBlackBoxCrossGuideTarget(devilBlackBoxPreviousPosition, worldPosition, 18)) {
+          stopDevilRoute(true);
+          openProductionBlackBox();
+          return;
+        }
+        devilBlackBoxPreviousPosition.copy(worldPosition);
       } else {
-        flight.speed = 0;
-      }
-      flight.radialSpeed = 0;
-      if (
-        (blackBox && flight.position.distanceTo(worldPosition) <= 18)
-      ) {
-        stopDevilRoute(true);
-        openProductionBlackBox();
+        stopDevilRoute();
         return;
       }
+      flight.speed = 0;
+      flight.radialSpeed = 0;
       if (navigation.waitElapsed >= DEVIL_BLACK_BOX_WAIT_TIMEOUT) {
-        // The box can keep orbiting while the route is in progress.  The
-        // guide is still an intentional interaction, so finish it instead
-        // of silently dropping the player back into free flight.
-        stopDevilRoute(true);
-        openProductionBlackBox();
+        stopDevilRoute();
       }
       return;
     }
@@ -1870,16 +1880,20 @@ export function createWholePlanetExperience({
 
     if (progress < 1) return;
     if (route.special === "blackBox" && landmarks.isBlackBoxMoving?.()) {
+      const blackBox = landmarks.objects.blackBox;
+      blackBox?.getWorldPosition(devilBlackBoxPreviousPosition);
       state.devil.phase = "route-wait";
       navigation.waitElapsed = 0;
       flight.speed = 0;
       return;
     }
     if (route.special === "blackBox") {
+      alignFlightAtGuideDestination(navigation);
       stopDevilRoute(true);
       openProductionBlackBox();
       return;
     }
+    alignFlightAtGuideDestination(navigation);
     stopDevilRoute(true);
   }
 
@@ -2502,16 +2516,7 @@ export function createWholePlanetExperience({
     // Environment phasing must not collect, open, start, or complete event
     // objects while the body is intentionally non-solid.
     if (state.modalOpen || state.ending || isEnvironmentPhasing?.()) return;
-    if (state.devil.phase === "route") return;
-    if (state.devil.phase === "route-wait") {
-      const blackBox = landmarks.objects.blackBox;
-      blackBox?.getWorldPosition(worldPosition);
-      if (blackBox && flight.position.distanceTo(worldPosition) <= 9.2) {
-        stopDevilRoute(true);
-        openProductionBlackBox();
-      }
-      return;
-    }
+    if (state.devil.phase === "route" || state.devil.phase === "route-wait") return;
     for (const contact of CONTACTS) {
       const object = landmarks.objects[contact.id];
       if (!object) continue;

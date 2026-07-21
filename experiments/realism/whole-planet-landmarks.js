@@ -650,9 +650,34 @@ export function createSpecialLandmarks({
   const blackBoxDirection = new THREE.Vector3();
   const blackBoxForward = new THREE.Vector3();
   const blackBoxLookaheadDirection = new THREE.Vector3();
+  const blackBoxRadiusDirection = new THREE.Vector3();
   const compassLocalTarget = new THREE.Vector3();
   const beamWorldQuaternion = new THREE.Quaternion();
   const beamLocalAxis = new THREE.Vector3(0, 1, 0);
+
+  function getBlackBoxDirectionAtAngle(angle, target) {
+    return target.copy(sun).multiplyScalar(Math.cos(angle))
+      .addScaledVector(nightAxisA, Math.sin(angle))
+      .normalize();
+  }
+
+  function getBlackBoxSafeFlightRadius(angle) {
+    getBlackBoxDirectionAtAngle(angle, blackBoxRadiusDirection);
+    let safeFlightRadius = getSurfaceRadius(blackBoxRadiusDirection) + BLACK_BOX_FLIGHT_ALTITUDE;
+    for (let index = 1; index <= BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES; index += 1) {
+      const lookaheadRatio = index / BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES;
+      const lookaheadAngle = angle
+        + BLACK_BOX_ORBIT_ANGULAR_SPEED
+          * BLACK_BOX_TERRAIN_LOOKAHEAD_SECONDS
+          * lookaheadRatio;
+      getBlackBoxDirectionAtAngle(lookaheadAngle, blackBoxLookaheadDirection);
+      safeFlightRadius = Math.max(
+        safeFlightRadius,
+        getSurfaceRadius(blackBoxLookaheadDirection) + BLACK_BOX_FLIGHT_ALTITUDE,
+      );
+    }
+    return safeFlightRadius;
+  }
 
   scene.add(root);
   return {
@@ -688,9 +713,12 @@ export function createSpecialLandmarks({
     },
     predictBlackBoxDirection(seconds, target = new THREE.Vector3()) {
       const angle = blackBoxAngle + Math.max(0, seconds) * BLACK_BOX_ORBIT_ANGULAR_SPEED;
-      return target.copy(sun).multiplyScalar(Math.cos(angle))
-        .addScaledVector(nightAxisA, Math.sin(angle))
-        .normalize();
+      return getBlackBoxDirectionAtAngle(angle, target);
+    },
+    predictBlackBoxPosition(seconds, target = new THREE.Vector3()) {
+      const angle = blackBoxAngle + Math.max(0, seconds) * BLACK_BOX_ORBIT_ANGULAR_SPEED;
+      return getBlackBoxDirectionAtAngle(angle, target)
+        .multiplyScalar(getBlackBoxSafeFlightRadius(angle));
     },
     update(delta) {
       if (recordPlayer.userData.playing) {
@@ -733,9 +761,7 @@ export function createSpecialLandmarks({
       blackBoxAngle += delta * BLACK_BOX_ORBIT_ANGULAR_SPEED;
 
       if (!blackBox.userData.grounded) {
-        blackBoxDirection.copy(sun).multiplyScalar(Math.cos(blackBoxAngle))
-          .addScaledVector(nightAxisA, Math.sin(blackBoxAngle))
-          .normalize();
+        getBlackBoxDirectionAtAngle(blackBoxAngle, blackBoxDirection);
         blackBoxForward.copy(sun).multiplyScalar(-Math.sin(blackBoxAngle))
           .addScaledVector(nightAxisA, Math.cos(blackBoxAngle))
           .normalize();
@@ -744,21 +770,7 @@ export function createSpecialLandmarks({
         // mountain reaches the box.  The slower descent response prevents the
         // opposite edge of a peak from producing a matching downward snap.
         const currentSurfaceRadius = getSurfaceRadius(blackBoxDirection);
-        let safeFlightRadius = currentSurfaceRadius + BLACK_BOX_FLIGHT_ALTITUDE;
-        for (let index = 1; index <= BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES; index += 1) {
-          const lookaheadRatio = index / BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES;
-          const lookaheadAngle = blackBoxAngle
-            + BLACK_BOX_ORBIT_ANGULAR_SPEED
-              * BLACK_BOX_TERRAIN_LOOKAHEAD_SECONDS
-              * lookaheadRatio;
-          blackBoxLookaheadDirection.copy(sun).multiplyScalar(Math.cos(lookaheadAngle))
-            .addScaledVector(nightAxisA, Math.sin(lookaheadAngle))
-            .normalize();
-          safeFlightRadius = Math.max(
-            safeFlightRadius,
-            getSurfaceRadius(blackBoxLookaheadDirection) + BLACK_BOX_FLIGHT_ALTITUDE,
-          );
-        }
+        const safeFlightRadius = getBlackBoxSafeFlightRadius(blackBoxAngle);
         if (blackBoxFlightRadius <= 0) blackBoxFlightRadius = safeFlightRadius;
         blackBoxFlightRadius = THREE.MathUtils.damp(
           blackBoxFlightRadius,

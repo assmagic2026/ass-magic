@@ -10,8 +10,8 @@ import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-137";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-152";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-138";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-153";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -4002,24 +4002,11 @@ function updateSpaceReturnFlight(delta, turnInput, climbInput, returnState) {
 
 function updateGuidedFlight(delta) {
   flightUp.copy(flight.position).normalize();
-  flightRight.crossVectors(flightUp, flight.forward).normalize();
+  // Guided routes already own position and terrain clearance. Running the
+  // free-flight collision predictor here can dematerialize the player at the
+  // exact arrival point and then fight the route controller on the next frame.
+  if (environmentPhasing?.isCollisionSuppressed()) environmentPhasing.reset();
   environmentPhasing?.observeSafePosition(flight.position);
-  environmentPhasing?.predict({
-    currentRadius: flight.position.length(),
-    up: flightUp,
-    forward: flight.forward,
-    right: flightRight,
-    speed: flight.speed,
-    radialSpeed: flight.radialSpeed,
-    turnInput: 0,
-    terrainAssistStrength: 0,
-  });
-  if (environmentPhasing?.isMovementControlled()) {
-    suppressTerrainAssistForPhasing();
-    environmentPhasing.updateControlled(delta, { turnInput: 0, verticalIntent: 0 });
-    updatePhasedFlightPresentation(delta, 0, 0);
-    return;
-  }
   updateFlightPlayer(flightPlayer, {
     position: flight.position,
     forward: flight.forward,
