@@ -10,7 +10,7 @@ import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-147";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-148";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-165";
 
 const PLANET_RADIUS = 340;
@@ -25,6 +25,10 @@ const TERRAIN_HIGH = new THREE.Color(0xaaa59a);
 const TERRAIN_TEXTURE_TINT = new THREE.Color(0xffffff);
 const WATER_LEVEL = -9;
 const WATER_RADIUS = PLANET_RADIUS + WATER_LEVEL;
+const WIND_VENT_DIRECTION = WORLD_UP.clone();
+const WIND_VENT_DEPTH = 12;
+const WIND_VENT_CORE_RADIUS = 0.03;
+const WIND_VENT_FIELD_RADIUS = 0.16;
 const FEATURE_AXIS_A = new THREE.Vector3().crossVectors(WORLD_UP, SUN_DIRECTION).normalize();
 const FEATURE_AXIS_B = new THREE.Vector3().crossVectors(SUN_DIRECTION, FEATURE_AXIS_A).normalize();
 const MOUNTAIN_DIRECTION = FEATURE_AXIS_A.clone()
@@ -117,17 +121,43 @@ const PLANET_LOADS = Object.freeze({
     cloudCount: 0,
     atmosphereSegments: 48,
   },
+  highMobile: {
+    planetWidthSegments: 384,
+    planetHeightSegments: 192,
+    crystalClusterCount: 64,
+    dustCount: 600,
+    cloudCount: 0,
+    atmosphereSegments: 36,
+  },
 });
 
 const bootStartedAt = performance.now();
 const baseSettings = getExperimentSettings();
 const loadKey = baseSettings.mode === "current" ? "current" : baseSettings.quality;
-const planetLoad = PLANET_LOADS[loadKey];
+const bootParams = new URLSearchParams(window.location.search);
+const isMobileFlightProfile = baseSettings.view === "flight"
+  && Math.min(window.innerWidth, window.innerHeight) <= 900
+  && (
+    bootParams.get("mobileperf") === "1"
+    || window.matchMedia("(pointer: coarse)").matches
+    || navigator.maxTouchPoints > 0
+  );
+const mobileHighProfile = isMobileFlightProfile && loadKey === "high";
+const planetLoad = PLANET_LOADS[mobileHighProfile ? "highMobile" : loadKey];
+const runtimePreset = mobileHighProfile
+  ? {
+    ...baseSettings.preset,
+    dprMin: 1,
+    dprMax: 1.45,
+    shadowSize: 1024,
+  }
+  : baseSettings.preset;
 const meshLabel = baseSettings.mode === "realism"
   ? `${planetLoad.planetWidthSegments}x${planetLoad.planetHeightSegments}`
   : `D${planetLoad.planetDetail}`;
 const settings = {
   ...baseSettings,
+  preset: runtimePreset,
   scopeLabel: "WHOLE PLANET",
   loadLabel: `R340 ${meshLabel} / LANDMARK 8 / CLOUD ${planetLoad.cloudCount.toLocaleString()}`,
 };
@@ -140,6 +170,7 @@ const openingCurtain = document.querySelector("#opening-curtain");
 let openingPhase = "loading";
 let openingRunElapsed = 0;
 canvas.dataset.openingPhase = openingPhase;
+canvas.dataset.mobilePerformanceProfile = mobileHighProfile ? "optimized-high" : "full";
 const menuToggle = document.querySelector("#menu-toggle");
 const siteMenu = document.querySelector("#site-menu");
 const siteMenuBackdrop = document.querySelector("#site-menu-backdrop");
@@ -162,15 +193,12 @@ renderer.toneMappingExposure = settings.mode === "realism" ? 1.04 : 1;
 renderer.shadowMap.enabled = realismShadowsEnabled;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-const isMobileFlightViewport = settings.view === "flight"
-  && Math.min(window.innerWidth, window.innerHeight) <= 900
-  && window.matchMedia("(pointer: coarse)").matches;
 const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset, {
   // High quality previously started at DPR 2 on recent phones.  Beginning at
-  // 1.2 cuts the first-frame fill work by roughly two thirds, then the normal
+  // 1.12 cuts the first-frame fill work by roughly two thirds, then the normal
   // adaptive sampler can raise it once the scene has settled.
-  initialRatio: isMobileFlightViewport ? 1.2 : null,
-  settleSeconds: isMobileFlightViewport ? 5 : 3,
+  initialRatio: isMobileFlightProfile ? 1.12 : null,
+  settleSeconds: isMobileFlightProfile ? 6 : 3,
 });
 const scene = new THREE.Scene();
 let hemisphereLight = null;
@@ -195,7 +223,7 @@ const camera = new THREE.PerspectiveCamera(
 const textureDisposables = [];
 const surfaceGeometryDisposables = [];
 const surfaceMaterialDisposables = [];
-const externalTextureLoads = [];
+const openingCriticalLoads = [];
 const movingSurfaceLayers = [];
 const cloudVolumes = [];
 let nightCrystals = null;
@@ -203,6 +231,8 @@ let sharedCloudTexture = null;
 const planet = createPlanet();
 planet.receiveShadow = realismShadowsEnabled;
 scene.add(planet);
+const windVent = settings.mode === "realism" ? createPolarWindVent() : null;
+if (windVent) scene.add(windVent);
 const water = settings.mode === "realism" ? createWaterSurface() : null;
 if (water) scene.add(water);
 const cave = null;
@@ -224,6 +254,7 @@ const specialLandmarks = createSpecialLandmarks({
   getSurfaceRadius,
   realism: settings.mode === "realism",
   bookModelUrl: useGlbAssets ? "./assets/models/old-bible-1825.glb" : null,
+  deferBookModel: useGlbAssets,
   castShadow: realismShadowsEnabled,
 });
 Object.assign(specialLandmarks.directions, {
@@ -232,27 +263,18 @@ Object.assign(specialLandmarks.directions, {
   water: WATER_DIRECTION,
   valley: VALLEY_DIRECTION,
   cave: CAVE_DIRECTION,
+  vent: WIND_VENT_DIRECTION,
   crystal: nightCrystals?.userData.previewDirection,
   cloud: cloudVolumes[0]?.position.clone().normalize(),
 });
-if (specialLandmarks.ready) externalTextureLoads.push(specialLandmarks.ready);
 let waterPlayerReflection = null;
 const flightPlayer = createFlightPlayer(scene, {
   modelUrl: useGlbAssets ? "./assets/models/cesium-man.glb" : null,
   castShadow: realismShadowsEnabled,
 });
-if (flightPlayer.ready) externalTextureLoads.push(flightPlayer.ready);
+if (flightPlayer.ready) openingCriticalLoads.push(flightPlayer.ready);
 flightPlayer.player.visible = settings.view === "flight";
 flightPlayer.shadow.visible = false;
-if (settings.mode === "realism" && settings.view === "flight") {
-  if (flightPlayer.ready) {
-    externalTextureLoads.push(
-      flightPlayer.ready.then(scheduleWaterPlayerReflection, scheduleWaterPlayerReflection),
-    );
-  } else {
-    externalTextureLoads.push(scheduleWaterPlayerReflection());
-  }
-}
 if (realismShadowsEnabled) {
   flightPlayer.player.traverse((object) => {
     if (object.isMesh) object.castShadow = true;
@@ -353,6 +375,7 @@ const flight = {
   keys: new Set(),
   readoutElapsed: 0,
 };
+let windVentFlightStrength = 0;
 const terrainAssist = {
   scanElapsed: Infinity,
   strength: 0,
@@ -527,7 +550,7 @@ const experience = settings.view === "flight"
   })
   : null;
 const experienceArt = document.querySelector("#experience-art");
-if (experienceArt?.src) externalTextureLoads.push(waitForImageReady(experienceArt));
+if (experienceArt?.src) openingCriticalLoads.push(waitForImageReady(experienceArt));
 
 if (settings.mode === "realism" && settings.view === "flight") {
   const protectedZoneSpecs = [
@@ -594,8 +617,8 @@ renderer.setAnimationLoop(() => {
   let simulationDelta = 0;
   if (simulationRunning) {
     openingRunElapsed += delta;
-    const openingMotionMix = THREE.MathUtils.smoothstep(openingRunElapsed, 0, 1.15);
-    simulationDelta = delta * THREE.MathUtils.lerp(0.12, 1, openingMotionMix);
+    const openingMotionMix = THREE.MathUtils.smoothstep(openingRunElapsed, 0, 0.45);
+    simulationDelta = delta * THREE.MathUtils.lerp(0.55, 1, openingMotionMix);
     updateWorldInversion(simulationDelta);
     specialLandmarks.update(simulationDelta);
   }
@@ -625,6 +648,7 @@ renderer.setAnimationLoop(() => {
     }
   }
   if (waterSpray && simulationRunning) updateWaterSpray(waterSpray, simulationDelta);
+  if (windVent) updatePolarWindVent(windVent, elapsed);
 
   for (const layer of movingSurfaceLayers) {
     layer.object.rotation.y = elapsed * layer.speed;
@@ -698,6 +722,157 @@ function createPlanet() {
   return new THREE.Mesh(geometry, material);
 }
 
+function createPolarWindVent() {
+  const group = new THREE.Group();
+  group.name = "NorthPoleWindVent";
+  const floorRadius = getTerrainRadius(WIND_VENT_DIRECTION);
+  group.position.copy(WIND_VENT_DIRECTION).multiplyScalar(floorRadius + 0.12);
+  group.quaternion.setFromUnitVectors(WORLD_UP, WIND_VENT_DIRECTION);
+
+  const throatMaterial = new THREE.MeshStandardMaterial({
+    color: 0x170906,
+    emissive: 0x080201,
+    emissiveIntensity: 0.12,
+    roughness: 1,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  const wallMaterial = new THREE.MeshStandardMaterial({
+    color: 0x2b130d,
+    roughness: 0.96,
+    metalness: 0,
+    side: THREE.DoubleSide,
+  });
+  const rimMaterial = new THREE.MeshStandardMaterial({
+    color: 0x6f3d29,
+    roughness: 0.98,
+    metalness: 0,
+  });
+  const foldMaterial = new THREE.MeshStandardMaterial({
+    color: 0x5e3021,
+    roughness: 1,
+    metalness: 0,
+  });
+
+  const throat = new THREE.Mesh(new THREE.CircleGeometry(5.8, 64), throatMaterial);
+  throat.rotation.x = -Math.PI * 0.5;
+  throat.position.y = -0.32;
+  throat.renderOrder = 1;
+  group.add(throat);
+
+  const wall = new THREE.Mesh(
+    new THREE.CylinderGeometry(9.1, 6.4, WIND_VENT_DEPTH, 64, 4, true),
+    wallMaterial,
+  );
+  wall.position.y = WIND_VENT_DEPTH * 0.48;
+  group.add(wall);
+
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(10.2, 3.25, 18, 96),
+    rimMaterial,
+  );
+  rim.rotation.x = Math.PI * 0.5;
+  rim.position.y = WIND_VENT_DEPTH - 0.4;
+  rim.scale.z = 0.9;
+  group.add(rim);
+
+  const foldGeometry = new THREE.SphereGeometry(1, 12, 8);
+  const folds = new THREE.InstancedMesh(foldGeometry, foldMaterial, 18);
+  const foldMatrix = new THREE.Matrix4();
+  const foldPosition = new THREE.Vector3();
+  const foldScale = new THREE.Vector3();
+  const foldRotation = new THREE.Quaternion();
+  const foldEuler = new THREE.Euler();
+  for (let index = 0; index < 18; index += 1) {
+    const angle = (index / 18) * Math.PI * 2;
+    const alternating = index % 2 === 0 ? 1 : 0.74;
+    const radius = 11.7 + Math.sin(index * 2.17) * 0.65;
+    foldPosition.set(
+      Math.cos(angle) * radius,
+      WIND_VENT_DEPTH - 0.1 + Math.sin(index * 1.31) * 0.38,
+      Math.sin(angle) * radius,
+    );
+    foldScale.set(3.15 * alternating, 0.72, 1.46 + alternating * 0.28);
+    foldEuler.set(0, -angle, (index % 3 - 1) * 0.08);
+    foldRotation.setFromEuler(foldEuler);
+    foldMatrix.compose(foldPosition, foldRotation, foldScale);
+    folds.setMatrixAt(index, foldMatrix);
+  }
+  folds.instanceMatrix.needsUpdate = true;
+  group.add(folds);
+
+  const streakCount = mobileHighProfile ? 72 : 112;
+  const phases = new Float32Array(streakCount);
+  const angles = new Float32Array(streakCount);
+  const radii = new Float32Array(streakCount);
+  const speeds = new Float32Array(streakCount);
+  const random = createSeededRandom(61093);
+  for (let index = 0; index < streakCount; index += 1) {
+    phases[index] = random();
+    angles[index] = random() * Math.PI * 2;
+    radii[index] = 1.8 + Math.pow(random(), 0.65) * 8.5;
+    speeds[index] = 0.68 + random() * 0.92;
+  }
+  const streakGeometry = new THREE.CylinderGeometry(0.16, 0.055, 1, 5, 1, true);
+  const streakMaterial = new THREE.MeshBasicMaterial({
+    color: 0xf2dfc2,
+    transparent: true,
+    opacity: 0.38,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  });
+  const streaks = new THREE.InstancedMesh(streakGeometry, streakMaterial, streakCount);
+  streaks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  streaks.frustumCulled = false;
+  streaks.renderOrder = 4;
+  group.add(streaks);
+
+  group.userData.streaks = streaks;
+  group.userData.phases = phases;
+  group.userData.angles = angles;
+  group.userData.radii = radii;
+  group.userData.speeds = speeds;
+  group.userData.streakMatrix = new THREE.Matrix4();
+  group.userData.streakPosition = new THREE.Vector3();
+  group.userData.streakScale = new THREE.Vector3();
+  group.userData.streakRotation = new THREE.Quaternion();
+  canvas.dataset.windVent = "ready";
+  return group;
+}
+
+function updatePolarWindVent(vent, time) {
+  const {
+    streaks,
+    phases,
+    angles,
+    radii,
+    speeds,
+    streakMatrix,
+    streakPosition,
+    streakScale,
+    streakRotation,
+  } = vent.userData;
+  for (let index = 0; index < phases.length; index += 1) {
+    const progress = (phases[index] + time * speeds[index] * 0.42) % 1;
+    const gust = 0.82 + Math.sin(time * 8.4 + index * 1.73) * 0.18;
+    const height = WIND_VENT_DEPTH + 1.5 + progress * 76;
+    const widening = radii[index] + progress * progress * 15;
+    const angle = angles[index] + time * (0.75 + speeds[index] * 0.34) + progress * 5.2;
+    const x = Math.cos(angle) * widening;
+    const z = Math.sin(angle) * widening;
+    const length = (3.2 + progress * 9.5) * gust;
+    streakPosition.set(x, height + length * 0.5, z);
+    streakScale.set(0.72 + progress * 0.65, length, 0.72 + progress * 0.65);
+    streakRotation.setFromAxisAngle(WORLD_UP, angle + progress * 0.35);
+    streakMatrix.compose(streakPosition, streakRotation, streakScale);
+    streaks.setMatrixAt(index, streakMatrix);
+  }
+  streaks.instanceMatrix.needsUpdate = true;
+  streaks.material.opacity = 0.34 + Math.sin(time * 5.7) * 0.07;
+}
+
 function terrainHeightFromDirection(direction) {
   const ridge = Math.sin(direction.x * 7 + direction.z * 3.4) * 1.5;
   const swell = Math.cos(direction.y * 8.6 - direction.x * 2.4) * 1.0;
@@ -762,6 +937,9 @@ function terrainFeatureHeight(direction) {
     height += crater.rimHeight
       * Math.exp(-Math.pow((distance - crater.radius * 1.36) / (crater.radius * 0.38), 2));
   }
+  const ventDistance = chordDistance(direction, WIND_VENT_DIRECTION);
+  height -= WIND_VENT_DEPTH * Math.exp(-Math.pow(ventDistance / WIND_VENT_CORE_RADIUS, 2));
+  height += 4.3 * Math.exp(-Math.pow((ventDistance - 0.055) / 0.018, 2));
   return height;
 }
 
@@ -817,6 +995,7 @@ function getTerrainRadius(direction) {
 
 function getSurfaceRadius(direction) {
   const terrainRadius = getTerrainRadius(direction);
+  if (chordDistance(direction, WIND_VENT_DIRECTION) < 0.09) return terrainRadius;
   return settings.mode === "realism" ? Math.max(terrainRadius, WATER_RADIUS) : terrainRadius;
 }
 
@@ -856,6 +1035,7 @@ function createRealisticPlanetMaterial() {
       repeatY,
       offsetX,
       offsetY,
+      true,
     );
     const normal = loadPbrTexture(
       "./assets/rocks-ground-04-normal-gl-1k.jpg",
@@ -864,6 +1044,7 @@ function createRealisticPlanetMaterial() {
       repeatY,
       offsetX,
       offsetY,
+      true,
     );
     return new THREE.MeshStandardMaterial({
       map: color,
@@ -1329,7 +1510,7 @@ function installWaterPlayerReflection() {
   waterPlayerReflection = reflection;
 }
 
-function scheduleWaterPlayerReflection() {
+function scheduleWaterPlayerReflection(delayMs = 0) {
   return new Promise((resolve) => {
     const install = () => {
       const finish = () => {
@@ -1342,8 +1523,28 @@ function scheduleWaterPlayerReflection() {
         finish();
       }
     };
-    window.setTimeout(install, 120);
+    window.setTimeout(install, delayMs);
   });
+}
+
+function scheduleDeferredOpeningAssets() {
+  const scheduleIdle = (callback, delay, timeout) => {
+    window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(callback, { timeout });
+      } else {
+        callback();
+      }
+    }, delay);
+  };
+  scheduleIdle(() => {
+    void specialLandmarks.loadDeferredBookModel?.().catch(() => {});
+  }, 12000, 4000);
+  if (settings.mode === "realism" && settings.view === "flight") {
+    scheduleIdle(() => {
+      void scheduleWaterPlayerReflection();
+    }, 15000, 4000);
+  }
 }
 
 function waitForImageReady(image) {
@@ -1366,21 +1567,16 @@ async function prepareOpening() {
     new URLSearchParams(window.location.search).get("openinghold"),
   );
   const minimumOpeningMs = Number.isFinite(requestedOpeningHold)
-    ? THREE.MathUtils.clamp(requestedOpeningHold, 520, 10000)
-    : 520;
+    ? THREE.MathUtils.clamp(requestedOpeningHold, 180, 10000)
+    : 180;
   const startedAt = performance.now();
-  await Promise.allSettled(externalTextureLoads);
+  await Promise.allSettled(openingCriticalLoads);
+  canvas.dataset.openingCriticalReadyMs = Math.round(performance.now() - startedAt).toString();
   const remaining = minimumOpeningMs - (performance.now() - startedAt);
   if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
 
   if (settings.view === "flight") resetFlight();
   updateFlightShadow();
-  try {
-    if (typeof renderer.compileAsync === "function") await renderer.compileAsync(scene, camera);
-    else renderer.compile(scene, camera);
-  } catch (error) {
-    console.warn("Opening scene precompile skipped.", error);
-  }
   renderer.render(scene, camera);
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
@@ -1398,12 +1594,14 @@ async function prepareOpening() {
     canvas.dataset.openingPhase = openingPhase;
     document.body.classList.remove("is-booting", "is-opening-revealing");
     if (openingCurtain) openingCurtain.hidden = true;
+    canvas.dataset.openingTotalMs = Math.round(performance.now() - startedAt).toString();
+    scheduleDeferredOpeningAssets();
     clock.getDelta();
   };
   openingCurtain?.addEventListener("transitionend", (event) => {
     if (event.target === openingCurtain && event.propertyName === "opacity") finishOpening();
   }, { once: true });
-  window.setTimeout(finishOpening, 950);
+  window.setTimeout(finishOpening, 680);
 }
 
 function updateWaterPlayerReflection() {
@@ -1678,7 +1876,15 @@ function createCaveTexture() {
   return texture;
 }
 
-function loadPbrTexture(path, isColor, repeatX = 31, repeatY = 15.5, offsetX = 0, offsetY = 0) {
+function loadPbrTexture(
+  path,
+  isColor,
+  repeatX = 31,
+  repeatY = 15.5,
+  offsetX = 0,
+  offsetY = 0,
+  openingCritical = false,
+) {
   let resolveLoad;
   const loadComplete = new Promise((resolve) => {
     resolveLoad = resolve;
@@ -1699,7 +1905,7 @@ function loadPbrTexture(path, isColor, repeatX = 31, repeatY = 15.5, offsetX = 0
   texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
   textureDisposables.push(texture);
-  externalTextureLoads.push(loadComplete);
+  if (openingCritical) openingCriticalLoads.push(loadComplete);
   return texture;
 }
 
@@ -1812,7 +2018,6 @@ function enhanceGlobalTerrainColorTexture(texture, path) {
     resolveLoad();
   };
   image.src = path;
-  externalTextureLoads.push(loadComplete);
 }
 
 function createPlanetTextures(size) {
@@ -3499,6 +3704,47 @@ function updatePhasedFlightPresentation(delta, turnInput = 0, climbInput = 0) {
   }
 }
 
+function applyPolarWindForce(delta, direction, altitude) {
+  if (bootParams.get("ventwind") === "0") {
+    windVentFlightStrength = 0;
+    canvas.dataset.windVentStrength = "0.000";
+    return 0;
+  }
+  const distance = chordDistance(direction, WIND_VENT_DIRECTION);
+  const altitudeExpansion = THREE.MathUtils.smoothstep(altitude, 0, 105);
+  const columnRadius = THREE.MathUtils.lerp(0.075, WIND_VENT_FIELD_RADIUS, altitudeExpansion);
+  const horizontalMix = 1 - THREE.MathUtils.smoothstep(
+    distance,
+    columnRadius * 0.32,
+    columnRadius,
+  );
+  const altitudeMix = 1 - THREE.MathUtils.smoothstep(altitude, 48, 145);
+  const targetStrength = Math.pow(Math.max(0, horizontalMix * altitudeMix), 1.25);
+  windVentFlightStrength = THREE.MathUtils.damp(
+    windVentFlightStrength,
+    targetStrength,
+    targetStrength > windVentFlightStrength ? 4.2 : 1.3,
+    delta,
+  );
+  if (windVentFlightStrength > 0.001) {
+    const gust = 0.84
+      + Math.sin(elapsed * 7.6) * 0.1
+      + Math.sin(elapsed * 13.7 + 1.4) * 0.06;
+    const liftTarget = (30 + gust * 13) * windVentFlightStrength;
+    if (flight.radialSpeed < liftTarget) {
+      flight.radialSpeed = THREE.MathUtils.damp(
+        flight.radialSpeed,
+        liftTarget,
+        1.1 + windVentFlightStrength * 2.8,
+        delta,
+      );
+    }
+    flight.onGround = false;
+  }
+  canvas.dataset.windVentStrength = windVentFlightStrength.toFixed(3);
+  return windVentFlightStrength;
+}
+
 function updateFlight(delta) {
   flightPreviousForward.copy(flight.forward);
   flightStickTarget.set(
@@ -3854,8 +4100,10 @@ function updateFlight(delta) {
   }
 
   applyTerrainAssistToVerticalSpeed(delta, terrainAssistControl);
+  const windLift = applyPolarWindForce(delta, flightUp, altitude);
   flight.radialSpeed *= 1 - FLIGHT_PHYSICS.GLIDE_DRAG * delta;
-  const maxAscentSpeed = flight.speed * Math.tan(FLIGHT_PHYSICS.MAX_ASCENT_ANGLE);
+  const maxAscentSpeed = flight.speed * Math.tan(FLIGHT_PHYSICS.MAX_ASCENT_ANGLE)
+    + windLift * 38;
   flight.radialSpeed = THREE.MathUtils.clamp(
     flight.radialSpeed,
     -commandedMaxDescendSpeed,
@@ -4383,6 +4631,8 @@ function resetFlight() {
   // Let terrain avoidance settle around the spawn point before emergency
   // phasing is allowed.  This prevents a false phase and its sound at startup.
   environmentPhasing?.reset({ guardSeconds: 3.2 });
+  windVentFlightStrength = 0;
+  canvas.dataset.windVentStrength = "0.000";
   experience?.reset();
   specialLandmarks.reset?.();
   const params = new URLSearchParams(window.location.search);
@@ -4422,6 +4672,7 @@ function resetFlight() {
     water: 0.4,
     valley: 0.4,
     cave: 0.32,
+    vent: 0.11,
   };
   const approachAngle = featureApproachAngles[startPreset] || (isDuskStart ? 0.42 : 0.18);
   let startDirection = isSunsetStart

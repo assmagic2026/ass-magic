@@ -730,6 +730,7 @@ export function createSpecialLandmarks({
   getSurfaceRadius,
   realism,
   bookModelUrl = null,
+  deferBookModel = false,
   castShadow = false,
 }) {
   const root = new THREE.Group();
@@ -768,7 +769,13 @@ export function createSpecialLandmarks({
   const bookForward = sun.clone().addScaledVector(bookDirection, -sun.dot(bookDirection)).normalize();
   placeOnSphere(book, bookDirection, bookForward, 0.04, getSurfaceRadius, 0.06);
   root.add(book);
-  const bookReady = bookModelUrl ? loadBookModel(book, bookModelUrl, castShadow) : null;
+  let bookReady = null;
+  const startBookModelLoad = () => {
+    if (!bookModelUrl || bookReady) return bookReady;
+    bookReady = loadBookModel(book, bookModelUrl, castShadow);
+    return bookReady;
+  };
+  if (!deferBookModel) startBookModelLoad();
 
   const blackSphere = createSphere(18, 0x000000, realism, "black");
   const blackForward = compassDirection.clone().addScaledVector(sun, -compassDirection.dot(sun)).normalize();
@@ -863,6 +870,7 @@ export function createSpecialLandmarks({
   return {
     root,
     ready: bookReady,
+    loadDeferredBookModel: startBookModelLoad,
     compassDirection,
     objects: {
       recordPlayer,
