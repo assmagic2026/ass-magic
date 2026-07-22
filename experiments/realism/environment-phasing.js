@@ -193,17 +193,27 @@ export function createEnvironmentPhasing({
     document.querySelector("#environment-rematerialize-audio"),
   ].map((element) => element || new Audio(phaseAudioUrl));
   for (const audio of phaseMediaPool) {
-    audio.preload = "metadata";
+    audio.preload = "auto";
     audio.volume = 0.82;
     audio.playsInline = true;
     if (!audio.src) audio.src = phaseAudioUrl;
+    audio.load();
   }
   let phaseMediaIndex = 0;
   let phaseInputReceived = false;
+  let phaseAudioGraceUntil = 0;
+  const FIRST_PHASE_AUDIO_GRACE_MS = 180;
 
-  function unlockPhaseAudio() {
+  function unlockPhaseAudio(event) {
+    const firstInput = !phaseInputReceived;
     phaseInputReceived = true;
-    const unlockResult = phaseAudioEngine?.unlock?.();
+    if (firstInput) phaseAudioGraceUntil = performance.now() + FIRST_PHASE_AUDIO_GRACE_MS;
+    // The head script receives the same capture-phase event first so it can
+    // prime WebKit even while the loading curtain is present. Do not create a
+    // second silent source for the same event here; only continue preparation.
+    const unlockResult = phaseAudioEngine?.hasGesture
+      ? phaseAudioEngine.ensurePlayback?.()
+      : phaseAudioEngine?.unlock?.(event?.type || "");
     void Promise.resolve(unlockResult).then((playable) => {
       const useMediaFallback = phaseAudioEngine?.failed === true;
       canvas.dataset.environmentPhaseAudioReady = playable
@@ -220,7 +230,10 @@ export function createEnvironmentPhasing({
   }
 
   window.addEventListener("pointerdown", unlockPhaseAudio, { capture: true, passive: true });
+  window.addEventListener("pointerup", unlockPhaseAudio, { capture: true, passive: true });
   window.addEventListener("touchstart", unlockPhaseAudio, { capture: true, passive: true });
+  window.addEventListener("touchend", unlockPhaseAudio, { capture: true, passive: true });
+  window.addEventListener("click", unlockPhaseAudio, { capture: true, passive: true });
   window.addEventListener("keydown", unlockPhaseAudio);
   const recoverPhaseAudio = () => {
     if (!document.hidden && phaseAudioEngine?.hasGesture) unlockPhaseAudio();
@@ -687,20 +700,29 @@ export function createEnvironmentPhasing({
       protectedEventNearby = isNearProtected(predictedPosition, PHASE_CONFIG.protectedPadding);
     }
     const cooldownAllowsEmergency = state.cooldown <= 0 || minimumGap < -7;
-    const phaseCueReady = phaseAudioEngine
-      ? phaseAudioEngine.isPlayable || (phaseAudioEngine.failed && phaseInputReceived)
-      : phaseInputReceived;
-    if (!phaseCueReady) {
-      // Do not begin a visual phase while the corresponding first sample is
-      // still waiting on Safari's asynchronous context resume/decode. Terrain
-      // assistance remains active during this short preparation window.
-      canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine.hasGesture
-        ? "preparing"
-        : "waiting-for-input";
+    const firstPhaseAuthorized = phaseInputReceived || phaseAudioEngine?.isPlayable;
+    if (state.phaseStarts === 0 && !firstPhaseAuthorized) {
+      canvas.dataset.environmentPhaseAudioGate = "waiting-for-input";
       setPhase("normal");
       return false;
     }
-    canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine?.isPlayable ? "armed" : "fallback";
+    const firstCueStillPreparing = state.phaseStarts === 0
+      && phaseAudioEngine
+      && !phaseAudioEngine.isPlayable
+      && !phaseAudioEngine.failed
+      && performance.now() < phaseAudioGraceUntil;
+    if (firstCueStillPreparing) {
+      // Give the first cue a very short chance to finish decoding, but never
+      // let audio state deadlock collision phasing. After this bounded grace
+      // period the physical/visual phase proceeds and the media fallback is
+      // attempted at the exact transition moment.
+      canvas.dataset.environmentPhaseAudioGate = "preparing-bounded";
+      setPhase("normal");
+      return false;
+    }
+    canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine?.isPlayable
+      ? "armed"
+      : "degraded-no-block";
     if (
       cooldownAllowsEmergency
       && !protectedEventNearby
@@ -917,7 +939,10 @@ export function createEnvironmentPhasing({
   function dispose() {
     reset();
     window.removeEventListener("pointerdown", unlockPhaseAudio, { capture: true });
+    window.removeEventListener("pointerup", unlockPhaseAudio, { capture: true });
     window.removeEventListener("touchstart", unlockPhaseAudio, { capture: true });
+    window.removeEventListener("touchend", unlockPhaseAudio, { capture: true });
+    window.removeEventListener("click", unlockPhaseAudio, { capture: true });
     window.removeEventListener("keydown", unlockPhaseAudio);
     document.removeEventListener("visibilitychange", recoverPhaseAudio);
     window.removeEventListener("pageshow", recoverPhaseAudio);
