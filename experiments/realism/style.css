@@ -72,7 +72,7 @@ body {
   z-index: 2;
   top: 50%;
   left: 50%;
-  width: clamp(190px, 46vmin, 360px);
+  width: clamp(220px, 54vmin, 410px);
   aspect-ratio: 1;
   transform: translate(-50%, -54%);
   perspective: 700px;
@@ -92,45 +92,31 @@ body {
   animation: opening-planet-float 4.8s ease-in-out infinite;
 }
 
-.opening-planet-surface,
-.opening-planet-clouds,
 .opening-planet-shade {
   position: absolute;
   inset: 0;
   border-radius: 50%;
 }
 
-.opening-planet-surface {
-  inset: -3% -55%;
-  border-radius: 0;
-  background:
-    radial-gradient(ellipse at 13% 33%, #998b6a 0 7%, transparent 7.6%),
-    radial-gradient(ellipse at 31% 67%, #756c54 0 11%, transparent 11.8%),
-    radial-gradient(ellipse at 53% 24%, #a0916d 0 8%, transparent 8.8%),
-    radial-gradient(ellipse at 72% 62%, #776d52 0 13%, transparent 13.8%),
-    radial-gradient(ellipse at 91% 38%, #9e8e68 0 9%, transparent 9.8%),
-    radial-gradient(ellipse at 20% 52%, rgba(45, 74, 66, .82) 0 17%, transparent 18%),
-    radial-gradient(ellipse at 62% 48%, rgba(42, 67, 64, .84) 0 19%, transparent 20%),
-    linear-gradient(180deg, #4f6f73 0%, #314e52 48%, #263d42 100%);
-  background-size: 44% 47%, 52% 54%, 49% 45%, 56% 52%, 48% 49%, 53% 57%, 58% 62%, 100% 100%;
-  animation: opening-planet-spin 4.2s linear infinite;
-}
-
-.opening-planet-clouds {
-  inset: -8% -65%;
-  border-radius: 0;
-  opacity: .24;
-  background:
-    repeating-linear-gradient(168deg, transparent 0 17px, rgba(235, 242, 235, .72) 18px 22px, transparent 23px 39px);
-  filter: blur(2.5px);
-  animation: opening-cloud-spin 6.8s linear infinite;
+#opening-planet-texture {
+  position: absolute;
+  top: -3%;
+  left: -58%;
+  width: 224%;
+  height: 106%;
+  max-width: none;
+  object-fit: cover;
+  object-position: 50% 50%;
+  filter: saturate(1.05) contrast(1.04);
+  animation: opening-planet-spin 11.5s linear infinite;
+  will-change: transform;
 }
 
 .opening-planet-shade {
   background:
-    radial-gradient(circle at 30% 24%, rgba(255, 246, 205, .28) 0%, transparent 28%),
-    radial-gradient(circle at 72% 62%, transparent 30%, rgba(0, 0, 0, .76) 79%, rgba(0, 0, 0, .94) 100%);
-  box-shadow: inset 12px 9px 18px rgba(255, 244, 205, .12);
+    radial-gradient(circle at 27% 22%, rgba(255, 249, 222, .44) 0%, transparent 27%),
+    radial-gradient(circle at 73% 60%, transparent 25%, rgba(0, 0, 0, .68) 74%, rgba(0, 0, 0, .96) 100%);
+  box-shadow: inset 13px 10px 22px rgba(255, 249, 222, .18);
 }
 
 #opening-brand {
@@ -173,11 +159,7 @@ body {
 #opening-loading i:nth-child(3) { animation-delay: .32s; }
 
 @keyframes opening-planet-spin {
-  to { transform: translateX(-25%); }
-}
-
-@keyframes opening-cloud-spin {
-  to { transform: translateX(-25%); }
+  to { transform: translateX(-17%); }
 }
 
 @keyframes opening-planet-float {

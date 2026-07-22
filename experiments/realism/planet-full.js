@@ -5,7 +5,7 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-15";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-16";
 import {
   createFlightPlayer,
   updateFlightPlayer,
@@ -167,6 +167,7 @@ configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
 const openingCurtain = document.querySelector("#opening-curtain");
+const openingPlanetTexture = document.querySelector("#opening-planet-texture");
 let openingPhase = "loading";
 let openingRunElapsed = 0;
 canvas.dataset.openingPhase = openingPhase;
@@ -556,6 +557,7 @@ const experience = settings.view === "flight"
   : null;
 const experienceArt = document.querySelector("#experience-art");
 if (experienceArt?.src) openingCriticalLoads.push(waitForImageReady(experienceArt));
+if (openingPlanetTexture?.src) openingCriticalLoads.push(waitForImageReady(openingPlanetTexture));
 
 if (settings.mode === "realism" && settings.view === "flight") {
   const protectedZoneSpecs = [
@@ -739,34 +741,14 @@ function createPolarWindVent() {
     side: THREE.DoubleSide,
     toneMapped: false,
   });
-  const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x070707,
-    roughness: 1,
-    metalness: 0,
-    side: THREE.DoubleSide,
-  });
-  const throat = new THREE.Mesh(new THREE.CircleGeometry(2.2, 48), throatMaterial);
+  // Keep the vent as a small, featureless void.  The old inner cylinder was
+  // readable as a black pipe from low flight angles, which broke the illusion
+  // of a deep natural opening.
+  const throat = new THREE.Mesh(new THREE.CircleGeometry(1.18, 64), throatMaterial);
   throat.rotation.x = -Math.PI * 0.5;
-  throat.position.y = 0.04;
+  throat.position.y = -0.06;
   throat.renderOrder = 1;
   group.add(throat);
-
-  const wallGeometry = new THREE.CylinderGeometry(3.05, 2.25, WIND_VENT_DEPTH, 48, 4, true);
-  const wallPositions = wallGeometry.attributes.position;
-  for (let index = 0; index < wallPositions.count; index += 1) {
-    const x = wallPositions.getX(index);
-    const y = wallPositions.getY(index);
-    const z = wallPositions.getZ(index);
-    const angle = Math.atan2(z, x);
-    const irregularity = 1
-      + Math.sin(angle * 5 + y * 0.21) * 0.035
-      + Math.sin(angle * 11 - y * 0.16) * 0.018;
-    wallPositions.setXYZ(index, x * irregularity, y, z * irregularity);
-  }
-  wallGeometry.computeVertexNormals();
-  const wall = new THREE.Mesh(wallGeometry, wallMaterial);
-  wall.position.y = WIND_VENT_DEPTH * 0.5 - 0.45;
-  group.add(wall);
 
   const dustCount = mobileHighProfile ? 120 : 180;
   const dustPositions = new Float32Array(dustCount * 3);
@@ -1564,7 +1546,10 @@ function scheduleDeferredOpeningAssets() {
     }, delay);
   };
   if (deferWaterSystems) {
-    scheduleIdle(installDeferredWaterSystems, 5200, 4200);
+    // Keep the first several seconds exclusively for stable flight.  The
+    // player begins away from water, so its detailed surface can arrive after
+    // the loader has already absorbed shader compilation and first-frame work.
+    scheduleIdle(installDeferredWaterSystems, mobileHighProfile ? 8500 : 6500, 4200);
   }
   scheduleIdle(() => {
     void specialLandmarks.loadDeferredBookModel?.().catch(() => {});
@@ -1592,12 +1577,13 @@ function waitForImageReady(image) {
 }
 
 async function prepareOpening() {
-  const requestedOpeningHold = Number(
-    new URLSearchParams(window.location.search).get("openinghold"),
-  );
+  const openingHoldParameter = new URLSearchParams(window.location.search).get("openinghold");
+  // Number(null) is 0, which previously made the fallback duration unreachable
+  // whenever the URL omitted openinghold.
+  const requestedOpeningHold = openingHoldParameter === null ? Number.NaN : Number(openingHoldParameter);
   const minimumOpeningMs = Number.isFinite(requestedOpeningHold)
     ? THREE.MathUtils.clamp(requestedOpeningHold, 180, 10000)
-    : 180;
+    : (mobileHighProfile ? 2600 : 1800);
   const startedAt = performance.now();
   await Promise.allSettled(openingCriticalLoads);
   canvas.dataset.openingCriticalReadyMs = Math.round(performance.now() - startedAt).toString();
@@ -1605,6 +1591,10 @@ async function prepareOpening() {
   if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
 
   if (settings.view === "flight") resetFlight();
+  // Compile the visible scene while the dedicated loading image remains on
+  // screen.  This trades a deliberate, calm loading beat for a much steadier
+  // first moment of player-controlled flight.
+  renderer.compile(scene, camera);
   updateFlightShadow();
   renderer.render(scene, camera);
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
