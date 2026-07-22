@@ -5,13 +5,13 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-22";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-23";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-148";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-166";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-167";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -586,7 +586,7 @@ if (settings.mode === "realism" && settings.view === "flight") {
   if (bootParams.get("phaseaudiotest") === "1") {
     canvas.dataset.phaseAudioTest = "armed";
     window.addEventListener("pointerdown", () => {
-      window.setTimeout(() => environmentPhasing?.debugPlayAudio("dematerialize"), 80);
+      environmentPhasing?.debugPlayAudio("dematerialize");
     }, { capture: true, once: true });
   }
 }
