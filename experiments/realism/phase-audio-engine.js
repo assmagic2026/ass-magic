@@ -11,8 +11,8 @@
   let assetFailed = false;
   let decodeFailed = false;
   let decodePromise = null;
-  let preparationPromise = null;
   const activeSources = new Set();
+  let unlockAttempts = 0;
 
   document.documentElement.dataset.phaseAudioEngine = "loading";
   document.documentElement.dataset.phaseAudioContext = "uninitialized";
@@ -56,6 +56,35 @@
         .catch(() => false);
     } catch {
       return Promise.resolve(false);
+    }
+  }
+
+  function primeOutput(targetContext) {
+    if (!targetContext) return false;
+    try {
+      // WebKit can leave resume() pending when it is first called from
+      // pointerdown/touchstart. Starting a silent source in the same trusted
+      // event gives iOS an actual output graph to authorise. We repeat this on
+      // later pointerup/touchend/click events because those are the accepted
+      // activation events on some Safari/WKWebView versions.
+      const silentBuffer = targetContext.createBuffer(
+        1,
+        1,
+        targetContext.sampleRate || 44100,
+      );
+      const source = targetContext.createBufferSource();
+      const gain = targetContext.createGain();
+      source.buffer = silentBuffer;
+      gain.gain.value = 0;
+      source.connect(gain).connect(targetContext.destination);
+      source.onended = () => {
+        source.disconnect();
+        gain.disconnect();
+      };
+      source.start(0);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -131,25 +160,31 @@
 
   function preparePlayback() {
     if (syncStatus()) return Promise.resolve(true);
-    if (preparationPromise) return preparationPromise;
     const targetContext = ensureContext();
     if (!targetContext) return Promise.resolve(false);
-    // Both operations start inside the same trusted input event. The first
-    // phase is not armed until both have actually finished.
-    preparationPromise = Promise.all([resume(targetContext), decode(targetContext)])
+    return Promise.all([resume(targetContext), decode(targetContext)])
       .then(([running, decoded]) => {
         syncStatus();
         return Boolean(running && decoded && targetContext.state === "running");
-      })
-      .finally(() => {
-        preparationPromise = null;
       });
-    return preparationPromise;
   }
 
-  function unlock() {
+  function unlock(trigger = "") {
     hasGesture = true;
-    return preparePlayback();
+    unlockAttempts += 1;
+    const targetContext = ensureContext();
+    // Do not deduplicate trusted activation attempts. A pointerdown attempt
+    // may be rejected by WebKit while the following touchend/click succeeds.
+    const resumeAttempt = resume(targetContext);
+    const primed = primeOutput(targetContext);
+    const decodeAttempt = decode(targetContext);
+    document.documentElement.dataset.phaseAudioUnlockAttempts = String(unlockAttempts);
+    document.documentElement.dataset.phaseAudioPrime = primed ? "started" : "unavailable";
+    if (trigger) document.documentElement.dataset.phaseAudioGesture = trigger;
+    return Promise.all([resumeAttempt, decodeAttempt]).then(([running, decoded]) => {
+      syncStatus();
+      return Boolean(running && decoded && targetContext?.state === "running");
+    });
   }
 
   function play(label = "dematerialize") {
@@ -194,11 +229,14 @@
     },
   };
 
-  const onGesture = () => {
-    void unlock();
+  const onGesture = (event) => {
+    void unlock(event.type);
   };
   window.addEventListener("pointerdown", onGesture, { capture: true, passive: true });
+  window.addEventListener("pointerup", onGesture, { capture: true, passive: true });
   window.addEventListener("touchstart", onGesture, { capture: true, passive: true });
+  window.addEventListener("touchend", onGesture, { capture: true, passive: true });
+  window.addEventListener("click", onGesture, { capture: true, passive: true });
   window.addEventListener("keydown", onGesture, { capture: true });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && hasGesture) void preparePlayback();
