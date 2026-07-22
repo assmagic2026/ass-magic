@@ -132,9 +132,14 @@ const settings = {
   loadLabel: `R340 ${meshLabel} / LANDMARK 8 / CLOUD ${planetLoad.cloudCount.toLocaleString()}`,
 };
 const terrainAssistDebugEnabled = new URLSearchParams(window.location.search).get("flightdebug") === "1";
+document.body.classList.toggle("flight-mode", settings.view === "flight");
 configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
+const openingCurtain = document.querySelector("#opening-curtain");
+let openingPhase = "loading";
+let openingRunElapsed = 0;
+canvas.dataset.openingPhase = openingPhase;
 const menuToggle = document.querySelector("#menu-toggle");
 const siteMenu = document.querySelector("#site-menu");
 const siteMenuBackdrop = document.querySelector("#site-menu-backdrop");
@@ -241,9 +246,11 @@ flightPlayer.player.visible = settings.view === "flight";
 flightPlayer.shadow.visible = false;
 if (settings.mode === "realism" && settings.view === "flight") {
   if (flightPlayer.ready) {
-    flightPlayer.ready.then(scheduleWaterPlayerReflection, scheduleWaterPlayerReflection);
+    externalTextureLoads.push(
+      flightPlayer.ready.then(scheduleWaterPlayerReflection, scheduleWaterPlayerReflection),
+    );
   } else {
-    scheduleWaterPlayerReflection();
+    externalTextureLoads.push(scheduleWaterPlayerReflection());
   }
 }
 if (realismShadowsEnabled) {
@@ -519,6 +526,8 @@ const experience = settings.view === "flight"
     },
   })
   : null;
+const experienceArt = document.querySelector("#experience-art");
+if (experienceArt?.src) externalTextureLoads.push(waitForImageReady(experienceArt));
 
 if (settings.mode === "realism" && settings.view === "flight") {
   const protectedZoneSpecs = [
@@ -549,7 +558,6 @@ if (settings.mode === "realism" && settings.view === "flight") {
 }
 
 if (settings.view === "flight") {
-  document.body.classList.add("flight-mode");
   flightReadout.classList.add("is-visible");
   flightHelp.textContent = "右スティック・WASD・矢印で球面飛行 / 長押し・Spaceで加速";
   resetFlight();
@@ -575,14 +583,22 @@ if (loadingElement) {
   loadingElement.hidden = true;
   loadingElement.classList.add("is-hidden");
 }
+void prepareOpening();
 
 const clock = new THREE.Clock();
 let elapsed = 0;
 renderer.setAnimationLoop(() => {
   const delta = Math.min(clock.getDelta(), 0.1);
   elapsed += delta;
-  updateWorldInversion(delta);
-  specialLandmarks.update(delta);
+  const simulationRunning = openingPhase === "running";
+  let simulationDelta = 0;
+  if (simulationRunning) {
+    openingRunElapsed += delta;
+    const openingMotionMix = THREE.MathUtils.smoothstep(openingRunElapsed, 0, 1.15);
+    simulationDelta = delta * THREE.MathUtils.lerp(0.12, 1, openingMotionMix);
+    updateWorldInversion(simulationDelta);
+    specialLandmarks.update(simulationDelta);
+  }
   const bookDimensions = specialLandmarks.objects.book.userData.modelDimensions;
   if (bookDimensions) {
     canvas.dataset.bookModelRatio = [bookDimensions.x, bookDimensions.y, bookDimensions.z]
@@ -596,17 +612,19 @@ renderer.setAnimationLoop(() => {
     ? specialLandmarks.objects.blackBox.userData.flightAltitude.toFixed(2)
     : "grounded";
   canvas.dataset.blackBoxVisible = specialLandmarks.objects.blackBox.visible ? "visible" : "hidden";
-  environmentPhasing?.beginFrame(delta, {
-    paused: experience?.isPaused() === true && experience?.isGuideNavigating() !== true,
-  });
-  experience?.update(delta);
-  if (settings.view === "flight") {
-    if (experience?.isGuideNavigating()) updateGuidedFlight(delta);
-    else if (!experience?.isPaused()) updateFlight(delta);
-  } else {
-    updateOrbit(delta);
+  if (simulationRunning) {
+    environmentPhasing?.beginFrame(simulationDelta, {
+      paused: experience?.isPaused() === true && experience?.isGuideNavigating() !== true,
+    });
+    experience?.update(simulationDelta);
+    if (settings.view === "flight") {
+      if (experience?.isGuideNavigating()) updateGuidedFlight(simulationDelta);
+      else if (!experience?.isPaused()) updateFlight(simulationDelta);
+    } else {
+      updateOrbit(simulationDelta);
+    }
   }
-  if (waterSpray) updateWaterSpray(waterSpray, delta);
+  if (waterSpray && simulationRunning) updateWaterSpray(waterSpray, simulationDelta);
 
   for (const layer of movingSurfaceLayers) {
     layer.object.rotation.y = elapsed * layer.speed;
@@ -1312,14 +1330,80 @@ function installWaterPlayerReflection() {
 }
 
 function scheduleWaterPlayerReflection() {
-  const install = () => {
-    if (typeof window.requestIdleCallback === "function") {
-      window.requestIdleCallback(installWaterPlayerReflection, { timeout: 1000 });
-    } else {
-      installWaterPlayerReflection();
-    }
+  return new Promise((resolve) => {
+    const install = () => {
+      const finish = () => {
+        installWaterPlayerReflection();
+        resolve();
+      };
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(finish, { timeout: 600 });
+      } else {
+        finish();
+      }
+    };
+    window.setTimeout(install, 120);
+  });
+}
+
+function waitForImageReady(image) {
+  if (image.complete && image.naturalWidth > 0) {
+    return typeof image.decode === "function" ? image.decode().catch(() => {}) : Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const finish = () => {
+      image.removeEventListener("load", finish);
+      image.removeEventListener("error", finish);
+      resolve();
+    };
+    image.addEventListener("load", finish, { once: true });
+    image.addEventListener("error", finish, { once: true });
+  });
+}
+
+async function prepareOpening() {
+  const requestedOpeningHold = Number(
+    new URLSearchParams(window.location.search).get("openinghold"),
+  );
+  const minimumOpeningMs = Number.isFinite(requestedOpeningHold)
+    ? THREE.MathUtils.clamp(requestedOpeningHold, 520, 10000)
+    : 520;
+  const startedAt = performance.now();
+  await Promise.allSettled(externalTextureLoads);
+  const remaining = minimumOpeningMs - (performance.now() - startedAt);
+  if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+
+  if (settings.view === "flight") resetFlight();
+  updateFlightShadow();
+  try {
+    if (typeof renderer.compileAsync === "function") await renderer.compileAsync(scene, camera);
+    else renderer.compile(scene, camera);
+  } catch (error) {
+    console.warn("Opening scene precompile skipped.", error);
+  }
+  renderer.render(scene, camera);
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+  openingPhase = "revealing";
+  canvas.dataset.openingPhase = openingPhase;
+  document.body.classList.add("is-opening-revealing");
+
+  let finished = false;
+  const finishOpening = () => {
+    if (finished) return;
+    finished = true;
+    openingPhase = "running";
+    openingRunElapsed = 0;
+    canvas.dataset.openingPhase = openingPhase;
+    document.body.classList.remove("is-booting", "is-opening-revealing");
+    if (openingCurtain) openingCurtain.hidden = true;
+    clock.getDelta();
   };
-  window.setTimeout(install, 1600);
+  openingCurtain?.addEventListener("transitionend", (event) => {
+    if (event.target === openingCurtain && event.propertyName === "opacity") finishOpening();
+  }, { once: true });
+  window.setTimeout(finishOpening, 950);
 }
 
 function updateWaterPlayerReflection() {
