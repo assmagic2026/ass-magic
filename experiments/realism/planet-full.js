@@ -5,7 +5,7 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-19";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-22";
 import {
   createFlightPlayer,
   updateFlightPlayer,
@@ -583,6 +583,12 @@ if (settings.mode === "realism" && settings.view === "flight") {
     minimumRadius: WATER_RADIUS,
     protectedZones,
   });
+  if (bootParams.get("phaseaudiotest") === "1") {
+    canvas.dataset.phaseAudioTest = "armed";
+    window.addEventListener("pointerdown", () => {
+      window.setTimeout(() => environmentPhasing?.debugPlayAudio("dematerialize"), 80);
+    }, { capture: true, once: true });
+  }
 }
 
 if (settings.view === "flight") {
