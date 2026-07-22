@@ -26,6 +26,7 @@ const TERRAIN_TEXTURE_TINT = new THREE.Color(0xffffff);
 const WATER_LEVEL = -9;
 const WATER_RADIUS = PLANET_RADIUS + WATER_LEVEL;
 const WIND_VENT_DIRECTION = WORLD_UP.clone();
+const TILE_WATER_DIRECTION = WORLD_UP.clone().multiplyScalar(-1);
 const WIND_VENT_DEPTH = 12;
 const WIND_VENT_CORE_RADIUS = 0.012;
 const WIND_VENT_FIELD_RADIUS = 0.16;
@@ -66,11 +67,7 @@ const CRATER_DIRECTION = FEATURE_AXIS_A.clone()
 const CRATER_APPROACH = SUN_DIRECTION.clone()
   .addScaledVector(CRATER_DIRECTION, -SUN_DIRECTION.dot(CRATER_DIRECTION))
   .normalize();
-const WATER_DIRECTION = FEATURE_AXIS_A.clone()
-  .multiplyScalar(-0.55)
-  .addScaledVector(FEATURE_AXIS_B, -0.75)
-  .addScaledVector(SUN_DIRECTION, 0.34)
-  .normalize();
+const WATER_DIRECTION = TILE_WATER_DIRECTION.clone();
 const VALLEY_DIRECTION = FEATURE_AXIS_A.clone()
   .multiplyScalar(0.4)
   .addScaledVector(FEATURE_AXIS_B, -0.85)
@@ -167,7 +164,6 @@ configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
 const openingCurtain = document.querySelector("#opening-curtain");
-const openingPlanetTexture = document.querySelector("#opening-planet-texture");
 let openingPhase = "loading";
 let openingRunElapsed = 0;
 canvas.dataset.openingPhase = openingPhase;
@@ -557,7 +553,6 @@ const experience = settings.view === "flight"
   : null;
 const experienceArt = document.querySelector("#experience-art");
 if (experienceArt?.src) openingCriticalLoads.push(waitForImageReady(experienceArt));
-if (openingPlanetTexture?.src) openingCriticalLoads.push(waitForImageReady(openingPlanetTexture));
 
 if (settings.mode === "realism" && settings.view === "flight") {
   const protectedZoneSpecs = [
@@ -900,18 +895,15 @@ function terrainFeatureHeight(direction) {
   height -= 32 * Math.exp(-Math.pow(craterDistance / 0.115, 3.2));
   height += 16 * Math.exp(-Math.pow((craterDistance - 0.15) / 0.048, 2));
 
-  const basinDistance = chordDistance(direction, WATER_DIRECTION);
-  const coastRipple = Math.sin(
-    direction.dot(FEATURE_AXIS_A) * 92
-      + direction.dot(FEATURE_AXIS_B) * 41
-      + direction.y * 27,
-  );
-  const coastWarp = terrainSignal(direction, 13.5, 7.31) * 0.052
-    + terrainSignal(direction, 31, 1.87) * 0.022
-    + coastRipple * 0.016;
-  const coastRadius = THREE.MathUtils.clamp(0.218 + coastWarp, 0.14, 0.305);
-  const inletWarp = terrainSignal(direction, 8.2, 4.11) * 0.026;
-  height -= 29 * Math.exp(-Math.pow((basinDistance + inletWarp) / coastRadius, 2.35));
+  // The south-pole tile convergence is now a water basin. Removing the
+  // previous WATER_DIRECTION basin keeps the water layout balanced while
+  // turning the conspicuous second convergence point into a natural shoreline.
+  const tileWaterDistance = chordDistance(direction, TILE_WATER_DIRECTION);
+  const tileWaterWarp = terrainSignal(direction, 12.4, 1.91) * 0.012
+    + terrainSignal(direction, 27.6, 5.72) * 0.007;
+  // The pole also receives a few procedural hills, so keep the basin deep and
+  // broad enough that the water surface remains continuous above that detail.
+  height -= 64 * Math.exp(-Math.pow((tileWaterDistance + tileWaterWarp) / 0.2, 2.5));
 
   const valleyCrossTrack = Math.abs(direction.dot(VALLEY_NORMAL));
   const valleyAlongTrack = chordDistance(direction, VALLEY_DIRECTION);
