@@ -5,13 +5,13 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-24";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-25";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-149";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-167";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-168";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -221,9 +221,6 @@ const textureDisposables = [];
 const surfaceGeometryDisposables = [];
 const surfaceMaterialDisposables = [];
 const openingCriticalLoads = [];
-if (window.__realismPhaseAudioEngine?.ready) {
-  openingCriticalLoads.push(window.__realismPhaseAudioEngine.ready);
-}
 const movingSurfaceLayers = [];
 const cloudVolumes = [];
 let nightCrystals = null;
@@ -585,13 +582,10 @@ if (settings.mode === "realism" && settings.view === "flight") {
     playerClearance: PLAYER_CLEARANCE,
     minimumRadius: WATER_RADIUS,
     protectedZones,
+    onPhaseAudioChange(active) {
+      experience?.setEnvironmentPhased(active);
+    },
   });
-  if (bootParams.get("phaseaudiotest") === "1") {
-    canvas.dataset.phaseAudioTest = "armed";
-    window.addEventListener("pointerdown", () => {
-      environmentPhasing?.debugPlayAudio("dematerialize");
-    }, { capture: true, once: true });
-  }
 }
 
 if (settings.view === "flight") {
@@ -4650,7 +4644,7 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
 
 function resetFlight() {
   // Let terrain avoidance settle around the spawn point before emergency
-  // phasing is allowed.  This prevents a false phase and its sound at startup.
+  // phasing is allowed. This prevents a false visual transition at startup.
   environmentPhasing?.reset({ guardSeconds: 3.2 });
   windVentFlightStrength = 0;
   canvas.dataset.windVentStrength = "0.000";
