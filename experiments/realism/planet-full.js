@@ -5,16 +5,20 @@ import {
   getExperimentSettings,
 } from "./quality.js";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-10";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-13";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-138";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-153";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-146";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-164";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
+// The loaded book is approximately 120 world units along its long edge
+// (15 model units × the 8× presentation scale).  Keep the default spawn
+// offset in world space so it remains visually tied to the book's size.
+const BOOK_LONG_SIDE_WORLD = 120;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const SUN_DIRECTION = new THREE.Vector3(0.82, 0.33, 0.46).normalize();
 const WORLD_SUN_DIRECTION = SUN_DIRECTION.clone();
@@ -292,6 +296,9 @@ const lightNightSky = new THREE.Color(0x111827);
 const lightDayGround = new THREE.Color(0x425369);
 const lightDuskGround = new THREE.Color(0x8c3528);
 const lightNightGround = new THREE.Color(0x1d2a42);
+const lightSpaceSun = new THREE.Color(0xf4f7ff);
+const lightSpaceSky = new THREE.Color(0x1c2230);
+const lightSpaceGround = new THREE.Color(0x090b10);
 const flightFogDay = new THREE.Color(0xaacbd4);
 const flightFogDusk = new THREE.Color(0xc58b73);
 const flightFogNight = new THREE.Color(0x304b67);
@@ -508,7 +515,7 @@ if (settings.mode === "realism" && settings.view === "flight") {
     ["blackSphere", 28],
     ["whiteSphere", 28],
     ["recordPlayer", 35],
-    ["book", 18],
+    ["book", 64],
     ["compass", 21],
     ["sanctuary", 40],
     ["blackBox", 14],
@@ -547,6 +554,7 @@ const perfHud = new PerformanceHud(
 );
 
 setupInteraction();
+setupZoomProtection();
 resize();
 window.addEventListener("resize", resize, { passive: true });
 const loadingElement = document.querySelector("#loading");
@@ -563,6 +571,18 @@ renderer.setAnimationLoop(() => {
   elapsed += delta;
   updateWorldInversion(delta);
   specialLandmarks.update(delta);
+  const bookDimensions = specialLandmarks.objects.book.userData.modelDimensions;
+  if (bookDimensions) {
+    canvas.dataset.bookModelRatio = [bookDimensions.x, bookDimensions.y, bookDimensions.z]
+      .map((value) => value.toFixed(2))
+      .join(":");
+  }
+  canvas.dataset.blackBoxBeacon = specialLandmarks.objects.blackBox.userData.beacon > 0.02
+    ? "active"
+    : "inactive";
+  canvas.dataset.blackBoxAltitude = Number.isFinite(specialLandmarks.objects.blackBox.userData.flightAltitude)
+    ? specialLandmarks.objects.blackBox.userData.flightAltitude.toFixed(2)
+    : "grounded";
   environmentPhasing?.beginFrame(delta, {
     paused: experience?.isPaused() === true && experience?.isGuideNavigating() !== true,
   });
@@ -4178,6 +4198,7 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
   if (!scene.fog) return;
   const spaceMix = experience?.getReturnState()?.spaceTransition || 0;
   const sunHeight = up.dot(WORLD_SUN_DIRECTION);
+  canvas.dataset.flightSunHeight = sunHeight.toFixed(3);
   const dayMix = THREE.MathUtils.smoothstep(sunHeight, -0.16, 0.18);
   const duskMix = 1 - THREE.MathUtils.smoothstep(Math.abs(sunHeight), 0.055, 0.5);
   flightFogColor.copy(flightFogNight).lerp(flightFogDay, dayMix);
@@ -4212,7 +4233,7 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
   if (twilightFillLight) {
     twilightFillLight.intensity = THREE.MathUtils.lerp(
       twilightFillLight.intensity,
-      0.035 + dayMix * 0.055 + duskMix * 0.72,
+      (0.035 + dayMix * 0.055 + duskMix * 0.72) * (1 - spaceMix),
       0.08,
     );
   }
@@ -4225,6 +4246,7 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
   }
   if (sunKeyLight) {
     flightSunColor.copy(lightDaySun).lerp(lightDuskSun, duskMix * 0.94);
+    flightSunColor.lerp(lightSpaceSun, spaceMix);
     sunKeyLight.color.lerp(flightSunColor, 0.08);
     sunKeyLight.intensity = THREE.MathUtils.lerp(
       sunKeyLight.intensity,
@@ -4237,6 +4259,8 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
     flightHemisphereSkyColor.lerp(lightDuskSky, duskMix * 0.92);
     flightHemisphereGroundColor.copy(lightNightGround).lerp(lightDayGround, dayMix);
     flightHemisphereGroundColor.lerp(lightDuskGround, duskMix * 0.9);
+    flightHemisphereSkyColor.lerp(lightSpaceSky, spaceMix);
+    flightHemisphereGroundColor.lerp(lightSpaceGround, spaceMix);
     hemisphereLight.color.lerp(flightHemisphereSkyColor, 0.08);
     hemisphereLight.groundColor.lerp(flightHemisphereGroundColor, 0.08);
     hemisphereLight.intensity = THREE.MathUtils.lerp(
@@ -4291,9 +4315,68 @@ function resetFlight() {
       .multiplyScalar(Math.cos(approachAngle))
       .addScaledVector(approach, -Math.sin(approachAngle))
       .normalize();
+  if (startPreset === "day" && specialLandmarks.directions.book) {
+    const bookDirection = specialLandmarks.directions.book;
+    const bookAngle = Math.acos(THREE.MathUtils.clamp(
+      SUN_DIRECTION.dot(bookDirection),
+      -1,
+      1,
+    ));
+    approach.copy(bookDirection)
+      .addScaledVector(SUN_DIRECTION, -bookDirection.dot(SUN_DIRECTION))
+      .normalize();
+    const startBehindAngle = bookAngle + 0.62;
+    startDirection.copy(SUN_DIRECTION)
+      .multiplyScalar(Math.cos(startBehindAngle))
+      .addScaledVector(approach, Math.sin(startBehindAngle))
+      .normalize();
+    // Spawn one book-length to the player's right.  The offset follows the
+    // local tangent plane, preserving the dusk-to-day approach while moving
+    // the book naturally to the left side of the initial view.
+    const startBookForward = bookDirection.clone()
+      .addScaledVector(startDirection, -bookDirection.dot(startDirection))
+      .normalize();
+    const startRadiusEstimate = getSurfaceRadius(startDirection)
+      + PLAYER_CLEARANCE
+      + Math.max(flight.cruiseAltitude, 20);
+    const startLateralAngle = BOOK_LONG_SIDE_WORLD / Math.max(startRadiusEstimate, 1);
+    // Rotating around the forward axis moves the radial position laterally;
+    // using the right vector as the rotation axis would move along the flight
+    // path instead of one book-length to its side.
+    startDirection.applyAxisAngle(startBookForward, -startLateralAngle).normalize();
+    canvas.dataset.startLateralOffset = BOOK_LONG_SIDE_WORLD.toFixed(1);
+  }
   if (sprayPreview) startDirection = WATER_DIRECTION.clone();
-  const startRadius = getSurfaceRadius(startDirection) + PLAYER_CLEARANCE + flight.cruiseAltitude;
+  if (startPreset === "day") flight.cruiseAltitude = Math.max(flight.cruiseAltitude, 20);
+  const startSurfaceRadius = getSurfaceRadius(startDirection);
+  let startRadius = startSurfaceRadius + PLAYER_CLEARANCE + flight.cruiseAltitude;
+  if (startPreset === "day" && specialLandmarks.directions.book) {
+    const safeStartForward = specialLandmarks.directions.book.clone()
+      .addScaledVector(
+        startDirection,
+        -specialLandmarks.directions.book.dot(startDirection),
+      )
+      .normalize();
+    const safeStartAxis = new THREE.Vector3().crossVectors(startDirection, safeStartForward).normalize();
+    const safeStartDirection = new THREE.Vector3();
+    for (const secondsAhead of [0.18, 0.35, 0.55, 0.8]) {
+      const startSpeed = Number(flightSpeedSlider.value) || 30;
+      const angleAhead = startSpeed * secondsAhead / Math.max(startRadius, 1);
+      safeStartDirection.copy(startDirection).applyAxisAngle(safeStartAxis, angleAhead).normalize();
+      startRadius = Math.max(
+        startRadius,
+        getSurfaceRadius(safeStartDirection) + PLAYER_CLEARANCE + 5.2,
+      );
+    }
+    flight.cruiseAltitude = Math.max(
+      flight.cruiseAltitude,
+      startRadius - startSurfaceRadius - PLAYER_CLEARANCE,
+    );
+  }
   flight.position.copy(startDirection).multiplyScalar(startRadius);
+  canvas.dataset.startTarget = startPreset === "day" ? "book" : startPreset;
+  canvas.dataset.startSunHeight = startDirection.dot(SUN_DIRECTION).toFixed(3);
+  canvas.dataset.startBookAngle = startPreset === "day" ? "0.620" : "n/a";
   if (sprayPreview) {
     flight.forward.copy(FEATURE_AXIS_A)
       .addScaledVector(startDirection, -FEATURE_AXIS_A.dot(startDirection))
@@ -4303,7 +4386,12 @@ function resetFlight() {
       .addScaledVector(startDirection, -SUN_DIRECTION.dot(startDirection))
       .normalize();
   } else if (startPreset === "day") {
-    flight.forward.crossVectors(startDirection, targetDirection).normalize();
+    flight.forward.copy(specialLandmarks.directions.book)
+      .addScaledVector(
+        startDirection,
+        -specialLandmarks.directions.book.dot(startDirection),
+      )
+      .normalize();
   } else {
     flight.forward.copy(targetDirection)
       .addScaledVector(startDirection, -targetDirection.dot(startDirection))
@@ -4398,6 +4486,59 @@ function syncFlightSpeedUi() {
 function setupInteraction() {
   if (settings.view === "flight") setupFlightInteraction();
   else setupOrbitInteraction();
+}
+
+function setupZoomProtection() {
+  const viewportMeta = document.querySelector('meta[name="viewport"]');
+  const viewportContent = "width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover";
+  let lastTouchEnd = 0;
+
+  const restoreViewport = () => {
+    if (!viewportMeta) return;
+    viewportMeta.setAttribute("content", `${viewportContent}, interactive-widget=resizes-content`);
+    requestAnimationFrame(() => viewportMeta.setAttribute("content", viewportContent));
+  };
+
+  window.addEventListener("gesturestart", (event) => event.preventDefault(), { passive: false });
+  window.addEventListener("gesturechange", (event) => event.preventDefault(), { passive: false });
+  window.addEventListener("gestureend", restoreViewport);
+  window.addEventListener("dblclick", (event) => event.preventDefault(), { passive: false });
+  window.addEventListener("touchmove", (event) => {
+    const editable = event.target instanceof HTMLTextAreaElement
+      || event.target instanceof HTMLInputElement;
+    const scrollable = editable || (
+      event.target instanceof Element
+      && event.target.closest(
+        "#book-panel, #music-selector-panel, #music-selector-list, #devil-guide-panel",
+      )
+    );
+    if (!scrollable && event.cancelable) event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("wheel", (event) => {
+    if (event.ctrlKey && event.cancelable) event.preventDefault();
+  }, { passive: false, capture: true });
+  document.addEventListener("touchstart", (event) => {
+    if (event.touches.length > 1 && event.cancelable) event.preventDefault();
+  }, { passive: false });
+  document.addEventListener("touchend", (event) => {
+    const now = performance.now();
+    if (now - lastTouchEnd < 300 && event.cancelable) event.preventDefault();
+    lastTouchEnd = now;
+    if (window.visualViewport && window.visualViewport.scale > 1.01) {
+      window.setTimeout(restoreViewport, 0);
+    }
+  }, { passive: false });
+  document.addEventListener("touchcancel", () => {
+    if (window.visualViewport && window.visualViewport.scale > 1.01) {
+      window.setTimeout(restoreViewport, 0);
+    }
+  }, { passive: false });
+  window.visualViewport?.addEventListener("resize", () => {
+    if (window.visualViewport.scale > 1.01) restoreViewport();
+  });
+  window.addEventListener("orientationchange", () => {
+    window.setTimeout(restoreViewport, 50);
+  });
 }
 
 function setupOrbitInteraction() {
