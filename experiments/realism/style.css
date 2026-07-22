@@ -68,7 +68,7 @@ body {
       #c96f5a 78%,
       #361e29 100%
     );
-  transition: opacity 780ms cubic-bezier(.22,.68,.24,1), visibility 780ms step-end;
+  transition: opacity 540ms cubic-bezier(.22,.68,.24,1), visibility 540ms step-end;
 }
 
 #opening-curtain::after {
