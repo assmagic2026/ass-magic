@@ -171,6 +171,7 @@ function createBook(realism) {
     addBox([0.42, 1.04, 3.08], [-5.05, y, 0], wear, [0, 0, -0.04]);
   }
   group.userData.proceduralVisual = pivot;
+  group.userData.visualKind = "procedural";
   return group;
 }
 
@@ -216,6 +217,7 @@ function loadBookModel(book, modelUrl, castShadow) {
     mount.scale.set(1, 1, 1);
     mount.add(modelRoot);
     book.userData.glbVisual = modelRoot;
+    book.userData.visualKind = "authored-glb";
   }).catch((error) => {
     console.warn("Realism book GLB could not be loaded; using the procedural book.", error);
     throw error;

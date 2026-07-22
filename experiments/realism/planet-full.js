@@ -5,12 +5,12 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-23";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-24";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-148";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-149";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-167";
 
 const PLANET_RADIUS = 340;
@@ -221,6 +221,9 @@ const textureDisposables = [];
 const surfaceGeometryDisposables = [];
 const surfaceMaterialDisposables = [];
 const openingCriticalLoads = [];
+if (window.__realismPhaseAudioEngine?.ready) {
+  openingCriticalLoads.push(window.__realismPhaseAudioEngine.ready);
+}
 const movingSurfaceLayers = [];
 const cloudVolumes = [];
 let nightCrystals = null;
@@ -255,13 +258,13 @@ const specialLandmarks = createSpecialLandmarks({
   sunDirection: SUN_DIRECTION,
   getSurfaceRadius,
   realism: settings.mode === "realism",
-  // Keep one authored book visual across every quality profile. The former
-  // deferred GLB replacement made the book visibly change shape after boot
-  // (and left the fallback visible if the asset arrived late or failed).
-  bookModelUrl: null,
+  // Load the authored book behind the opening curtain and never swap its
+  // design after flight has begun.
+  bookModelUrl: settings.mode === "realism" ? "./assets/models/old-bible-1825.glb" : null,
   deferBookModel: false,
   castShadow: realismShadowsEnabled,
 });
+if (specialLandmarks.ready) openingCriticalLoads.push(specialLandmarks.ready);
 Object.assign(specialLandmarks.directions, {
   mountain: MOUNTAIN_DIRECTION,
   crater: CRATER_DIRECTION,
@@ -634,6 +637,7 @@ renderer.setAnimationLoop(() => {
     specialLandmarks.update(simulationDelta);
   }
   const bookDimensions = specialLandmarks.objects.book.userData.modelDimensions;
+  canvas.dataset.bookVisual = specialLandmarks.objects.book.userData.visualKind || "procedural";
   if (bookDimensions) {
     canvas.dataset.bookModelRatio = [bookDimensions.x, bookDimensions.y, bookDimensions.z]
       .map((value) => value.toFixed(2))
