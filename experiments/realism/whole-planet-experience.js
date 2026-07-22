@@ -116,7 +116,11 @@ function createDevilModel() {
     flatShading: true,
     side: THREE.DoubleSide,
   });
-  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  const eyeMaterial = new THREE.MeshLambertMaterial({
+    color: 0xffffff,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.025,
+  });
   const addSegment = (start, end, radius, material = bodyMaterial) => {
     const direction = end.clone().sub(start);
     const mesh = new THREE.Mesh(
@@ -262,6 +266,12 @@ function createDevilModel() {
   devil.userData.wingRoots = wingRoots;
   devil.userData.visibilityGlow = visibilityGlow;
   devil.userData.visibilityLight = visibilityLight;
+  devil.userData.emissiveMaterials = [
+    { material: bodyMaterial, nightIntensity: 0.038 },
+    { material: hornMaterial, nightIntensity: 0.034 },
+    { material: wingMaterial, nightIntensity: 0.036 },
+    { material: eyeMaterial, nightIntensity: 0.025 },
+  ];
   devil.scale.setScalar(0.62);
   devil.visible = false;
   return devil;
@@ -682,6 +692,7 @@ export function createWholePlanetExperience({
   const devilTravelAxis = new THREE.Vector3();
   const devilEvadeRight = new THREE.Vector3();
   const devilEntryInward = new THREE.Vector3();
+  const devilDayDirection = landmarks.directions.day.clone().normalize();
   const devilRouteDirection = new THREE.Vector3();
   const devilRouteForward = new THREE.Vector3();
   const devilRouteTowardStart = new THREE.Vector3();
@@ -2344,12 +2355,6 @@ export function createWholePlanetExperience({
     devil.bobTime += delta * 1.7;
     devilModel.position.copy(devil.anchorPosition)
       .addScaledVector(devil.anchorUp, Math.sin(devil.bobTime) * 0.28);
-    if (devilModel.userData.visibilityGlow) {
-      devilModel.userData.visibilityGlow.material.opacity = 0.016;
-    }
-    if (devilModel.userData.visibilityLight) {
-      devilModel.userData.visibilityLight.intensity = 26;
-    }
     orientDevil(devil.phase === "dialog"
       ? devilTarget.copy(flight.position).sub(devilModel.position)
       : devil.flightForward);
@@ -2377,6 +2382,25 @@ export function createWholePlanetExperience({
       devil.outOfViewTime = 0;
       devil.hasBeenVisible = false;
     }
+  }
+
+  function updateDevilLighting() {
+    if (!devilModel.visible) return;
+    devilUp.copy(devilModel.position).normalize();
+    const daylight = devilUp.dot(devilDayDirection) * (state.worldInverted ? -1 : 1);
+    // Fade the guide's visibility aid through dusk, but make it exactly zero
+    // across the bright hemisphere so it reads as a naturally lit black body.
+    const nightMix = 1 - THREE.MathUtils.smoothstep(daylight, -0.08, 0.24);
+    for (const entry of devilModel.userData.emissiveMaterials || []) {
+      entry.material.emissiveIntensity = entry.nightIntensity * nightMix;
+    }
+    if (devilModel.userData.visibilityGlow) {
+      devilModel.userData.visibilityGlow.material.opacity = 0.016 * nightMix;
+    }
+    if (devilModel.userData.visibilityLight) {
+      devilModel.userData.visibilityLight.intensity = 26 * nightMix;
+    }
+    canvas.dataset.devilGlow = nightMix <= 0.001 ? "off" : nightMix.toFixed(3);
   }
 
   function renderTrackSelector(container) {
@@ -2984,6 +3008,7 @@ export function createWholePlanetExperience({
     update(delta) {
       updateChallenge(delta);
       updateDevil(delta);
+      updateDevilLighting();
       canvas.dataset.devilPhase = state.devil.phase;
       canvas.dataset.devilEncounterTime = state.devil.encounterTime.toFixed(2);
       updateContacts();
