@@ -184,9 +184,10 @@ export function createEnvironmentPhasing({
     guardRemaining: 0,
   };
   const phaseAudioUrl = new URL("./assets/audio/phase-punch.mp3", import.meta.url).href;
+  const phaseAudioEngine = window.__realismPhaseAudioEngine || null;
   // Use two fixed elements in the document so Safari keeps their media
-  // authorisation across dematerialisation/rematerialisation and page restores.
-  // A local fallback keeps this module usable in isolation.
+  // authorisation across dematerialisation/rematerialisation. They are only a
+  // same-moment fallback; a rejected cue is never replayed later.
   const phaseMediaPool = [
     document.querySelector("#environment-dematerialize-audio"),
     document.querySelector("#environment-rematerialize-audio"),
@@ -199,86 +200,26 @@ export function createEnvironmentPhasing({
     audio.load();
   }
   let phaseMediaIndex = 0;
-  let phaseAudioUnlocked = false;
-  let phaseAudioResumePromise = null;
-  let pendingPhaseSound = null;
-  const PhaseAudioContext = window.AudioContext || window.webkitAudioContext;
-  const phaseAudioContext = PhaseAudioContext ? new PhaseAudioContext() : null;
-  let phaseAudioBuffer = null;
-  let phaseAudioLoadPromise = null;
-  const activePhaseSources = new Set();
-
-  function loadPhaseAudioBuffer() {
-    if (!phaseAudioContext || phaseAudioLoadPromise) return phaseAudioLoadPromise;
-    // Browsers intentionally block fetch(file://...). The pre-authorised media
-    // pool remains usable for local-file testing, so avoid a doomed fetch loop.
-    if (!/^https?:$/i.test(new URL(phaseAudioUrl).protocol)) {
-      phaseAudioLoadPromise = Promise.resolve(null);
-      return phaseAudioLoadPromise;
-    }
-    phaseAudioLoadPromise = fetch(phaseAudioUrl)
-      .then((response) => {
-        if (!response.ok) throw new Error(`phase-audio-${response.status}`);
-        return response.arrayBuffer();
-      })
-      .then((arrayBuffer) => phaseAudioContext.decodeAudioData(arrayBuffer))
-      .then((buffer) => {
-        phaseAudioBuffer = buffer;
-        return buffer;
-      })
-      .catch(() => {
-        phaseAudioBuffer = null;
-        phaseAudioLoadPromise = null;
-        return null;
-      });
-    return phaseAudioLoadPromise;
-  }
-
-  function resumePhaseAudioContext() {
-    if (!phaseAudioContext || phaseAudioContext.state === "running") return Promise.resolve(true);
-    if (phaseAudioResumePromise) return phaseAudioResumePromise;
-    // Call resume synchronously from the gesture handler. Safari can suspend
-    // an already-authorised context after tab/background changes, so this is
-    // intentionally not a once-only operation.
-    phaseAudioResumePromise = phaseAudioContext.resume()
-      .then(() => phaseAudioContext.state === "running")
-      .catch(() => false)
-      .finally(() => {
-        phaseAudioResumePromise = null;
-      });
-    return phaseAudioResumePromise;
-  }
 
   function unlockPhaseAudio() {
-    phaseAudioUnlocked = true;
+    phaseAudioEngine?.unlock?.();
     for (const audio of phaseMediaPool) {
-      // Do not call load() again on an already prepared/playing cue: on iOS a
-      // second touch event can otherwise cut off the sound just after it began.
+      // Never restart an already prepared/playing cue on a second touch event.
       if (audio.readyState === 0) audio.load();
     }
-
-    // A queued cue must be retried directly inside the trusted gesture. Do not
-    // wait for a promise first: iOS can discard the user activation by then.
-    flushPendingPhaseSound();
-    void resumePhaseAudioContext()
-      .then(() => loadPhaseAudioBuffer())
-      .then((buffer) => {
-        canvas.dataset.environmentPhaseAudioReady = buffer ? "buffer" : "media";
-        flushPendingPhaseSound();
-      });
   }
 
   window.addEventListener("pointerdown", unlockPhaseAudio, { capture: true, passive: true });
   window.addEventListener("touchstart", unlockPhaseAudio, { capture: true, passive: true });
   window.addEventListener("keydown", unlockPhaseAudio);
   const recoverPhaseAudio = () => {
-    if (!document.hidden && phaseAudioUnlocked) unlockPhaseAudio();
+    if (!document.hidden && phaseAudioEngine?.hasGesture) unlockPhaseAudio();
   };
   document.addEventListener("visibilitychange", recoverPhaseAudio);
   window.addEventListener("pageshow", recoverPhaseAudio);
-  // Fetching and decoding during boot means the first genuine phase normally
-  // reaches a ready AudioBuffer.  Playback still waits for a trusted gesture.
-  void loadPhaseAudioBuffer();
+  void phaseAudioEngine?.ready?.then((buffer) => {
+    canvas.dataset.environmentPhaseAudioReady = buffer ? "buffer" : "media";
+  });
 
   const materialStates = new Map();
   const meshStates = new Map();
@@ -398,48 +339,13 @@ export function createEnvironmentPhasing({
   warpQuad.frustumCulled = false;
   warpScene.add(warpQuad);
 
-  function playBufferedPhaseAudio(label) {
-    if (!phaseAudioContext || !phaseAudioBuffer || phaseAudioContext.state !== "running") return false;
-    const source = phaseAudioContext.createBufferSource();
-    const gain = phaseAudioContext.createGain();
-    source.buffer = phaseAudioBuffer;
-    gain.gain.value = 0.74;
-    source.connect(gain).connect(phaseAudioContext.destination);
-    activePhaseSources.add(source);
-    source.onended = () => {
-      source.disconnect();
-      gain.disconnect();
-      activePhaseSources.delete(source);
-    };
-    source.start(0);
-    canvas.dataset.environmentPhaseSound = `${label}-buffer`;
-    return true;
-  }
-
   function getPhaseFallback(label) {
     if (label === "dematerialize") return phaseMediaPool[0];
     if (label === "rematerialize") return phaseMediaPool[1];
     return phaseMediaPool[phaseMediaIndex++ % phaseMediaPool.length];
   }
 
-  function queuePendingPhaseSound(label) {
-    // A dematerialisation cue takes priority over the later rematerialisation
-    // cue when both happen before the first permitted audio gesture.
-    if (!pendingPhaseSound || label === "dematerialize") {
-      pendingPhaseSound = { label, expiresAt: Date.now() + 5000 };
-    }
-    canvas.dataset.environmentPhaseSound = `${label}-queued`;
-  }
-
-  function flushPendingPhaseSound() {
-    if (!pendingPhaseSound || !phaseAudioUnlocked) return;
-    const pending = pendingPhaseSound;
-    pendingPhaseSound = null;
-    if (Date.now() > pending.expiresAt || state.guardRemaining > 0) return;
-    playPhaseAudio(pending.label, true);
-  }
-
-  function playPhaseMedia(label, fromQueue = false) {
+  function playPhaseMedia(label) {
     const fallback = getPhaseFallback(label);
     fallback.pause();
     try {
@@ -454,26 +360,21 @@ export function createEnvironmentPhasing({
     void fallback.play().then(() => {
       canvas.dataset.environmentPhaseSound = `${label}-media`;
     }).catch(() => {
-      canvas.dataset.environmentPhaseSound = `${label}-blocked`;
-      if (!fromQueue) queuePendingPhaseSound(label);
-      else pendingPhaseSound = { label, expiresAt: Date.now() + 5000 };
-      void resumePhaseAudioContext()
-        .then(() => loadPhaseAudioBuffer())
-        .then(() => {
-          if (playBufferedPhaseAudio(label)) pendingPhaseSound = null;
-        });
+      // Never make a missed effect appear at a later, incorrect moment.
+      canvas.dataset.environmentPhaseSound = `${label}-missed`;
     });
   }
 
-  function playPhaseAudio(label, fromQueue = false, ignoreGuard = false) {
+  function playPhaseAudio(label, ignoreGuard = false) {
     if (!ignoreGuard && state.guardRemaining > 0) {
       canvas.dataset.environmentPhaseSound = `${label}-guarded`;
       return;
     }
-    if (playBufferedPhaseAudio(label)) return;
-    // Always reach a real play() attempt. The previous readiness flag could
-    // remain false forever even when the browser was capable of media output.
-    playPhaseMedia(label, fromQueue);
+    if (phaseAudioEngine?.play?.(label)) {
+      canvas.dataset.environmentPhaseSound = `${label}-buffer`;
+      return;
+    }
+    playPhaseMedia(label);
   }
 
   function setPhase(nextPhase) {
@@ -776,6 +677,19 @@ export function createEnvironmentPhasing({
       protectedEventNearby = isNearProtected(predictedPosition, PHASE_CONFIG.protectedPadding);
     }
     const cooldownAllowsEmergency = state.cooldown <= 0 || minimumGap < -7;
+    const firstCueArmed = !phaseAudioEngine
+      || phaseAudioEngine.hasGesture
+      || phaseAudioEngine.contextState === "running";
+    if (!firstCueArmed && state.phaseStarts === 0) {
+      // The flight begins automatically, but audible media cannot legally
+      // start on some phones until the first touch. Keep terrain assistance in
+      // control instead of showing a silent first phase and replaying its cue
+      // later at the wrong moment.
+      canvas.dataset.environmentPhaseAudioGate = "waiting-for-input";
+      setPhase("normal");
+      return false;
+    }
+    canvas.dataset.environmentPhaseAudioGate = "armed";
     if (
       cooldownAllowsEmergency
       && !protectedEventNearby
@@ -974,16 +888,6 @@ export function createEnvironmentPhasing({
   }
 
   function reset({ guardSeconds = 0 } = {}) {
-    for (const source of activePhaseSources) {
-      source.onended = null;
-      try {
-        source.stop();
-      } catch (error) {
-        // The source may have ended between the frame and the reset.
-      }
-      source.disconnect();
-    }
-    activePhaseSources.clear();
     for (const audio of phaseMediaPool) {
       audio.pause();
       audio.currentTime = 0;
@@ -994,7 +898,6 @@ export function createEnvironmentPhasing({
     state.phaseStarts = 0;
     canvas.dataset.environmentPhaseStarts = "0";
     state.recoveryElapsed = 0;
-    pendingPhaseSound = null;
     state.guardRemaining = Math.max(0, guardSeconds);
     canvas.dataset.environmentPhaseGuard = state.guardRemaining.toFixed(2);
     restoreNormalState();
@@ -1011,7 +914,6 @@ export function createEnvironmentPhasing({
     warpBackgroundTarget.dispose();
     warpMaterial.dispose();
     warpGeometry.dispose();
-    if (phaseAudioContext?.state !== "closed") void phaseAudioContext.close();
   }
 
   canvas.dataset.environmentPhase = "normal";
@@ -1020,12 +922,13 @@ export function createEnvironmentPhasing({
   canvas.dataset.environmentPhaseVisualProgress = "0";
   canvas.dataset.environmentPlayerVisible = playerObject.visible ? "visible" : "hidden";
   canvas.dataset.environmentPhaseSound = "ready";
-  canvas.dataset.environmentPhaseAudioReady = phaseAudioBuffer ? "buffer" : "media";
+  canvas.dataset.environmentPhaseAudioReady = "loading";
+  canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine ? "waiting-for-input" : "armed";
   canvas.dataset.environmentPhaseGuard = "0.00";
   return {
     state,
     debugPlayAudio(label = "dematerialize") {
-      playPhaseAudio(label === "rematerialize" ? "rematerialize" : "dematerialize", false, true);
+      playPhaseAudio(label === "rematerialize" ? "rematerialize" : "dematerialize", true);
     },
     predict,
     updateControlled,
