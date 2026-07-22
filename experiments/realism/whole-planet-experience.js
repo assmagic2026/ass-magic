@@ -36,6 +36,15 @@ const ENDING_WHITEOUT_DURATION = 1050;
 const ENDING_BLACK_DELAY = 650;
 const ENDING_TRUE_MESSAGE_DURATION = 2200;
 const ENDING_ROLL_AUDIO_DELAY = 2000;
+const MUSIC_PHASE_MIX = Object.freeze({
+  normalCutoff: 18000,
+  phasedCutoff: 900,
+  normalGain: 1,
+  phasedGain: 0.68,
+  filterQ: 0.7,
+  enterSeconds: 0.08,
+  returnSeconds: 0.15,
+});
 const CAT_ROUTE_JOIN_DURATION = 1.75;
 const CAT_ROUTE_ROTATION_RESPONSE = 7.2;
 const CAT_ROUTE_COMPANION_SCALE = 0.1512;
@@ -658,6 +667,13 @@ export function createWholePlanetExperience({
   let audioUnlocked = false;
   let musicGesturePending = false;
   let lyricsRequest = 0;
+  let environmentAudioPhased = false;
+  let musicBaseVolume = 1;
+  let musicAudioContext = null;
+  let musicMediaSource = null;
+  let musicPhaseFilter = null;
+  let musicPhaseGain = null;
+  let musicBusUnavailable = false;
   let toastTimer = 0;
   let closeAction = null;
   let activeNativeOverlay = null;
@@ -789,6 +805,133 @@ export function createWholePlanetExperience({
       },
     },
   };
+
+  function applyDirectMusicVolume() {
+    const phaseMultiplier = musicPhaseGain ? 1 : (
+      environmentAudioPhased ? MUSIC_PHASE_MIX.phasedGain : MUSIC_PHASE_MIX.normalGain
+    );
+    audio.volume = THREE.MathUtils.clamp(musicBaseVolume * phaseMultiplier, 0, 1);
+  }
+
+  function setMusicBaseVolume(value) {
+    musicBaseVolume = THREE.MathUtils.clamp(value, 0, 1);
+    applyDirectMusicVolume();
+  }
+
+  function holdAudioParam(parameter, now) {
+    if (typeof parameter.cancelAndHoldAtTime === "function") {
+      try {
+        parameter.cancelAndHoldAtTime(now);
+        return;
+      } catch {
+        // Older Safari builds expose the method but may reject it while the
+        // context is resuming. Preserve the current value in that case.
+      }
+    }
+    const currentValue = parameter.value;
+    parameter.cancelScheduledValues(now);
+    parameter.setValueAtTime(currentValue, now);
+  }
+
+  function applyMusicPhaseMix({ immediate = false } = {}) {
+    const targetGain = environmentAudioPhased
+      ? MUSIC_PHASE_MIX.phasedGain
+      : MUSIC_PHASE_MIX.normalGain;
+    canvas.dataset.environmentPhaseAudio = environmentAudioPhased ? "muffled" : "normal";
+    canvas.dataset.environmentPhaseAudioGain = targetGain.toFixed(2);
+    if (!musicAudioContext || !musicPhaseFilter || !musicPhaseGain) {
+      canvas.dataset.environmentPhaseAudioBus = musicBusUnavailable ? "gain-fallback" : "direct";
+      applyDirectMusicVolume();
+      return;
+    }
+
+    const normalCutoff = Math.min(
+      MUSIC_PHASE_MIX.normalCutoff,
+      musicAudioContext.sampleRate * 0.45,
+    );
+    const targetCutoff = environmentAudioPhased ? MUSIC_PHASE_MIX.phasedCutoff : normalCutoff;
+    const now = musicAudioContext.currentTime;
+    const duration = immediate
+      ? 0
+      : environmentAudioPhased ? MUSIC_PHASE_MIX.enterSeconds : MUSIC_PHASE_MIX.returnSeconds;
+    holdAudioParam(musicPhaseFilter.frequency, now);
+    holdAudioParam(musicPhaseGain.gain, now);
+    if (duration <= 0) {
+      musicPhaseFilter.frequency.setValueAtTime(targetCutoff, now);
+      musicPhaseGain.gain.setValueAtTime(targetGain, now);
+    } else {
+      musicPhaseFilter.frequency.linearRampToValueAtTime(targetCutoff, now + duration);
+      musicPhaseGain.gain.linearRampToValueAtTime(targetGain, now + duration);
+    }
+    canvas.dataset.environmentPhaseAudioBus = "webaudio";
+    canvas.dataset.environmentPhaseAudioCutoff = String(Math.round(targetCutoff));
+    applyDirectMusicVolume();
+  }
+
+  function resumeMusicPhaseBus() {
+    if (
+      !musicAudioContext
+      || musicAudioContext.state === "running"
+      || musicAudioContext.state === "closed"
+    ) return;
+    void musicAudioContext.resume().then(() => {
+      applyMusicPhaseMix({ immediate: true });
+    }).catch((error) => {
+      console.warn("Music phase bus is waiting for a user gesture.", error);
+    });
+  }
+
+  function initializeMusicPhaseBus() {
+    if (musicAudioContext) {
+      resumeMusicPhaseBus();
+      return;
+    }
+    if (musicBusUnavailable) return;
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextConstructor) {
+      musicBusUnavailable = true;
+      applyMusicPhaseMix({ immediate: true });
+      return;
+    }
+    try {
+      const context = new AudioContextConstructor();
+      const source = context.createMediaElementSource(audio);
+      const filter = context.createBiquadFilter();
+      const phaseGain = context.createGain();
+      filter.type = "lowpass";
+      filter.Q.setValueAtTime(MUSIC_PHASE_MIX.filterQ, context.currentTime);
+      source.connect(filter);
+      filter.connect(phaseGain);
+      phaseGain.connect(context.destination);
+      musicAudioContext = context;
+      musicMediaSource = source;
+      musicPhaseFilter = filter;
+      musicPhaseGain = phaseGain;
+      audio.volume = musicBaseVolume;
+      applyMusicPhaseMix({ immediate: true });
+      context.addEventListener?.("statechange", () => {
+        canvas.dataset.environmentPhaseAudioContext = context.state;
+        if (context.state === "running") applyMusicPhaseMix({ immediate: true });
+      });
+      canvas.dataset.environmentPhaseAudioContext = context.state;
+      resumeMusicPhaseBus();
+    } catch (error) {
+      musicBusUnavailable = true;
+      musicAudioContext = null;
+      musicMediaSource = null;
+      musicPhaseFilter = null;
+      musicPhaseGain = null;
+      console.warn("Web Audio phase mix unavailable; using gain-only fallback.", error);
+      applyMusicPhaseMix({ immediate: true });
+    }
+  }
+
+  function setEnvironmentPhased(active) {
+    const nextActive = active === true;
+    if (environmentAudioPhased === nextActive) return;
+    environmentAudioPhased = nextActive;
+    applyMusicPhaseMix();
+  }
 
   const stopUiPropagation = (event) => event.stopPropagation();
   for (const element of [
@@ -925,6 +1068,7 @@ export function createWholePlanetExperience({
   }
 
   function unlockMusic() {
+    initializeMusicPhaseBus();
     if (audioUnlocked || musicGesturePending || state.phase === "challenge" || state.modalOpen) return;
     for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
       try {
@@ -2720,7 +2864,7 @@ export function createWholePlanetExperience({
     earthVisual.glow.visible = false;
     spaceStars.visible = false;
     audio.pause();
-    audio.volume = 0;
+    setMusicBaseVolume(0);
     syncMusicUi();
     stopEffectAudio(clockAudio, true);
     stopEffectAudio(spaceReturnAudio, true);
@@ -2823,11 +2967,11 @@ export function createWholePlanetExperience({
       EARTH_GLOW_SIZE * 1.48,
       approachProgress,
     ));
-    audio.volume = THREE.MathUtils.clamp(
+    setMusicBaseVolume(THREE.MathUtils.clamp(
       1 - THREE.MathUtils.smoothstep(axisDistance, 420, 1450),
       0,
       1,
-    );
+    ));
 
     if (state.spaceFlightActive && approachDistance <= EARTH_CONTACT_DISTANCE) {
       triggerReturnEnding();
@@ -2986,9 +3130,12 @@ export function createWholePlanetExperience({
   // flight controls consume it. This is the path iOS Safari permits for audio.
   window.addEventListener("pointerdown", unlockMusic, { capture: true, once: true });
   window.addEventListener("touchstart", unlockMusic, { capture: true, once: true, passive: true });
+  window.addEventListener("pointerdown", resumeMusicPhaseBus, { capture: true, passive: true });
+  window.addEventListener("touchstart", resumeMusicPhaseBus, { capture: true, passive: true });
   canvas.addEventListener("pointerdown", unlockMusic);
   window.addEventListener("keydown", unlockMusic, { once: true });
 
+  applyMusicPhaseMix({ immediate: true });
   loadTrack(currentTrackIndex, false);
   // Begin the first track shortly after the flight appears.  Mobile browsers that
   // reject this attempt will use the existing first-touch retry path.
@@ -2998,6 +3145,7 @@ export function createWholePlanetExperience({
 
   return {
     state,
+    setEnvironmentPhased,
     isPaused: () => state.modalOpen
       || state.ending
       || state.devil.phase === "route"
@@ -3102,7 +3250,8 @@ export function createWholePlanetExperience({
       state.earthApproachStartDistance = 0;
       state.ending = false;
       state.debugForceSpace = routeMode === "space";
-      audio.volume = 1;
+      setEnvironmentPhased(false);
+      setMusicBaseVolume(1);
       canvas.dataset.returnBgm = "playlist";
       canvas.dataset.returnEnding = "none";
       earthVisual.earth.visible = false;
