@@ -192,6 +192,7 @@ export function createEnvironmentPhasing({
     audio.playsInline = true;
   }
   let phaseAudioUnlocked = false;
+  let phaseAudioUnlockPromise = null;
   const PhaseAudioContext = window.AudioContext || window.webkitAudioContext;
   const phaseAudioContext = PhaseAudioContext ? new PhaseAudioContext() : null;
   let phaseAudioBuffer = null;
@@ -208,21 +209,34 @@ export function createEnvironmentPhasing({
       })
       .catch(() => {
         phaseAudioBuffer = null;
+        phaseAudioLoadPromise = null;
         return null;
       });
     return phaseAudioLoadPromise;
   }
 
   function unlockPhaseAudio() {
-    if (phaseAudioUnlocked) return;
     phaseAudioUnlocked = true;
-    if (phaseAudioContext?.state === "suspended") void phaseAudioContext.resume();
-    void loadPhaseAudioBuffer();
+    // Mobile browsers may suspend an already-unlocked context after a tab or
+    // system overlay change.  Every later control gesture is allowed to wake
+    // it again, not only the very first gesture.
+    if (phaseAudioContext?.state === "suspended") void phaseAudioContext.resume().catch(() => {});
+    if (!phaseAudioUnlockPromise) {
+      // Resume synchronously inside the trusted gesture.  Deferring this to a
+      // promise microtask can lose iOS's transient user activation.
+      const resume = phaseAudioContext?.state === "suspended"
+        ? phaseAudioContext.resume().catch(() => null)
+        : Promise.resolve();
+      phaseAudioUnlockPromise = resume
+        .then(() => loadPhaseAudioBuffer())
+        .catch(() => null);
+    }
+    return phaseAudioUnlockPromise;
   }
 
-  window.addEventListener("pointerdown", unlockPhaseAudio, { capture: true, once: true });
-  window.addEventListener("touchstart", unlockPhaseAudio, { capture: true, once: true, passive: true });
-  window.addEventListener("keydown", unlockPhaseAudio, { once: true });
+  window.addEventListener("pointerdown", unlockPhaseAudio, { capture: true, passive: true });
+  window.addEventListener("touchstart", unlockPhaseAudio, { capture: true, passive: true });
+  window.addEventListener("keydown", unlockPhaseAudio);
 
   const materialStates = new Map();
   const meshStates = new Map();
@@ -357,11 +371,16 @@ export function createEnvironmentPhasing({
       canvas.dataset.environmentPhaseSound = label;
       return;
     }
-    audio.pause();
-    audio.currentTime = 0;
-    audio.playbackRate = 1;
+    // A fresh fallback element prevents a rapid phase/re-entry from cancelling
+    // the previous HTMLAudio playback request on mobile browsers.
+    const fallback = audio.cloneNode(true);
+    fallback.preload = "auto";
+    fallback.volume = audio.volume;
+    fallback.playsInline = true;
+    fallback.currentTime = 0;
+    fallback.playbackRate = 1;
     canvas.dataset.environmentPhaseSound = label;
-    void audio.play().catch(() => {
+    void fallback.play().catch(() => {
       canvas.dataset.environmentPhaseSound = `${label}-blocked`;
     });
   }
