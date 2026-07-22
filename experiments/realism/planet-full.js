@@ -813,11 +813,11 @@ function createPolarWindVent() {
     radii[index] = 1.8 + Math.pow(random(), 0.65) * 8.5;
     speeds[index] = 0.68 + random() * 0.92;
   }
-  const streakGeometry = new THREE.CylinderGeometry(0.16, 0.055, 1, 5, 1, true);
+  const streakGeometry = new THREE.CylinderGeometry(0.055, 0.018, 1, 5, 1, true);
   const streakMaterial = new THREE.MeshBasicMaterial({
     color: 0xf2dfc2,
     transparent: true,
-    opacity: 0.38,
+    opacity: 0.32,
     depthWrite: false,
     side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
@@ -864,13 +864,13 @@ function updatePolarWindVent(vent, time) {
     const z = Math.sin(angle) * widening;
     const length = (3.2 + progress * 9.5) * gust;
     streakPosition.set(x, height + length * 0.5, z);
-    streakScale.set(0.72 + progress * 0.65, length, 0.72 + progress * 0.65);
+    streakScale.set(0.5 + progress * 0.28, length, 0.5 + progress * 0.28);
     streakRotation.setFromAxisAngle(WORLD_UP, angle + progress * 0.35);
     streakMatrix.compose(streakPosition, streakRotation, streakScale);
     streaks.setMatrixAt(index, streakMatrix);
   }
   streaks.instanceMatrix.needsUpdate = true;
-  streaks.material.opacity = 0.34 + Math.sin(time * 5.7) * 0.07;
+  streaks.material.opacity = 0.28 + Math.sin(time * 5.7) * 0.06;
 }
 
 function terrainHeightFromDirection(direction) {
