@@ -15,7 +15,7 @@ const CONTACTS = [
   { id: "blackSphere", radius: 24 },
   { id: "whiteSphere", radius: 24 },
   { id: "recordPlayer", radius: 31 },
-  { id: "book", radius: 14 },
+  { id: "book", radius: 64 },
   { id: "compass", radius: 17 },
   { id: "sanctuary", radius: 34 },
   { id: "blackBox", radius: 8 },
@@ -39,9 +39,9 @@ const ENDING_ROLL_AUDIO_DELAY = 2000;
 const CAT_ROUTE_JOIN_DURATION = 1.75;
 const CAT_ROUTE_ROTATION_RESPONSE = 7.2;
 const CAT_ROUTE_COMPANION_SCALE = 0.1512;
-const CAT_ROUTE_MOUNT_SIDE = 0.34;
-const CAT_ROUTE_MOUNT_HEIGHT = 0.23;
-const CAT_ROUTE_MOUNT_BACK = 0.08;
+const CAT_ROUTE_MOUNT_SIDE = 0.46;
+const CAT_ROUTE_MOUNT_HEIGHT = 0.13;
+const CAT_ROUTE_MOUNT_FORWARD = 0.62;
 const DEVIL_SPAWN_DELAY = 5;
 const DEVIL_ENTRY_DURATION = 1.2;
 const DEVIL_ENTRY_FORWARD = 20;
@@ -49,31 +49,35 @@ const DEVIL_ENTRY_SIDE = 34;
 const DEVIL_SPAWN_DISTANCE = 50;
 const DEVIL_SPAWN_SIDE = 8;
 const DEVIL_SPAWN_HEIGHT = 3.1;
-const DEVIL_NOTICE_RADIUS = 38;
+const DEVIL_NOTICE_RADIUS = 30;
 // The full-planet experiment flies faster than the production globe, so cap fleeing
 // relative to that speed instead of making the encounter effectively unwinnable.
-const DEVIL_FLEE_FAST_GAP = -8;
-const DEVIL_FLEE_SLOW_GAP = 14;
+const DEVIL_FLEE_FAST_GAP = -14;
+const DEVIL_FLEE_SLOW_GAP = 6;
 const DEVIL_FLEE_SPEED_PULSE = 1.15;
-const DEVIL_FLEE_ACCEL_SHARPNESS = 6.5;
-const DEVIL_FLEE_MIN_SPEED = 16;
-const DEVIL_FLEE_MAX_SPEED = 72;
-const DEVIL_FLEE_TURN_RESPONSE = 2.45;
+const DEVIL_FLEE_ACCEL_SHARPNESS = 4.4;
+const DEVIL_FLEE_MIN_SPEED = 12;
+const DEVIL_FLEE_MAX_SPEED = 56;
+const DEVIL_FLEE_TURN_RESPONSE = 1.82;
 const DEVIL_FLEE_WEAVE_SPEED = 1.35;
-const DEVIL_FLEE_WEAVE_AMOUNT = 0.18;
+const DEVIL_FLEE_WEAVE_AMOUNT = 0.1;
 const DEVIL_TERRAIN_RESPONSE = 4.2;
 // Realistic terrain adds vertical variation, so use a more forgiving encounter radius.
-const DEVIL_CONTACT_RADIUS = 15;
+const DEVIL_CONTACT_RADIUS = 22;
+const DEVIL_ASSIST_CONTACT_DELAY = 5;
+const DEVIL_APPROACH_RESPONSE = 2.4;
 const MONOCHROME_CHALLENGE_DURATION = 30;
-const DEVIL_ROUTE_SPEED = 72;
-const DEVIL_ROUTE_MIN_DURATION = 2.8;
-const DEVIL_ROUTE_MAX_DURATION = 13;
+const DEVIL_ROUTE_SPEED = 84;
+const DEVIL_ROUTE_MIN_DURATION = 6.5;
+const DEVIL_ROUTE_MAX_DURATION = 24;
+const DEVIL_ROUTE_EASE_PEAK = 1.875;
 const DEVIL_ROUTE_CLEARANCE = 18;
-const DEVIL_ROUTE_LEAD_DISTANCE = 12;
+const DEVIL_ROUTE_LEAD_DISTANCE = 48;
 const DEVIL_BLACK_BOX_ALTITUDE = 20;
 const DEVIL_BLACK_BOX_ROUTE_CLEARANCE = 26;
 const DEVIL_BLACK_BOX_ARRIVAL_LEAD = 3.2;
 const DEVIL_BLACK_BOX_WAIT_TIMEOUT = 16;
+const DEVIL_BLACK_BOX_CONTACT_RADIUS = 24;
 const DEVIL_ROUTE_PLANNER = Object.freeze({
   low: { samples: 18, offsets: [0, -0.32, 0.32, -0.56, 0.56] },
   standard: { samples: 26, offsets: [0, -0.2, 0.2, -0.4, 0.4, -0.64, 0.64] },
@@ -81,7 +85,7 @@ const DEVIL_ROUTE_PLANNER = Object.freeze({
 });
 const DEVIL_DESTINATIONS = [
   { id: "recordPlayer", label: "レコードプレイヤー", stopDistance: 31, endAltitude: 5, focusHeight: 5 },
-  { id: "book", label: "巨大な本", stopDistance: 18, endAltitude: 4, focusHeight: 3 },
+  { id: "book", label: "巨大な本", stopDistance: 48, endAltitude: 22, focusHeight: 34 },
   { id: "whiteSphere", label: "白い球体", stopDistance: 30, endAltitude: 40, focusHeight: 0 },
   { id: "blackSphere", label: "黒い球体", stopDistance: 30, endAltitude: 40, focusHeight: 0 },
   { id: "compass", label: "羅針盤", stopDistance: 15, endAltitude: 24, focusHeight: 0 },
@@ -94,25 +98,25 @@ function createDevilModel() {
   const devil = new THREE.Group();
   devil.name = "DevilGuide";
   const bodyMaterial = new THREE.MeshLambertMaterial({
-    color: 0x09070a,
-    emissive: 0x160004,
-    emissiveIntensity: 0.3,
+    color: 0x17191b,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.038,
     flatShading: true,
   });
   const hornMaterial = new THREE.MeshLambertMaterial({
-    color: 0x020203,
-    emissive: 0x090001,
-    emissiveIntensity: 0.24,
+    color: 0x101112,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.034,
     flatShading: true,
   });
   const wingMaterial = new THREE.MeshLambertMaterial({
-    color: 0x040305,
-    emissive: 0x100002,
-    emissiveIntensity: 0.3,
+    color: 0x131517,
+    emissive: 0xffffff,
+    emissiveIntensity: 0.036,
     flatShading: true,
     side: THREE.DoubleSide,
   });
-  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xff2b16, toneMapped: false });
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
   const addSegment = (start, end, radius, material = bodyMaterial) => {
     const direction = end.clone().sub(start);
     const mesh = new THREE.Mesh(
@@ -237,8 +241,28 @@ function createDevilModel() {
   tailTip.position.set(0.79, 0.3, -0.73);
   tailTip.rotation.z = -0.42;
   devil.add(tailTip);
+  const visibilityGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: createGlowTexture(),
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.016,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: true,
+    toneMapped: false,
+    fog: false,
+  }));
+  visibilityGlow.position.set(0, 0.18, 0.28);
+  visibilityGlow.scale.setScalar(7.4);
+  visibilityGlow.renderOrder = 3;
+  const visibilityLight = new THREE.PointLight(0xffffff, 26, 28, 1.9);
+  visibilityLight.position.set(0, 0.24, 0.42);
+  visibilityLight.castShadow = false;
+  devil.add(visibilityGlow, visibilityLight);
   devil.userData.wingRoots = wingRoots;
-  devil.scale.setScalar(0.5);
+  devil.userData.visibilityGlow = visibilityGlow;
+  devil.userData.visibilityLight = visibilityLight;
+  devil.scale.setScalar(0.62);
   devil.visible = false;
   return devil;
 }
@@ -407,53 +431,120 @@ function createSpaceStars() {
 function createCatCompanionVisual() {
   const group = new THREE.Group();
   group.name = "CatRouteCompanion";
-  const bodyMaterial = new THREE.MeshLambertMaterial({ color: 0xfcfcfb });
-  const shadeMaterial = new THREE.MeshLambertMaterial({ color: 0xf2f2ee });
-  const brownMaterial = new THREE.MeshLambertMaterial({ color: 0x6a4632 });
-  const innerEarMaterial = new THREE.MeshLambertMaterial({ color: 0xe7cdbf });
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0xf7f4ed, roughness: 0.96 });
+  const shadeMaterial = new THREE.MeshStandardMaterial({ color: 0xded8cf, roughness: 1 });
+  const brownMaterial = new THREE.MeshStandardMaterial({ color: 0x684432, roughness: 0.98 });
+  const darkBrownMaterial = new THREE.MeshStandardMaterial({ color: 0x3a251e, roughness: 0.98 });
+  const innerEarMaterial = new THREE.MeshStandardMaterial({ color: 0xe8bdb8, roughness: 0.92 });
+  const eyeMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb8c96c,
+    emissive: 0x33451b,
+    emissiveIntensity: 0.24,
+    roughness: 0.4,
+  });
+  const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x090806, toneMapped: false });
+  const noseMaterial = new THREE.MeshStandardMaterial({ color: 0x5a302f, roughness: 0.72 });
 
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1.05, 12, 10), bodyMaterial);
-  body.scale.set(0.94, 0.62, 1.82);
-  body.position.set(0, 0.96, -0.08);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1.05, 22, 16), bodyMaterial);
+  body.scale.set(0.92, 0.66, 1.78);
+  body.position.set(0, 0.94, -0.08);
   group.add(body);
 
-  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.86, 12, 10), shadeMaterial);
-  shoulders.scale.set(0.82, 0.58, 0.92);
-  shoulders.position.set(0, 1.08, 0.92);
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.86, 20, 14), shadeMaterial);
+  shoulders.scale.set(0.86, 0.62, 0.96);
+  shoulders.position.set(0, 1.05, 0.86);
   group.add(shoulders);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.68, 12, 10), bodyMaterial);
-  head.scale.set(0.82, 0.7, 0.76);
-  head.position.set(0, 1.1, 1.72);
+  for (const side of [-1, 1]) {
+    const haunch = new THREE.Mesh(new THREE.SphereGeometry(0.6, 16, 12), shadeMaterial);
+    haunch.scale.set(0.78, 0.72, 1.08);
+    haunch.position.set(side * 0.38, 0.88, -1.14);
+    group.add(haunch);
+  }
+
+  const backPatch = new THREE.Mesh(new THREE.SphereGeometry(0.62, 16, 12), brownMaterial);
+  backPatch.scale.set(0.94, 0.28, 1.36);
+  backPatch.position.set(0.12, 1.58, -0.52);
+  backPatch.rotation.z = -0.08;
+  group.add(backPatch);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.68, 22, 16), bodyMaterial);
+  head.scale.set(0.86, 0.74, 0.8);
+  head.position.set(0, 1.13, 1.72);
   group.add(head);
 
   for (const side of [-1, 1]) {
-    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.42, 4), brownMaterial);
-    ear.position.set(side * 0.28, 1.52, 1.9);
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.48, 10), brownMaterial);
+    ear.position.set(side * 0.29, 1.55, 1.86);
     ear.rotation.set(-0.1, 0, side * -0.2);
     group.add(ear);
-    const earInner = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.24, 4), innerEarMaterial);
-    earInner.position.set(side * 0.28, 1.48, 1.92);
+    const earInner = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.29, 10), innerEarMaterial);
+    earInner.position.set(side * 0.29, 1.51, 1.91);
     earInner.rotation.copy(ear.rotation);
     group.add(earInner);
 
-    const hindLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.72, 3, 6), shadeMaterial);
+    const hindLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.74, 5, 10), shadeMaterial);
     hindLeg.position.set(side * 0.34, 0.72, -1.62);
     hindLeg.rotation.x = Math.PI * 0.5;
     hindLeg.rotation.z = side * -0.16;
     group.add(hindLeg);
 
-    const frontLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.88, 3, 6), bodyMaterial);
+    const frontLeg = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.9, 5, 10), bodyMaterial);
     frontLeg.position.set(side * 0.28, 0.82, 2.04);
     frontLeg.rotation.x = Math.PI * 0.5;
     frontLeg.rotation.z = side * -0.08;
     group.add(frontLeg);
+
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 8), eyeMaterial);
+    eye.scale.set(1, 0.82, 0.42);
+    eye.position.set(side * 0.21, 1.21, 2.23);
+    group.add(eye);
+    const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.052, 10, 7), pupilMaterial);
+    pupil.scale.set(0.55, 1.15, 0.36);
+    pupil.position.set(side * 0.21, 1.21, 2.275);
+    group.add(pupil);
+
+    const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 8), bodyMaterial);
+    muzzle.scale.set(1.08, 0.72, 0.68);
+    muzzle.position.set(side * 0.11, 1.02, 2.27);
+    group.add(muzzle);
   }
 
-  const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 1.24, 4, 8), brownMaterial);
-  tail.position.set(0.62, 1.18, -1.48);
-  tail.rotation.set(0.82, 0, -0.54);
-  group.add(tail);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 8), noseMaterial);
+  nose.scale.set(1.15, 0.72, 0.62);
+  nose.position.set(0, 1.04, 2.39);
+  group.add(nose);
+
+  const tailRoot = new THREE.Group();
+  tailRoot.position.set(0.38, 1.05, -1.62);
+  tailRoot.rotation.set(-1.02, 0.08, -0.38);
+  group.add(tailRoot);
+  const tailJoints = [];
+  let tailParent = tailRoot;
+  const tailLengths = [0.58, 0.58, 0.56, 0.52, 0.46, 0.4];
+  for (let index = 0; index < tailLengths.length; index += 1) {
+    const length = tailLengths[index];
+    const radius = THREE.MathUtils.lerp(0.25, 0.14, index / (tailLengths.length - 1));
+    const joint = new THREE.Group();
+    tailParent.add(joint);
+    const segment = new THREE.Mesh(
+      new THREE.CapsuleGeometry(radius, length, 6, 12),
+      index % 3 === 2 ? darkBrownMaterial : brownMaterial,
+    );
+    segment.position.y = length * 0.5;
+    joint.add(segment);
+    const fluff = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.08, 12, 8), segment.material);
+    fluff.scale.set(1.06, 1.28, 1.06);
+    fluff.position.y = length;
+    joint.add(fluff);
+    tailJoints.push(joint);
+    const next = new THREE.Group();
+    next.position.y = length;
+    joint.add(next);
+    tailParent = next;
+  }
+  group.userData.tailRoot = tailRoot;
+  group.userData.tailJoints = tailJoints;
   group.scale.setScalar(CAT_ROUTE_COMPANION_SCALE);
   group.visible = false;
   group.frustumCulled = false;
@@ -544,7 +635,14 @@ export function createWholePlanetExperience({
   const challengeFlash = document.querySelector("#experience-theme-flash");
   const challengeTimer = document.querySelector("#experience-challenge-timer");
 
-  const tracks = playlist.filter((track) => !track.disabled);
+  const tracks = playlist
+    .filter((track) => !track.disabled)
+    .map((track) => ({
+      ...track,
+      lyricsPath: track.lyricsPath ?? (typeof track.src === "string"
+        ? track.src.replace(/\/[^/]+\.(?:mp3|wav|m4a)$/i, "/lyrics.txt")
+        : null),
+    }));
   let currentTrackIndex = Math.max(0, tracks.findIndex((track) => track.initial));
   let audioUnlocked = false;
   let musicGesturePending = false;
@@ -619,6 +717,7 @@ export function createWholePlanetExperience({
     catJoinElapsed: 0,
     catFollowing: false,
     catPendingJoin: false,
+    catTailTime: 0,
     catJoinStart: new THREE.Vector3(),
     catPosition: new THREE.Vector3(),
     reachedEarthWithCat: false,
@@ -638,6 +737,7 @@ export function createWholePlanetExperience({
       phase: "delay",
       timer: new URLSearchParams(window.location.search).get("devildebug") === "1" ? 0.4 : DEVIL_SPAWN_DELAY,
       fleeTime: 0,
+      encounterTime: 0,
       outOfViewTime: 0,
       hasBeenVisible: false,
       lastSide: -1,
@@ -660,6 +760,7 @@ export function createWholePlanetExperience({
         endAltitude: 0,
         arcAngle: 0,
         waitElapsed: 0,
+        interceptSeconds: 0,
         savedSpeedSelection: 40,
         savedSpeed: 40,
         startDirection: new THREE.Vector3(),
@@ -670,6 +771,7 @@ export function createWholePlanetExperience({
         pathRadii: [],
         pathCumulative: [],
         pathLength: 0,
+        previousPathDistance: 0,
         routeRisk: 0,
         plannedSpeed: DEVIL_ROUTE_SPEED,
       },
@@ -893,7 +995,7 @@ export function createWholePlanetExperience({
     catDesiredPosition.copy(flight.position)
       .addScaledVector(catMountRight, CAT_ROUTE_MOUNT_SIDE)
       .addScaledVector(catMountUp, CAT_ROUTE_MOUNT_HEIGHT)
-      .addScaledVector(catMountForward, -CAT_ROUTE_MOUNT_BACK);
+      .addScaledVector(catMountForward, CAT_ROUTE_MOUNT_FORWARD);
     catBasis.makeBasis(catMountRight, catMountUp, catMountForward);
     catTargetQuaternion.setFromRotationMatrix(catBasis);
   }
@@ -917,10 +1019,26 @@ export function createWholePlanetExperience({
 
   function updateCatCompanion(delta) {
     if (state.catJoinPhase !== "joining" && !state.catFollowing) return;
+    state.catTailTime += delta;
+    const tailRoot = catCompanion.userData.tailRoot;
+    const tailJoints = catCompanion.userData.tailJoints || [];
+    if (tailRoot) {
+      tailRoot.rotation.x = -1.02 + Math.sin(state.catTailTime * 1.35) * 0.09;
+      tailRoot.rotation.z = -0.38 + Math.sin(state.catTailTime * 2.15) * 0.2;
+      tailJoints.forEach((joint, index) => {
+        const wave = state.catTailTime * 2.5 - index * 0.72;
+        joint.rotation.z = Math.sin(wave) * (0.1 + index * 0.018);
+        joint.rotation.x = Math.cos(wave * 0.72) * (0.045 + index * 0.008);
+      });
+    }
     if (state.catFollowing && catCompanion.parent === playerObject) {
       // Once the jump has completed, make the cat part of the player rig. This
       // keeps it in the same pivot, bob, roll, and descent frame as the body.
-      catCompanion.position.set(CAT_ROUTE_MOUNT_SIDE, 0.02, 0.12);
+      catCompanion.position.set(
+        CAT_ROUTE_MOUNT_SIDE,
+        CAT_ROUTE_MOUNT_HEIGHT,
+        CAT_ROUTE_MOUNT_FORWARD,
+      );
       catCompanion.quaternion.identity();
       return;
     }
@@ -945,7 +1063,11 @@ export function createWholePlanetExperience({
         catCompanion.quaternion.copy(catTargetQuaternion);
         if (playerObject) {
           playerObject.add(catCompanion);
-          catCompanion.position.set(CAT_ROUTE_MOUNT_SIDE, 0.02, 0.12);
+          catCompanion.position.set(
+            CAT_ROUTE_MOUNT_SIDE,
+            CAT_ROUTE_MOUNT_HEIGHT,
+            CAT_ROUTE_MOUNT_FORWARD,
+          );
           catCompanion.quaternion.identity();
         }
         refreshCatRouteAvailability();
@@ -1529,6 +1651,19 @@ export function createWholePlanetExperience({
         );
         radii[index] = Math.max(radii[index], radii[index - 1] - segmentDistance * 0.1);
       }
+      // The old route kept the generic 26-unit clearance at the final sample,
+      // then lowered the player to the box only after waiting began. Ease onto
+      // the predicted interception radius during the route itself instead.
+      const arrivalStart = Math.max(1, lastIndex - Math.max(4, Math.round(lastIndex * 0.22)));
+      const arrivalStartRadius = radii[arrivalStart];
+      for (let index = arrivalStart + 1; index <= lastIndex; index += 1) {
+        const rawMix = (index - arrivalStart) / Math.max(1, lastIndex - arrivalStart);
+        const arrivalMix = rawMix * rawMix * (3 - 2 * rawMix);
+        const arrivalRadius = THREE.MathUtils.lerp(arrivalStartRadius, endRadius, arrivalMix);
+        const minimumRadius = best.surfaces[index] + 0.9 + DEVIL_BLACK_BOX_ALTITUDE;
+        radii[index] = Math.max(minimumRadius, arrivalRadius);
+      }
+      radii[lastIndex] = endRadius;
     } else {
       let arcLift = 0;
       for (let index = 1; index < best.directions.length - 1; index += 1) {
@@ -1594,24 +1729,46 @@ export function createWholePlanetExperience({
 
     if (destination.special === "blackBox" && landmarks.isBlackBoxMoving?.()) {
       let estimatedDuration = 5;
+      let predictedSeconds = estimatedDuration + DEVIL_BLACK_BOX_ARRIVAL_LEAD;
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        landmarks.predictBlackBoxDirection(
-          estimatedDuration + DEVIL_BLACK_BOX_ARRIVAL_LEAD,
-          navigation.endDirection,
-        );
+        predictedSeconds = estimatedDuration + DEVIL_BLACK_BOX_ARRIVAL_LEAD;
+        if (landmarks.predictBlackBoxDayIntercept) {
+          predictedSeconds = landmarks.predictBlackBoxDayIntercept(
+            predictedSeconds,
+            targetPosition,
+          );
+          navigation.endDirection.copy(targetPosition).normalize();
+        } else {
+          landmarks.predictBlackBoxDirection(predictedSeconds, navigation.endDirection);
+        }
         const routeAngle = Math.acos(THREE.MathUtils.clamp(
           navigation.startDirection.dot(navigation.endDirection),
           -1,
           1,
         ));
         estimatedDuration = THREE.MathUtils.clamp(
-          routeAngle * flight.position.length() / DEVIL_ROUTE_SPEED,
+          routeAngle * flight.position.length() * DEVIL_ROUTE_EASE_PEAK / DEVIL_ROUTE_SPEED,
           DEVIL_ROUTE_MIN_DURATION,
           DEVIL_ROUTE_MAX_DURATION,
         );
       }
-      const predictedSeconds = estimatedDuration + DEVIL_BLACK_BOX_ARRIVAL_LEAD;
-      if (landmarks.predictBlackBoxPosition) {
+      if (landmarks.predictBlackBoxDayIntercept) {
+        predictedSeconds = landmarks.predictBlackBoxDayIntercept(
+          estimatedDuration + DEVIL_BLACK_BOX_ARRIVAL_LEAD,
+          targetPosition,
+        );
+        navigation.endDirection.copy(targetPosition).normalize();
+        navigation.endAltitude = Math.max(
+          DEVIL_BLACK_BOX_ALTITUDE,
+          targetPosition.length() - getSurfaceRadius(navigation.endDirection) - 0.9,
+        );
+        navigation.focusPoint.copy(targetPosition);
+        canvas.dataset.guideBlackBoxDaylight = navigation.endDirection
+          .dot(landmarks.directions.day)
+          .toFixed(3);
+        canvas.dataset.guideBlackBoxInterceptSeconds = predictedSeconds.toFixed(2);
+        navigation.interceptSeconds = predictedSeconds;
+      } else if (landmarks.predictBlackBoxPosition) {
         landmarks.predictBlackBoxPosition(predictedSeconds, targetPosition);
         navigation.endDirection.copy(targetPosition).normalize();
         navigation.endAltitude = Math.max(
@@ -1632,7 +1789,9 @@ export function createWholePlanetExperience({
         targetPosition.length() - getSurfaceRadius(navigation.endDirection) - 0.9,
       );
       navigation.focusPoint.copy(targetPosition);
+      navigation.interceptSeconds = 0;
     } else {
+      navigation.interceptSeconds = 0;
       targetDirection.copy(targetPosition).normalize();
       devilRouteTowardStart.copy(navigation.startDirection)
         .addScaledVector(targetDirection, -navigation.startDirection.dot(targetDirection));
@@ -1658,12 +1817,13 @@ export function createWholePlanetExperience({
 
     buildDevilRoutePlan(navigation);
     navigation.duration = THREE.MathUtils.clamp(
-      navigation.pathLength / navigation.plannedSpeed,
+      navigation.pathLength * DEVIL_ROUTE_EASE_PEAK / navigation.plannedSpeed,
       DEVIL_ROUTE_MIN_DURATION,
       DEVIL_ROUTE_MAX_DURATION,
     );
     navigation.timeout = navigation.duration + 6;
     navigation.elapsed = 0;
+    navigation.previousPathDistance = 0;
     navigation.waitElapsed = 0;
     clearFlightInput();
     devilUi.overlay.classList.remove("is-open");
@@ -1721,6 +1881,7 @@ export function createWholePlanetExperience({
     state.devil.noticeGrace = 0;
     state.devil.outOfViewTime = 0;
     state.devil.hasBeenVisible = false;
+    state.devil.encounterTime = 0;
     state.devil.lastPlayerPosition.copy(flight.position);
   }
 
@@ -1768,6 +1929,11 @@ export function createWholePlanetExperience({
       const blackBox = landmarks.objects.blackBox;
       blackBox?.getWorldPosition(worldPosition);
       if (blackBox && landmarks.isBlackBoxMoving?.()) {
+        const blackBoxRadius = worldPosition.length();
+        const waitRadius = navigation.pathRadii.at(-1);
+        flight.position.copy(navigation.endDirection).multiplyScalar(waitRadius);
+        canvas.dataset.guideBlackBoxAltitudeGap = (blackBoxRadius - waitRadius).toFixed(2);
+        canvas.dataset.guideBlackBoxWaitRadius = waitRadius.toFixed(2);
         devilRouteForward.copy(worldPosition).sub(flight.position)
           .addScaledVector(
             navigation.endDirection,
@@ -1776,7 +1942,11 @@ export function createWholePlanetExperience({
         if (devilRouteForward.lengthSq() > 0.0001) {
           flight.forward.lerp(devilRouteForward.normalize(), 1 - Math.exp(-2.8 * delta)).normalize();
         }
-        if (didBlackBoxCrossGuideTarget(devilBlackBoxPreviousPosition, worldPosition, 18)) {
+        if (didBlackBoxCrossGuideTarget(
+          devilBlackBoxPreviousPosition,
+          worldPosition,
+          DEVIL_BLACK_BOX_CONTACT_RADIUS,
+        )) {
           stopDevilRoute(true);
           openProductionBlackBox();
           return;
@@ -1789,7 +1959,11 @@ export function createWholePlanetExperience({
       flight.speed = 0;
       flight.radialSpeed = 0;
       if (navigation.waitElapsed >= DEVIL_BLACK_BOX_WAIT_TIMEOUT) {
-        stopDevilRoute();
+        const predictedWait = Math.max(
+          DEVIL_BLACK_BOX_WAIT_TIMEOUT,
+          navigation.interceptSeconds - navigation.duration + 6,
+        );
+        if (navigation.waitElapsed >= predictedWait) stopDevilRoute();
       }
       return;
     }
@@ -1800,8 +1974,11 @@ export function createWholePlanetExperience({
       return;
     }
     const progress = THREE.MathUtils.clamp(navigation.elapsed / navigation.duration, 0, 1);
-    const eased = progress * progress * (3 - 2 * progress);
+    const eased = progress * progress * progress * (progress * (progress * 6 - 15) + 10);
     const pathDistance = navigation.pathLength * eased;
+    const routeFrameSpeed = Math.abs(pathDistance - navigation.previousPathDistance)
+      / Math.max(delta, 1 / 240);
+    navigation.previousPathDistance = pathDistance;
     let pathIndex = 1;
     while (
       pathIndex < navigation.pathCumulative.length - 1
@@ -1834,8 +2011,13 @@ export function createWholePlanetExperience({
       )
       .normalize();
     if (devilRouteForward.lengthSq() < 0.0001) devilRouteForward.copy(flight.forward);
-    flight.forward.lerp(devilRouteForward, 1 - Math.exp(-7.5 * delta)).normalize();
-    flight.speed = navigation.pathLength / Math.max(navigation.duration, 0.1);
+    flight.forward.lerp(devilRouteForward, 1 - Math.exp(-3.2 * delta)).normalize();
+    flight.speed = THREE.MathUtils.damp(
+      flight.speed,
+      Math.min(DEVIL_ROUTE_SPEED, routeFrameSpeed),
+      4.2,
+      delta,
+    );
     flight.radialSpeed = 0;
     flight.bodyPitch = THREE.MathUtils.damp(flight.bodyPitch, 0, 6, delta);
     flight.roll = THREE.MathUtils.damp(flight.roll, 0, 6, delta);
@@ -1867,8 +2049,26 @@ export function createWholePlanetExperience({
       navigation.pathRadii[leadIndex],
       leadMix,
     );
-    state.devil.anchorUp.copy(devilTarget);
-    state.devil.anchorPosition.copy(devilTarget).multiplyScalar(leadRadius + 2.8);
+    devilDesired.copy(devilTarget).multiplyScalar(leadRadius + 2.8);
+    const guideLeadResponse = THREE.MathUtils.lerp(
+      1.45,
+      4.2,
+      THREE.MathUtils.smoothstep(progress, 0.04, 0.32),
+    );
+    state.devil.anchorPosition.lerp(
+      devilDesired,
+      1 - Math.exp(-guideLeadResponse * delta),
+    );
+    state.devil.anchorUp.copy(state.devil.anchorPosition).normalize();
+    devilRelativeEnd.copy(state.devil.anchorUp).sub(devilRouteDirection);
+    const devilLeadDistance = Math.acos(THREE.MathUtils.clamp(
+      state.devil.anchorUp.dot(devilRouteDirection),
+      -1,
+      1,
+    )) * routeRadius;
+    canvas.dataset.guideDevilLead = (
+      devilRelativeEnd.dot(devilRouteForward) >= 0 ? devilLeadDistance : -devilLeadDistance
+    ).toFixed(2);
     state.devil.flightForward.copy(devilTarget)
       .addScaledVector(devilRouteDirection, -devilTarget.dot(devilRouteDirection))
       .normalize();
@@ -1910,6 +2110,7 @@ export function createWholePlanetExperience({
       if (devil.timer <= 0) spawnDevil();
       return;
     }
+    devil.encounterTime += delta;
     devilPreviousAnchor.copy(devil.anchorPosition);
     if (devil.phase === "entry") {
       devil.entryTime = Math.max(0, devil.entryTime - delta);
@@ -2017,9 +2218,50 @@ export function createWholePlanetExperience({
         return;
       }
     }
+    if (
+      devil.encounterTime >= DEVIL_ASSIST_CONTACT_DELAY
+      && ["entry", "waiting", "flee"].includes(devil.phase)
+    ) {
+      devil.phase = "approach";
+    }
+    if (devil.phase === "approach") {
+      playerUp.copy(flight.position).normalize();
+      devilTarget.copy(flight.position)
+        .addScaledVector(flight.forward, -3)
+        .addScaledVector(playerUp, 1.6);
+      devilDesired.copy(devilTarget).normalize();
+      devil.anchorUp.lerp(
+        devilDesired,
+        1 - Math.exp(-DEVIL_APPROACH_RESPONSE * delta),
+      ).normalize();
+      const approachRadius = Math.max(
+        devilTarget.length(),
+        getSurfaceRadius(devil.anchorUp) + 0.9 + DEVIL_SPAWN_HEIGHT,
+      );
+      devil.flightRadius = THREE.MathUtils.damp(
+        devil.flightRadius,
+        approachRadius,
+        DEVIL_APPROACH_RESPONSE,
+        delta,
+      );
+      devil.anchorPosition.copy(devil.anchorUp).multiplyScalar(devil.flightRadius);
+      devil.flightForward.copy(devilTarget).sub(devilPreviousAnchor)
+        .addScaledVector(devil.anchorUp, -devil.flightForward.dot(devil.anchorUp));
+      if (devil.flightForward.lengthSq() > 0.0001) devil.flightForward.normalize();
+      if (devil.anchorPosition.distanceTo(flight.position) <= DEVIL_CONTACT_RADIUS) {
+        openDevilDialog();
+        return;
+      }
+    }
     devil.bobTime += delta * 1.7;
     devilModel.position.copy(devil.anchorPosition)
       .addScaledVector(devil.anchorUp, Math.sin(devil.bobTime) * 0.28);
+    if (devilModel.userData.visibilityGlow) {
+      devilModel.userData.visibilityGlow.material.opacity = 0.016;
+    }
+    if (devilModel.userData.visibilityLight) {
+      devilModel.userData.visibilityLight.intensity = 26;
+    }
     orientDevil(devil.phase === "dialog"
       ? devilTarget.copy(flight.position).sub(devilModel.position)
       : devil.flightForward);
@@ -2522,6 +2764,7 @@ export function createWholePlanetExperience({
       if (!object) continue;
       object.getWorldPosition(worldPosition);
       const distance = flight.position.distanceTo(worldPosition);
+      if (contact.id === "book") canvas.dataset.bookDistance = distance.toFixed(1);
       const wasInside = contactState.get(contact.id) === true;
       if (!wasInside && distance <= contact.radius) {
         contactState.set(contact.id, true);
@@ -2647,6 +2890,8 @@ export function createWholePlanetExperience({
     update(delta) {
       updateChallenge(delta);
       updateDevil(delta);
+      canvas.dataset.devilPhase = state.devil.phase;
+      canvas.dataset.devilEncounterTime = state.devil.encounterTime.toFixed(2);
       updateContacts();
       updateCompassAssist(delta);
       updateReturnRoute(delta);
@@ -2691,8 +2936,10 @@ export function createWholePlanetExperience({
       state.devil.route = null;
       state.devil.hasBeenVisible = false;
       state.devil.noticeGrace = 0;
+      state.devil.encounterTime = 0;
       state.devil.navigation.destination = null;
       state.devil.navigation.elapsed = 0;
+      state.devil.navigation.previousPathDistance = 0;
       state.devil.navigation.waitElapsed = 0;
       if (challengeMusicWasPlaying) void playMusic();
       challengeMusicWasPlaying = false;
@@ -2709,6 +2956,7 @@ export function createWholePlanetExperience({
       state.catRouteAvailable = false;
       state.catJoinPhase = catDebugFollowing ? "complete" : "idle";
       state.catJoinElapsed = 0;
+      state.catTailTime = 0;
       state.catFollowing = catDebugFollowing;
       state.catPendingJoin = false;
       state.reachedEarthWithCat = false;
@@ -2717,7 +2965,11 @@ export function createWholePlanetExperience({
       catCompanion.visible = catDebugFollowing;
       if (catDebugFollowing && playerObject) {
         playerObject.add(catCompanion);
-        catCompanion.position.set(CAT_ROUTE_MOUNT_SIDE, 0.02, 0.12);
+        catCompanion.position.set(
+          CAT_ROUTE_MOUNT_SIDE,
+          CAT_ROUTE_MOUNT_HEIGHT,
+          CAT_ROUTE_MOUNT_FORWARD,
+        );
         catCompanion.quaternion.identity();
       }
       state.challengeStart = null;
@@ -2743,6 +2995,12 @@ export function createWholePlanetExperience({
       onWorldInversion?.(routeReady);
       refreshCatRouteAvailability();
       contactState.clear();
+      if (resetParams.get("blackboxguide") === "1") {
+        window.setTimeout(() => {
+          const destination = DEVIL_DESTINATIONS.find((item) => item.id === "blackBox");
+          if (destination && state.devil.phase === "delay") startDevilRoute(destination);
+        }, 0);
+      }
     },
   };
 }

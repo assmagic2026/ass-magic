@@ -278,6 +278,12 @@ a.isolation-badge {
   backdrop-filter: blur(4px);
 }
 
+.flight-speed-panel,
+.experience-music,
+.experience-music button {
+  touch-action: none;
+}
+
 body.flight-mode .flight-stick {
   display: block;
 }

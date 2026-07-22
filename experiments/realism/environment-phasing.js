@@ -170,6 +170,7 @@ export function createEnvironmentPhasing({
     scanElapsed: Infinity,
     predictionSeconds: 0,
     minimumPredictedGap: Infinity,
+    phaseStarts: 0,
     entrySpeed: 0,
     entryRadialSpeed: 0,
     exitRadialTarget: 0,
@@ -181,6 +182,34 @@ export function createEnvironmentPhasing({
     fallbackTarget: new THREE.Vector3(),
     playerVisibleBeforePhase: playerObject.visible,
   };
+  const phaseAudioUrl = new URL("./assets/audio/phase-punch.mp3", import.meta.url).href;
+  const dematerializeAudio = new Audio(phaseAudioUrl);
+  const rematerializeAudio = new Audio(phaseAudioUrl);
+  for (const audio of [dematerializeAudio, rematerializeAudio]) {
+    audio.preload = "auto";
+    audio.volume = 0.74;
+    audio.playsInline = true;
+  }
+  let phaseAudioUnlocked = false;
+
+  function unlockPhaseAudio() {
+    if (phaseAudioUnlocked) return;
+    phaseAudioUnlocked = true;
+    for (const audio of [dematerializeAudio, rematerializeAudio]) {
+      audio.volume = 0;
+      void audio.play().then(() => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.volume = 0.74;
+      }).catch(() => {
+        audio.volume = 0.74;
+      });
+    }
+  }
+
+  window.addEventListener("pointerdown", unlockPhaseAudio, { capture: true, once: true });
+  window.addEventListener("touchstart", unlockPhaseAudio, { capture: true, once: true, passive: true });
+  window.addEventListener("keydown", unlockPhaseAudio, { once: true });
 
   const materialStates = new Map();
   const meshStates = new Map();
@@ -300,10 +329,26 @@ export function createEnvironmentPhasing({
   warpQuad.frustumCulled = false;
   warpScene.add(warpQuad);
 
+  function playPhaseAudio(audio, label) {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.playbackRate = 1;
+    canvas.dataset.environmentPhaseSound = label;
+    void audio.play().catch(() => {
+      canvas.dataset.environmentPhaseSound = `${label}-blocked`;
+    });
+  }
+
   function setPhase(nextPhase) {
+    const previousPhase = state.phase;
     state.phase = nextPhase;
     state.phaseElapsed = 0;
     canvas.dataset.environmentPhase = nextPhase;
+    if (nextPhase === "dematerializing" && previousPhase !== nextPhase) {
+      playPhaseAudio(dematerializeAudio, "dematerialize");
+    } else if (nextPhase === "rematerializing" && previousPhase !== nextPhase) {
+      playPhaseAudio(rematerializeAudio, "rematerialize");
+    }
   }
 
   function isMovementControlled() {
@@ -510,6 +555,8 @@ export function createEnvironmentPhasing({
   }
 
   function beginPhase({ up: upDirection, forward, currentRadius, turnInput, collisionDirection }) {
+    state.phaseStarts += 1;
+    canvas.dataset.environmentPhaseStarts = String(state.phaseStarts);
     state.playerVisibleBeforePhase = playerObject.visible;
     state.startPosition.copy(flight.position);
     if (state.lastSafePosition.lengthSq() < 0.0001) state.lastSafePosition.copy(flight.position);
@@ -784,15 +831,24 @@ export function createEnvironmentPhasing({
   }
 
   function reset() {
+    for (const audio of [dematerializeAudio, rematerializeAudio]) {
+      audio.pause();
+      audio.currentTime = 0;
+    }
     state.cooldown = 0;
     state.scanElapsed = Infinity;
     state.totalElapsed = 0;
+    state.phaseStarts = 0;
+    canvas.dataset.environmentPhaseStarts = "0";
     state.recoveryElapsed = 0;
     restoreNormalState();
   }
 
   function dispose() {
     reset();
+    window.removeEventListener("pointerdown", unlockPhaseAudio, { capture: true });
+    window.removeEventListener("touchstart", unlockPhaseAudio, { capture: true });
+    window.removeEventListener("keydown", unlockPhaseAudio);
     warpTarget.dispose();
     warpBackgroundTarget.dispose();
     warpMaterial.dispose();
@@ -800,9 +856,11 @@ export function createEnvironmentPhasing({
   }
 
   canvas.dataset.environmentPhase = "normal";
+  canvas.dataset.environmentPhaseStarts = "0";
   canvas.dataset.environmentPhaseVisual = "normal";
   canvas.dataset.environmentPhaseVisualProgress = "0";
   canvas.dataset.environmentPlayerVisible = playerObject.visible ? "visible" : "hidden";
+  canvas.dataset.environmentPhaseSound = "ready";
   return {
     state,
     predict,

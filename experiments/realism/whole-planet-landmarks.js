@@ -16,6 +16,7 @@ const BLACK_BOX_TERRAIN_LOOKAHEAD_SAMPLES = 16;
 const BLACK_BOX_ORBIT_ANGULAR_SPEED = 0.54;
 const BLACK_BOX_ASCENT_RESPONSE = 2.8;
 const BLACK_BOX_DESCENT_RESPONSE = 0.58;
+const BLACK_BOX_DAY_AMBUSH_ANGLE = -0.58;
 
 function textureNoise(x, y, seed) {
   let value = Math.imul(x + seed, 374761393) ^ Math.imul(y + seed * 3, 668265263);
@@ -124,8 +125,12 @@ function createMaterial(color, realism, options = {}) {
 
 function createBook(realism) {
   const group = new THREE.Group();
+  // Scale uniformly after fixing the model proportions, so the diagonal pose
+  // cannot stretch one page axis more than another.
+  group.scale.setScalar(8);
   const pivot = new THREE.Group();
   pivot.position.y = 2.45;
+  pivot.scale.z = 0.25;
   pivot.rotation.set(-0.22, 0.08, -0.68);
   group.add(pivot);
   const textures = realism ? getSurfaceTextures() : {};
@@ -190,7 +195,13 @@ function loadBookModel(book, modelUrl, castShadow) {
     const center = bounds.getCenter(new THREE.Vector3());
     modelRoot.worldToLocal(center);
     imported.position.sub(center);
-    modelRoot.scale.set(1.18, 1, 0.73);
+    // The source's X/Y/Z axes map to visible length/thickness/width after the
+    // orientation transform. These factors yield exactly 10 x 15 x 1.2 in
+    // visible width, length and thickness before uniform enlargement.
+    modelRoot.scale.set(1.087, 0.273, 1.175);
+    modelRoot.updateMatrixWorld(true);
+    bounds.setFromObject(modelRoot);
+    book.userData.modelDimensions = bounds.getSize(new THREE.Vector3());
 
     imported.traverse((object) => {
       if (!object.isMesh) return;
@@ -201,6 +212,7 @@ function loadBookModel(book, modelUrl, castShadow) {
 
     const mount = book.userData.proceduralVisual;
     for (const object of [...mount.children]) disposeVisual(object);
+    mount.scale.set(1, 1, 1);
     mount.add(modelRoot);
     book.userData.glbVisual = modelRoot;
   }).catch((error) => {
@@ -227,18 +239,71 @@ function disposeVisual(root) {
 function createRecordPlayer(realism) {
   const group = new THREE.Group();
   const textures = realism ? getSurfaceTextures() : {};
-  const wood = createMaterial(0xc2ae9c, realism, { roughness: 0.84, map: textures.wood });
-  const metal = createMaterial(0xb7bec2, realism, { roughness: 0.35, metalness: 0.65 });
-  const vinyl = createMaterial(0x111111, realism, { roughness: 0.48 });
-  const label = createMaterial(0xe0c58d, realism, { roughness: 0.74 });
+  if (textures.wood) textures.wood.anisotropy = 8;
+  const wood = realism
+    ? new THREE.MeshPhysicalMaterial({
+      color: 0xb97a4f,
+      map: textures.wood,
+      roughness: 0.52,
+      metalness: 0,
+      clearcoat: 0.28,
+      clearcoatRoughness: 0.46,
+    })
+    : createMaterial(0x9a6848, false);
+  const darkWood = realism
+    ? new THREE.MeshPhysicalMaterial({
+      color: 0x6f3d27,
+      map: textures.wood,
+      roughness: 0.62,
+      clearcoat: 0.18,
+      clearcoatRoughness: 0.55,
+    })
+    : createMaterial(0x5b3829, false);
+  const topPanel = realism
+    ? new THREE.MeshStandardMaterial({ color: 0x24272a, roughness: 0.56, metalness: 0.18 })
+    : createMaterial(0x24272a, false);
+  const metal = realism
+    ? new THREE.MeshStandardMaterial({ color: 0xa9afb2, roughness: 0.2, metalness: 0.92 })
+    : createMaterial(0xb7bec2, false);
+  const darkMetal = realism
+    ? new THREE.MeshStandardMaterial({ color: 0x35393d, roughness: 0.27, metalness: 0.82 })
+    : createMaterial(0x34383a, false);
+  const vinyl = realism
+    ? new THREE.MeshPhysicalMaterial({
+      color: 0x070809,
+      roughness: 0.24,
+      metalness: 0.08,
+      clearcoat: 0.62,
+      clearcoatRoughness: 0.22,
+    })
+    : createMaterial(0x111111, false);
+  const grooveMaterial = realism
+    ? new THREE.MeshStandardMaterial({ color: 0x34373a, roughness: 0.3, metalness: 0.36 })
+    : createMaterial(0x292b2d, false);
+  const label = createMaterial(0xd8b76f, realism, { roughness: 0.78 });
+  const rubber = createMaterial(0x090a0b, realism, { roughness: 0.92 });
 
   const plinth = new THREE.Mesh(new THREE.BoxGeometry(44, 4.2, 34), wood);
   plinth.position.y = 2.1;
   group.add(plinth);
+  const insetTop = new THREE.Mesh(new THREE.BoxGeometry(42.8, 0.34, 32.8), topPanel);
+  insetTop.position.y = 4.33;
+  group.add(insetTop);
+  const frontFascia = new THREE.Mesh(new THREE.BoxGeometry(42.4, 2.2, 0.68), darkWood);
+  frontFascia.position.set(0, 2.15, 17.08);
+  group.add(frontFascia);
+  for (const side of [-1, 1]) {
+    const sideFascia = new THREE.Mesh(new THREE.BoxGeometry(0.68, 2.2, 32.4), darkWood);
+    sideFascia.position.set(side * 22.08, 2.15, 0);
+    group.add(sideFascia);
+  }
 
   const platterBase = new THREE.Mesh(new THREE.CylinderGeometry(13.2, 13.6, 1.8, 32), metal);
   platterBase.position.set(-6.2, 4.25, -1.2);
   group.add(platterBase);
+  const platterMat = new THREE.Mesh(new THREE.CylinderGeometry(12.25, 12.25, 0.32, 48), rubber);
+  platterMat.position.set(-6.2, 5.28, -1.2);
+  group.add(platterMat);
 
   const recordDisc = new THREE.Group();
   recordDisc.position.set(-6.2, 5.82, -1.2);
@@ -246,10 +311,13 @@ function createRecordPlayer(realism) {
   const recordLabel = new THREE.Mesh(new THREE.CylinderGeometry(3.06, 3.06, 0.22, 24), label);
   recordLabel.position.y = 0.22;
   recordDisc.add(record, recordLabel);
-  for (let index = 0; index < 4; index += 1) {
-    const groove = new THREE.Mesh(new THREE.TorusGeometry(5.2 + index * 1.55, 0.055, 4, 48), metal);
+  const spindle = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.72, 12), metal);
+  spindle.position.y = 0.48;
+  recordDisc.add(spindle);
+  for (let index = 0; index < 8; index += 1) {
+    const groove = new THREE.Mesh(new THREE.TorusGeometry(4.1 + index * 0.9, 0.032, 4, 72), grooveMaterial);
     groove.rotation.x = Math.PI * 0.5;
-    groove.position.y = 0.2;
+    groove.position.y = 0.205;
     recordDisc.add(groove);
   }
   group.add(recordDisc);
@@ -257,37 +325,122 @@ function createRecordPlayer(realism) {
   const armBase = new THREE.Mesh(new THREE.CylinderGeometry(2.15, 2.5, 2.9, 16), metal);
   armBase.position.set(12.8, 5.35, 5.7);
   group.add(armBase);
-  const arm = new THREE.Mesh(new THREE.BoxGeometry(18, 0.34, 0.34), metal);
-  arm.position.set(4.8, 7.1, 4.5);
-  arm.rotation.y = -0.24;
-  group.add(arm);
-  const cartridge = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.72, 0.86), label);
-  cartridge.position.set(-4.2, 6.65, 2.3);
+  const armPivot = new THREE.Mesh(new THREE.SphereGeometry(1.12, 18, 12), darkMetal);
+  armPivot.position.set(12.8, 7, 5.7);
+  group.add(armPivot);
+  const addTonearmSegment = (start, end, radius) => {
+    const direction = end.clone().sub(start);
+    const segment = new THREE.Mesh(
+      new THREE.CapsuleGeometry(radius, Math.max(0.05, direction.length() - radius * 2), 5, 12),
+      metal,
+    );
+    segment.position.copy(start).add(end).multiplyScalar(0.5);
+    segment.quaternion.setFromUnitVectors(WORLD_UP, direction.normalize());
+    group.add(segment);
+  };
+  const armStart = new THREE.Vector3(12.5, 7.3, 5.45);
+  const armBend = new THREE.Vector3(5.2, 7.55, 4.3);
+  const armEnd = new THREE.Vector3(-3.8, 6.85, 2.15);
+  addTonearmSegment(armStart, armBend, 0.22);
+  addTonearmSegment(armBend, armEnd, 0.18);
+  const counterweight = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 2.3, 18), darkMetal);
+  counterweight.position.set(14.25, 7.2, 5.92);
+  counterweight.rotation.z = Math.PI * 0.5;
+  group.add(counterweight);
+  const cartridge = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.52, 0.86), darkMetal);
+  cartridge.position.copy(armEnd).add(new THREE.Vector3(-0.42, -0.3, -0.08));
+  cartridge.rotation.y = -0.24;
   group.add(cartridge);
+  const stylus = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.025, 0.72, 8), metal);
+  stylus.position.copy(cartridge.position).add(new THREE.Vector3(-0.2, -0.55, 0));
+  group.add(stylus);
 
   for (let index = 0; index < 3; index += 1) {
-    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.86, 0.86, 0.64, 14), metal);
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.86, 0.86, 0.64, 24), darkMetal);
     knob.position.set(8.4 + index * 2.5, 5.1, -9.8);
     group.add(knob);
+  }
+  for (const x of [-18, 18]) {
+    for (const z of [-13, 13]) {
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.2, 0.8, 16), rubber);
+      foot.position.set(x, -0.35, z);
+      group.add(foot);
+    }
   }
   group.userData.recordDisc = recordDisc;
   group.userData.playing = true;
   return group;
 }
 
-function createCompass() {
+function createCompass(realism) {
   const group = new THREE.Group();
   const rotor = new THREE.Group();
-  const light = new THREE.MeshBasicMaterial({ color: 0xf3f7ff, toneMapped: false, fog: false });
-  const dark = new THREE.MeshBasicMaterial({ color: 0x080b0f, toneMapped: false, fog: false });
-  const north = new THREE.Mesh(new THREE.ConeGeometry(1.64, 16.8, 4), light);
-  const south = new THREE.Mesh(new THREE.ConeGeometry(1.64, 16.8, 4), dark);
-  north.position.z = 7.6;
-  south.position.z = -7.6;
-  north.rotation.x = Math.PI * 0.5;
-  south.rotation.x = -Math.PI * 0.5;
+  const brass = createMaterial(0x8a6336, realism, {
+    roughness: 0.28,
+    metalness: 0.78,
+  });
+  const brassEdge = createMaterial(0xc59b5d, realism, {
+    roughness: 0.2,
+    metalness: 0.88,
+  });
+  const dial = createMaterial(0xe8dfc5, realism, { roughness: 0.82 });
+  const redNeedle = createMaterial(0xb63b32, realism, {
+    roughness: 0.36,
+    metalness: 0.35,
+  });
+  const whiteNeedle = createMaterial(0xf2f0e8, realism, { roughness: 0.45 });
+  const darkMetal = createMaterial(0x1d252b, realism, {
+    roughness: 0.3,
+    metalness: 0.7,
+  });
+
+  // A real field compass: heavy case, bezel, printed dial and a balanced
+  // two-colour needle under a slightly tinted glass cover.
+  const caseBottom = new THREE.Mesh(new THREE.CylinderGeometry(5.35, 5.55, 1.25, 64), brass);
+  caseBottom.position.y = 0.1;
+  group.add(caseBottom);
+  const bezel = new THREE.Mesh(new THREE.TorusGeometry(4.75, 0.34, 14, 64), brassEdge);
+  bezel.position.y = 0.78;
+  group.add(bezel);
+  const dialFace = new THREE.Mesh(new THREE.CylinderGeometry(4.55, 4.55, 0.16, 64), dial);
+  dialFace.position.y = 0.73;
+  group.add(dialFace);
+
+  const tickGroup = new THREE.Group();
+  for (let index = 0; index < 16; index += 1) {
+    const major = index % 4 === 0;
+    const tick = new THREE.Mesh(
+      new THREE.BoxGeometry(major ? 0.18 : 0.1, 0.08, major ? 0.78 : 0.45),
+      darkMetal,
+    );
+    const angle = (index / 16) * Math.PI * 2;
+    tick.position.set(Math.sin(angle) * 3.65, 0.88, Math.cos(angle) * 3.65);
+    tick.rotation.y = angle;
+    tickGroup.add(tick);
+  }
+  group.add(tickGroup);
+
+  const north = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 3.95), redNeedle);
+  north.position.z = 1.82;
+  const south = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 3.95), whiteNeedle);
+  south.position.z = -1.82;
+  rotor.position.y = 0.99;
   rotor.add(north, south);
-  group.add(rotor);
+  const pivot = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 12), brassEdge);
+  pivot.position.y = 1.08;
+  group.add(rotor, pivot);
+  const glass = new THREE.Mesh(new THREE.CylinderGeometry(4.62, 4.62, 0.08, 64), new THREE.MeshPhysicalMaterial({
+    color: 0xb7d8dc,
+    roughness: 0.08,
+    metalness: 0,
+    transmission: 0.35,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false,
+  }));
+  glass.position.y = 1.25;
+  glass.renderOrder = 2;
+  group.add(glass);
   group.userData.rotor = rotor;
   group.userData.targetWorld = null;
   return group;
@@ -567,14 +720,50 @@ function createNightBeacons(night, axisA, axisB, getSurfaceRadius) {
 
 function createBlackBox(realism) {
   const group = new THREE.Group();
-  const shell = createMaterial(0x050505, realism, { roughness: 0.4, metalness: 0.15 });
-  const core = createMaterial(0x000000, realism, { roughness: 0.85 });
+  const shell = createMaterial(0x050505, realism, {
+    roughness: 0.4,
+    metalness: 0.15,
+    emissive: 0x183448,
+    emissiveIntensity: 0,
+  });
+  const core = createMaterial(0x000000, realism, {
+    roughness: 0.85,
+    emissive: 0x07131d,
+    emissiveIntensity: 0,
+  });
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: createRadialGlowTexture(),
+    color: 0xc7f7ff,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    depthTest: false,
+    toneMapped: false,
+    fog: false,
+  }));
+  glow.scale.setScalar(12);
+  glow.renderOrder = 4;
+  const beaconLight = new THREE.PointLight(
+    0xbdefff,
+    0,
+    34,
+    1.8,
+  );
+  beaconLight.castShadow = false;
   group.add(
     new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.9, 1.9), shell),
     new THREE.Mesh(new THREE.BoxGeometry(1.46, 1.46, 1.46), core),
+    glow,
+    beaconLight,
   );
   group.userData.grounded = false;
   group.userData.opened = false;
+  group.userData.beacon = 0;
+  group.userData.shellMaterial = shell;
+  group.userData.coreMaterial = core;
+  group.userData.glow = glow;
+  group.userData.beaconLight = beaconLight;
   return group;
 }
 
@@ -633,7 +822,7 @@ export function createSpecialLandmarks({
   placeOnSphere(whiteSphere, night, nightAxisA, 40, getSurfaceRadius);
   root.add(whiteSphere);
 
-  const compass = createCompass();
+  const compass = createCompass(realism);
   compass.scale.setScalar(2.8);
   const compassForward = sun.clone().addScaledVector(compassDirection, -sun.dot(compassDirection)).normalize();
   placeOnSphere(compass, compassDirection, compassForward, 24, getSurfaceRadius);
@@ -651,6 +840,7 @@ export function createSpecialLandmarks({
   const blackBoxForward = new THREE.Vector3();
   const blackBoxLookaheadDirection = new THREE.Vector3();
   const blackBoxRadiusDirection = new THREE.Vector3();
+  const blackBoxSimulationDirection = new THREE.Vector3();
   const compassLocalTarget = new THREE.Vector3();
   const beamWorldQuaternion = new THREE.Quaternion();
   const beamLocalAxis = new THREE.Vector3(0, 1, 0);
@@ -677,6 +867,34 @@ export function createSpecialLandmarks({
       );
     }
     return safeFlightRadius;
+  }
+
+  function predictBlackBoxFlightRadius(seconds) {
+    let simulationAngle = blackBoxAngle;
+    let simulationRadius = blackBoxFlightRadius > 0
+      ? blackBoxFlightRadius
+      : getBlackBoxSafeFlightRadius(simulationAngle);
+    let remaining = Math.max(0, seconds);
+    while (remaining > 0.0001) {
+      const step = Math.min(1 / 30, remaining);
+      simulationAngle += step * BLACK_BOX_ORBIT_ANGULAR_SPEED;
+      const safeRadius = getBlackBoxSafeFlightRadius(simulationAngle);
+      simulationRadius = THREE.MathUtils.damp(
+        simulationRadius,
+        safeRadius,
+        safeRadius > simulationRadius
+          ? BLACK_BOX_ASCENT_RESPONSE
+          : BLACK_BOX_DESCENT_RESPONSE,
+        step,
+      );
+      getBlackBoxDirectionAtAngle(simulationAngle, blackBoxSimulationDirection);
+      simulationRadius = Math.max(
+        simulationRadius,
+        getSurfaceRadius(blackBoxSimulationDirection) + BLACK_BOX_FLIGHT_ALTITUDE,
+      );
+      remaining -= step;
+    }
+    return simulationRadius;
   }
 
   scene.add(root);
@@ -718,7 +936,23 @@ export function createSpecialLandmarks({
     predictBlackBoxPosition(seconds, target = new THREE.Vector3()) {
       const angle = blackBoxAngle + Math.max(0, seconds) * BLACK_BOX_ORBIT_ANGULAR_SPEED;
       return getBlackBoxDirectionAtAngle(angle, target)
-        .multiplyScalar(getBlackBoxSafeFlightRadius(angle));
+        .multiplyScalar(predictBlackBoxFlightRadius(seconds));
+    },
+    predictBlackBoxDayIntercept(minimumSeconds, target = new THREE.Vector3()) {
+      const minimumAngle = blackBoxAngle
+        + Math.max(0, minimumSeconds) * BLACK_BOX_ORBIT_ANGULAR_SPEED;
+      const turns = Math.max(
+        0,
+        Math.ceil((minimumAngle - BLACK_BOX_DAY_AMBUSH_ANGLE) / (Math.PI * 2)),
+      );
+      const interceptAngle = BLACK_BOX_DAY_AMBUSH_ANGLE + turns * Math.PI * 2;
+      const seconds = Math.max(
+        0,
+        (interceptAngle - blackBoxAngle) / BLACK_BOX_ORBIT_ANGULAR_SPEED,
+      );
+      getBlackBoxDirectionAtAngle(interceptAngle, target)
+        .multiplyScalar(predictBlackBoxFlightRadius(seconds));
+      return seconds;
     },
     update(delta) {
       if (recordPlayer.userData.playing) {
@@ -759,6 +993,20 @@ export function createSpecialLandmarks({
       whiteSphere.userData.light.intensity = (realism ? 3900 : 35) * whitePulse;
       whiteSphere.userData.glow.material.opacity = (realism ? 0.72 : 0.5) * whitePulse;
       blackBoxAngle += delta * BLACK_BOX_ORBIT_ANGULAR_SPEED;
+
+      blackBox.userData.beacon = THREE.MathUtils.damp(
+        blackBox.userData.beacon,
+        activation > 0.03 ? 1 : 0,
+        activation > blackBox.userData.beacon ? 2.8 : 5.5,
+        delta,
+      );
+      const beaconPulse = 0.86 + Math.sin(performance.now() * 0.0042) * 0.14;
+      const beacon = blackBox.userData.beacon;
+      blackBox.userData.glow.visible = beacon > 0.002;
+      blackBox.userData.glow.material.opacity = beacon * beaconPulse * 0.76;
+      blackBox.userData.beaconLight.intensity = beacon * beaconPulse * (realism ? 1450 : 26);
+      blackBox.userData.shellMaterial.emissiveIntensity = beacon * beaconPulse * 4.8;
+      blackBox.userData.coreMaterial.emissiveIntensity = beacon * beaconPulse * 1.65;
 
       if (!blackBox.userData.grounded) {
         getBlackBoxDirectionAtAngle(blackBoxAngle, blackBoxDirection);
