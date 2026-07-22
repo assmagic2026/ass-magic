@@ -181,6 +181,7 @@ export function createEnvironmentPhasing({
     collisionNormal: new THREE.Vector3(),
     fallbackTarget: new THREE.Vector3(),
     playerVisibleBeforePhase: playerObject.visible,
+    guardRemaining: 0,
   };
   const phaseAudioUrl = new URL("./assets/audio/phase-punch.mp3", import.meta.url).href;
   const dematerializeAudio = new Audio(phaseAudioUrl);
@@ -191,20 +192,32 @@ export function createEnvironmentPhasing({
     audio.playsInline = true;
   }
   let phaseAudioUnlocked = false;
+  const PhaseAudioContext = window.AudioContext || window.webkitAudioContext;
+  const phaseAudioContext = PhaseAudioContext ? new PhaseAudioContext() : null;
+  let phaseAudioBuffer = null;
+  let phaseAudioLoadPromise = null;
+
+  function loadPhaseAudioBuffer() {
+    if (!phaseAudioContext || phaseAudioLoadPromise) return phaseAudioLoadPromise;
+    phaseAudioLoadPromise = fetch(phaseAudioUrl)
+      .then((response) => response.arrayBuffer())
+      .then((arrayBuffer) => phaseAudioContext.decodeAudioData(arrayBuffer))
+      .then((buffer) => {
+        phaseAudioBuffer = buffer;
+        return buffer;
+      })
+      .catch(() => {
+        phaseAudioBuffer = null;
+        return null;
+      });
+    return phaseAudioLoadPromise;
+  }
 
   function unlockPhaseAudio() {
     if (phaseAudioUnlocked) return;
     phaseAudioUnlocked = true;
-    for (const audio of [dematerializeAudio, rematerializeAudio]) {
-      audio.volume = 0;
-      void audio.play().then(() => {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.volume = 0.74;
-      }).catch(() => {
-        audio.volume = 0.74;
-      });
-    }
+    if (phaseAudioContext?.state === "suspended") void phaseAudioContext.resume();
+    void loadPhaseAudioBuffer();
   }
 
   window.addEventListener("pointerdown", unlockPhaseAudio, { capture: true, once: true });
@@ -330,6 +343,20 @@ export function createEnvironmentPhasing({
   warpScene.add(warpQuad);
 
   function playPhaseAudio(audio, label) {
+    if (!phaseAudioUnlocked || state.guardRemaining > 0) {
+      canvas.dataset.environmentPhaseSound = `${label}-guarded`;
+      return;
+    }
+    if (phaseAudioContext && phaseAudioBuffer && phaseAudioContext.state === "running") {
+      const source = phaseAudioContext.createBufferSource();
+      const gain = phaseAudioContext.createGain();
+      source.buffer = phaseAudioBuffer;
+      gain.gain.value = 0.74;
+      source.connect(gain).connect(phaseAudioContext.destination);
+      source.start(0);
+      canvas.dataset.environmentPhaseSound = label;
+      return;
+    }
     audio.pause();
     audio.currentTime = 0;
     audio.playbackRate = 1;
@@ -588,6 +615,10 @@ export function createEnvironmentPhasing({
     terrainAssistStrength = 0,
   }) {
     if (isMovementControlled() || state.phase === "recovering") return isMovementControlled();
+    if (state.guardRemaining > 0) {
+      canvas.dataset.environmentPhase = "normal";
+      return false;
+    }
     const scanInterval = quality === "high" ? 0.032 : quality === "standard" ? 0.04 : 0.055;
     if (state.scanElapsed < scanInterval) return false;
     state.scanElapsed = 0;
@@ -814,6 +845,8 @@ export function createEnvironmentPhasing({
   }
 
   function beginFrame(delta, { paused = false } = {}) {
+    state.guardRemaining = Math.max(0, state.guardRemaining - delta);
+    canvas.dataset.environmentPhaseGuard = state.guardRemaining.toFixed(2);
     state.cooldown = Math.max(0, state.cooldown - delta);
     state.scanElapsed += delta;
     if (paused && isMovementControlled()) {
@@ -830,7 +863,7 @@ export function createEnvironmentPhasing({
     }
   }
 
-  function reset() {
+  function reset({ guardSeconds = 0 } = {}) {
     for (const audio of [dematerializeAudio, rematerializeAudio]) {
       audio.pause();
       audio.currentTime = 0;
@@ -841,6 +874,8 @@ export function createEnvironmentPhasing({
     state.phaseStarts = 0;
     canvas.dataset.environmentPhaseStarts = "0";
     state.recoveryElapsed = 0;
+    state.guardRemaining = Math.max(0, guardSeconds);
+    canvas.dataset.environmentPhaseGuard = state.guardRemaining.toFixed(2);
     restoreNormalState();
   }
 
@@ -853,6 +888,7 @@ export function createEnvironmentPhasing({
     warpBackgroundTarget.dispose();
     warpMaterial.dispose();
     warpGeometry.dispose();
+    if (phaseAudioContext?.state !== "closed") void phaseAudioContext.close();
   }
 
   canvas.dataset.environmentPhase = "normal";
@@ -861,6 +897,7 @@ export function createEnvironmentPhasing({
   canvas.dataset.environmentPhaseVisualProgress = "0";
   canvas.dataset.environmentPlayerVisible = playerObject.visible ? "visible" : "hidden";
   canvas.dataset.environmentPhaseSound = "ready";
+  canvas.dataset.environmentPhaseGuard = "0.00";
   return {
     state,
     predict,

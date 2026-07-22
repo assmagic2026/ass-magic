@@ -3,9 +3,9 @@ import {
   AdaptivePixelRatio,
   configureLinks,
   getExperimentSettings,
-} from "./quality.js";
+} from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-13";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-15";
 import {
   createFlightPlayer,
   updateFlightPlayer,
@@ -157,7 +157,16 @@ renderer.toneMappingExposure = settings.mode === "realism" ? 1.04 : 1;
 renderer.shadowMap.enabled = realismShadowsEnabled;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset);
+const isMobileFlightViewport = settings.view === "flight"
+  && Math.min(window.innerWidth, window.innerHeight) <= 900
+  && window.matchMedia("(pointer: coarse)").matches;
+const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset, {
+  // High quality previously started at DPR 2 on recent phones.  Beginning at
+  // 1.2 cuts the first-frame fill work by roughly two thirds, then the normal
+  // adaptive sampler can raise it once the scene has settled.
+  initialRatio: isMobileFlightViewport ? 1.2 : null,
+  settleSeconds: isMobileFlightViewport ? 5 : 3,
+});
 const scene = new THREE.Scene();
 let hemisphereLight = null;
 let twilightFillLight = null;
@@ -232,9 +241,9 @@ flightPlayer.player.visible = settings.view === "flight";
 flightPlayer.shadow.visible = false;
 if (settings.mode === "realism" && settings.view === "flight") {
   if (flightPlayer.ready) {
-    flightPlayer.ready.then(installWaterPlayerReflection, installWaterPlayerReflection);
+    flightPlayer.ready.then(scheduleWaterPlayerReflection, scheduleWaterPlayerReflection);
   } else {
-    installWaterPlayerReflection();
+    scheduleWaterPlayerReflection();
   }
 }
 if (realismShadowsEnabled) {
@@ -560,9 +569,10 @@ setupZoomProtection();
 resize();
 window.addEventListener("resize", resize, { passive: true });
 const loadingElement = document.querySelector("#loading");
-if (externalTextureLoads.length) {
-  Promise.allSettled(externalTextureLoads).then(() => loadingElement.classList.add("is-hidden"));
-} else {
+// The scene already has a complete procedural fallback before external models
+// finish.  Do not cover it (or let flight continue behind a loading page).
+if (loadingElement) {
+  loadingElement.hidden = true;
   loadingElement.classList.add("is-hidden");
 }
 
@@ -1299,6 +1309,17 @@ function installWaterPlayerReflection() {
   reflection.userData.materials = reflectionMaterials;
   scene.add(reflection);
   waterPlayerReflection = reflection;
+}
+
+function scheduleWaterPlayerReflection() {
+  const install = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(installWaterPlayerReflection, { timeout: 1000 });
+    } else {
+      installWaterPlayerReflection();
+    }
+  };
+  window.setTimeout(install, 1600);
 }
 
 function updateWaterPlayerReflection() {
@@ -4275,7 +4296,9 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
 }
 
 function resetFlight() {
-  environmentPhasing?.reset();
+  // Let terrain avoidance settle around the spawn point before emergency
+  // phasing is allowed.  This prevents a false phase and its sound at startup.
+  environmentPhasing?.reset({ guardSeconds: 3.2 });
   experience?.reset();
   specialLandmarks.reset?.();
   const params = new URLSearchParams(window.location.search);
@@ -4421,15 +4444,22 @@ function resetFlight() {
       .addScaledVector(startDirection, -SUN_DIRECTION.dot(startDirection))
       .normalize();
     flight.forward.crossVectors(startDirection, SUN_DIRECTION).normalize();
+    const viewportAspect = window.innerWidth / Math.max(window.innerHeight, 1);
+    const sunwardStartAngle = viewportAspect < 0.72
+      ? 1.47
+      : viewportAspect < 1.2
+        ? 1.25
+        : 0.9;
     flight.forward
-      .multiplyScalar(Math.cos(0.9))
-      .addScaledVector(sunTangent, Math.sin(0.9))
+      .multiplyScalar(Math.cos(sunwardStartAngle))
+      .addScaledVector(sunTangent, Math.sin(sunwardStartAngle))
       .normalize();
     flightRight.crossVectors(startDirection, flight.forward).normalize();
     canvas.dataset.startSunForward = SUN_DIRECTION.dot(flight.forward).toFixed(3);
     // flightRight is the camera-left axis used by the flight rig; a negative
     // projection therefore confirms that the sun is on screen-right.
     canvas.dataset.startSunScreenSide = SUN_DIRECTION.dot(flightRight).toFixed(3);
+    canvas.dataset.startSunwardAngle = sunwardStartAngle.toFixed(2);
   } else if (startPreset === "day") {
     flight.forward.copy(SUN_DIRECTION)
       .addScaledVector(

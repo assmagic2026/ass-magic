@@ -107,11 +107,19 @@ export function configureLinks(settings) {
 }
 
 export class AdaptivePixelRatio {
-  constructor(renderer, preset) {
+  constructor(renderer, preset, { initialRatio = null, settleSeconds = 3 } = {}) {
     this.renderer = renderer;
     this.preset = preset;
     this.deviceRatio = Math.max(1, window.devicePixelRatio || 1);
-    this.ratio = Math.min(this.deviceRatio, preset.dprMax);
+    this.minimumRatio = Math.min(this.deviceRatio, preset.dprMin);
+    this.ratio = Number.isFinite(initialRatio)
+      ? Math.min(
+        this.deviceRatio,
+        preset.dprMax,
+        Math.max(this.minimumRatio, initialRatio),
+      )
+      : Math.min(this.deviceRatio, preset.dprMax);
+    this.settleSeconds = settleSeconds;
     this.elapsed = 0;
     this.samples = [];
     renderer.setPixelRatio(this.ratio);
@@ -122,7 +130,7 @@ export class AdaptivePixelRatio {
     if (frameMs > 0 && frameMs < 120) this.samples.push(frameMs);
     this.elapsed += deltaSeconds;
 
-    if (this.elapsed < 3 || this.samples.length < 45) return false;
+    if (this.elapsed < this.settleSeconds || this.samples.length < 45) return false;
 
     const average = this.samples.reduce((sum, value) => sum + value, 0) / this.samples.length;
     const oldRatio = this.ratio;
@@ -130,7 +138,7 @@ export class AdaptivePixelRatio {
     const fastLimit = this.preset.targetFrameMs * 0.72;
 
     if (average > slowLimit) {
-      this.ratio = Math.max(this.preset.dprMin, this.ratio - 0.1);
+      this.ratio = Math.max(this.minimumRatio, this.ratio - 0.1);
     } else if (average < fastLimit) {
       this.ratio = Math.min(this.deviceRatio, this.preset.dprMax, this.ratio + 0.05);
     }

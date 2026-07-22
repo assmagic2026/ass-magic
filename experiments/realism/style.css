@@ -924,6 +924,10 @@ body.flight-mode .help {
   visibility: hidden;
 }
 
+.loading[hidden] {
+  display: none;
+}
+
 @media (max-width: 680px) {
   .masthead {
     top: max(18px, env(safe-area-inset-top));
