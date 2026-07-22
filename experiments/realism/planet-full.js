@@ -10,15 +10,11 @@ import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-146";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-164";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-147";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-165";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
-// The loaded book is approximately 120 world units along its long edge
-// (15 model units × the 8× presentation scale).  Keep the default spawn
-// offset in world space so it remains visually tied to the book's size.
-const BOOK_LONG_SIDE_WORLD = 120;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const SUN_DIRECTION = new THREE.Vector3(0.82, 0.33, 0.46).normalize();
 const WORLD_SUN_DIRECTION = SUN_DIRECTION.clone();
@@ -139,6 +135,11 @@ const terrainAssistDebugEnabled = new URLSearchParams(window.location.search).ge
 configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
+const menuToggle = document.querySelector("#menu-toggle");
+const siteMenu = document.querySelector("#site-menu");
+const siteMenuBackdrop = document.querySelector("#site-menu-backdrop");
+const menuNavButtons = [...document.querySelectorAll(".menu-nav-btn")];
+const menuPages = [...document.querySelectorAll(".menu-page")];
 const renderer = new THREE.WebGLRenderer({
   canvas,
   antialias: settings.mode === "realism" && settings.quality === "high",
@@ -553,6 +554,7 @@ const perfHud = new PerformanceHud(
   startupMs,
 );
 
+setupSiteMenu();
 setupInteraction();
 setupZoomProtection();
 resize();
@@ -583,6 +585,7 @@ renderer.setAnimationLoop(() => {
   canvas.dataset.blackBoxAltitude = Number.isFinite(specialLandmarks.objects.blackBox.userData.flightAltitude)
     ? specialLandmarks.objects.blackBox.userData.flightAltitude.toFixed(2)
     : "grounded";
+  canvas.dataset.blackBoxVisible = specialLandmarks.objects.blackBox.visible ? "visible" : "hidden";
   environmentPhasing?.beginFrame(delta, {
     paused: experience?.isPaused() === true && experience?.isGuideNavigating() !== true,
   });
@@ -4274,8 +4277,11 @@ function updateFlightEnvironment(up, delta = 1 / 60) {
 function resetFlight() {
   environmentPhasing?.reset();
   experience?.reset();
+  specialLandmarks.reset?.();
   const params = new URLSearchParams(window.location.search);
-  const startPreset = params.get("start") || "day";
+  // Begin in the dusk band by default so the sun is visible as the first
+  // landmark without dropping the player into the fully dark night region.
+  const startPreset = params.get("start") || "sunset";
   const sprayPreview = startPreset === "water" && params.get("spray") === "1";
   const cloudPreview = startPreset === "cloud" ? cloudVolumes[0] : null;
   const cloudAltitude = cloudPreview
@@ -4287,7 +4293,9 @@ function resetFlight() {
     flight.cruiseAltitude = debugAltitude;
   }
   const isSunsetStart = startPreset === "sunset";
-  const targetDirection = (isSunsetStart ? specialLandmarks.directions.dusk : null)
+  const targetDirection = (isSunsetStart
+    ? (specialLandmarks.directions.sunset || specialLandmarks.directions.dusk)
+    : null)
     || specialLandmarks.directions[startPreset]
     || specialLandmarks.directions.day;
   const isDuskStart = startPreset === "dusk";
@@ -4315,46 +4323,69 @@ function resetFlight() {
       .multiplyScalar(Math.cos(approachAngle))
       .addScaledVector(approach, -Math.sin(approachAngle))
       .normalize();
-  if (startPreset === "day" && specialLandmarks.directions.book) {
-    const bookDirection = specialLandmarks.directions.book;
-    const bookAngle = Math.acos(THREE.MathUtils.clamp(
-      SUN_DIRECTION.dot(bookDirection),
-      -1,
-      1,
-    ));
-    approach.copy(bookDirection)
-      .addScaledVector(SUN_DIRECTION, -bookDirection.dot(SUN_DIRECTION))
+  if (isSunsetStart) {
+    // The original dusk heading points straight into the tallest mountain.
+    // Rotate around the sun axis instead: the sun remains on the same
+    // evening band, but the player starts in an open corridor with no
+    // mountain masking the first view.
+    const sunsetSunHeight = SUN_DIRECTION.dot(targetDirection);
+    const sunsetTangent = targetDirection.clone()
+      .addScaledVector(SUN_DIRECTION, -sunsetSunHeight);
+    const sunsetTangentLength = sunsetTangent.length();
+    sunsetTangent.normalize();
+    const sunsetEscapeAxis = new THREE.Vector3()
+      .crossVectors(SUN_DIRECTION, sunsetTangent)
       .normalize();
-    const startBehindAngle = bookAngle + 0.62;
+    // The opposite quarter-turn leaves the mountain, valley and water
+    // feature corridors behind while keeping the dusk sun azimuth intact.
+    const sunsetEscapeAngle = THREE.MathUtils.degToRad(-105);
+    startDirection.copy(sunsetTangent)
+      .multiplyScalar(sunsetTangentLength * Math.cos(sunsetEscapeAngle))
+      .addScaledVector(sunsetEscapeAxis, sunsetTangentLength * Math.sin(sunsetEscapeAngle))
+      .addScaledVector(SUN_DIRECTION, sunsetSunHeight)
+      .normalize();
+    // Lift the evening band just enough to clear the nearby ridge. Keeping
+    // the same sun azimuth avoids the mountain corridor while placing the
+    // actual sun disc above the horizon from the first frame.
+    const visibleSunHeight = 0.24;
+    const sunsetHorizontal = startDirection.clone()
+      .addScaledVector(SUN_DIRECTION, -SUN_DIRECTION.dot(startDirection))
+      .normalize();
+    startDirection.copy(sunsetHorizontal)
+      .multiplyScalar(Math.sqrt(1 - visibleSunHeight * visibleSunHeight))
+      .addScaledVector(SUN_DIRECTION, visibleSunHeight)
+      .normalize();
+  }
+  if (startPreset === "day") {
+    // Keep the sun road straight ahead.  Pick the side of that road where the
+    // book's tangent projects to screen-left, so it is a landmark in the
+    // forward-left field rather than directly in front of the player.
+    const sunSideAxis = new THREE.Vector3()
+      .crossVectors(WORLD_UP, SUN_DIRECTION)
+      .normalize();
+    // Start well off the black-sphere meridian: the book is now close enough
+    // to read in the forward-left field while the black sphere remains a
+    // distant landmark down the open sun road.
+    const startSunRoadAngle = 1.10;
     startDirection.copy(SUN_DIRECTION)
-      .multiplyScalar(Math.cos(startBehindAngle))
-      .addScaledVector(approach, Math.sin(startBehindAngle))
+      .multiplyScalar(Math.cos(startSunRoadAngle))
+      .addScaledVector(sunSideAxis, Math.sin(startSunRoadAngle))
       .normalize();
-    // Spawn one book-length to the player's right.  The offset follows the
-    // local tangent plane, preserving the dusk-to-day approach while moving
-    // the book naturally to the left side of the initial view.
-    const startBookForward = bookDirection.clone()
-      .addScaledVector(startDirection, -bookDirection.dot(startDirection))
-      .normalize();
-    const startRadiusEstimate = getSurfaceRadius(startDirection)
-      + PLAYER_CLEARANCE
-      + Math.max(flight.cruiseAltitude, 20);
-    const startLateralAngle = BOOK_LONG_SIDE_WORLD / Math.max(startRadiusEstimate, 1);
-    // Rotating around the forward axis moves the radial position laterally;
-    // using the right vector as the rotation axis would move along the flight
-    // path instead of one book-length to its side.
-    startDirection.applyAxisAngle(startBookForward, -startLateralAngle).normalize();
-    canvas.dataset.startLateralOffset = BOOK_LONG_SIDE_WORLD.toFixed(1);
+    canvas.dataset.startTarget = "sun-road";
+    canvas.dataset.startBookSide = "left";
   }
   if (sprayPreview) startDirection = WATER_DIRECTION.clone();
   if (startPreset === "day") flight.cruiseAltitude = Math.max(flight.cruiseAltitude, 20);
+  // Give the opening ridge a little extra clearance so the initial terrain
+  // probe never enters the phasing threshold before the player can steer.
+  if (isSunsetStart) flight.cruiseAltitude = Math.max(flight.cruiseAltitude, 28);
   const startSurfaceRadius = getSurfaceRadius(startDirection);
   let startRadius = startSurfaceRadius + PLAYER_CLEARANCE + flight.cruiseAltitude;
-  if (startPreset === "day" && specialLandmarks.directions.book) {
-    const safeStartForward = specialLandmarks.directions.book.clone()
+  if (startPreset === "day") {
+    const safeStartForward = SUN_DIRECTION.clone()
       .addScaledVector(
         startDirection,
-        -specialLandmarks.directions.book.dot(startDirection),
+        -SUN_DIRECTION.dot(startDirection),
       )
       .normalize();
     const safeStartAxis = new THREE.Vector3().crossVectors(startDirection, safeStartForward).normalize();
@@ -4374,22 +4405,36 @@ function resetFlight() {
     );
   }
   flight.position.copy(startDirection).multiplyScalar(startRadius);
-  canvas.dataset.startTarget = startPreset === "day" ? "book" : startPreset;
+  if (startPreset !== "day") canvas.dataset.startTarget = startPreset;
   canvas.dataset.startSunHeight = startDirection.dot(SUN_DIRECTION).toFixed(3);
-  canvas.dataset.startBookAngle = startPreset === "day" ? "0.620" : "n/a";
+  canvas.dataset.startBookAngle = startPreset === "day" ? "left" : "n/a";
+  canvas.dataset.startSunSide = isSunsetStart ? "right" : "n/a";
   if (sprayPreview) {
     flight.forward.copy(FEATURE_AXIS_A)
       .addScaledVector(startDirection, -FEATURE_AXIS_A.dot(startDirection))
       .normalize();
   } else if (isSunsetStart) {
-    flight.forward.copy(SUN_DIRECTION)
+    // Follow a mostly tangential dusk road with a gentle sunward component.
+    // This keeps the opening visibly twilight for a moment, then naturally
+    // raises the sun into daytime as the player advances.
+    const sunTangent = SUN_DIRECTION.clone()
       .addScaledVector(startDirection, -SUN_DIRECTION.dot(startDirection))
       .normalize();
+    flight.forward.crossVectors(startDirection, SUN_DIRECTION).normalize();
+    flight.forward
+      .multiplyScalar(Math.cos(0.9))
+      .addScaledVector(sunTangent, Math.sin(0.9))
+      .normalize();
+    flightRight.crossVectors(startDirection, flight.forward).normalize();
+    canvas.dataset.startSunForward = SUN_DIRECTION.dot(flight.forward).toFixed(3);
+    // flightRight is the camera-left axis used by the flight rig; a negative
+    // projection therefore confirms that the sun is on screen-right.
+    canvas.dataset.startSunScreenSide = SUN_DIRECTION.dot(flightRight).toFixed(3);
   } else if (startPreset === "day") {
-    flight.forward.copy(specialLandmarks.directions.book)
+    flight.forward.copy(SUN_DIRECTION)
       .addScaledVector(
         startDirection,
-        -specialLandmarks.directions.book.dot(startDirection),
+        -SUN_DIRECTION.dot(startDirection),
       )
       .normalize();
   } else {
@@ -4488,6 +4533,51 @@ function setupInteraction() {
   else setupOrbitInteraction();
 }
 
+function setupSiteMenu() {
+  const setPage = (pageId) => {
+    for (const button of menuNavButtons) {
+      button.classList.toggle("is-active", button.dataset.page === pageId);
+    }
+    for (const page of menuPages) {
+      page.classList.toggle("is-active", page.dataset.page === pageId);
+    }
+  };
+  const setOpen = (isOpen) => {
+    siteMenu?.classList.toggle("is-open", isOpen);
+    menuToggle?.classList.toggle("is-open", isOpen);
+    menuToggle?.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    siteMenu?.setAttribute("aria-hidden", isOpen ? "false" : "true");
+  };
+  menuToggle?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(!siteMenu?.classList.contains("is-open"));
+  });
+  siteMenuBackdrop?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpen(false);
+  });
+  for (const button of menuNavButtons) {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (button.dataset.href) {
+        window.open(button.dataset.href, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (button.dataset.page) setPage(button.dataset.page);
+    });
+  }
+  for (const link of document.querySelectorAll("a[data-menu-route][href]")) {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.assign(link.href);
+    });
+  }
+}
+
 function setupZoomProtection() {
   const viewportMeta = document.querySelector('meta[name="viewport"]');
   const viewportContent = "width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover";
@@ -4509,7 +4599,7 @@ function setupZoomProtection() {
     const scrollable = editable || (
       event.target instanceof Element
       && event.target.closest(
-        "#book-panel, #music-selector-panel, #music-selector-list, #devil-guide-panel",
+        "#book-panel, #music-selector-panel, #music-selector-list, #devil-guide-panel, #site-menu-pages",
       )
     );
     if (!scrollable && event.cancelable) event.preventDefault();
