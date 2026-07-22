@@ -202,6 +202,7 @@ export function createEnvironmentPhasing({
   let rematerializeAudioIndex = 0;
   let phaseAudioUnlocked = false;
   let phaseAudioUnlockPromise = null;
+  let phaseAudioResumePromise = null;
   const PhaseAudioContext = window.AudioContext || window.webkitAudioContext;
   const phaseAudioContext = PhaseAudioContext ? new PhaseAudioContext() : null;
   let phaseAudioBuffer = null;
@@ -224,22 +225,30 @@ export function createEnvironmentPhasing({
     return phaseAudioLoadPromise;
   }
 
+  function resumePhaseAudioContext() {
+    if (!phaseAudioContext || phaseAudioContext.state === "running") return Promise.resolve(true);
+    if (phaseAudioResumePromise) return phaseAudioResumePromise;
+    // Call resume synchronously from the gesture handler. Safari can suspend
+    // an already-authorised context after tab/background changes, so this is
+    // intentionally not a once-only operation.
+    phaseAudioResumePromise = phaseAudioContext.resume()
+      .then(() => phaseAudioContext.state === "running")
+      .catch(() => false)
+      .finally(() => {
+        phaseAudioResumePromise = null;
+      });
+    return phaseAudioResumePromise;
+  }
+
   function unlockPhaseAudio() {
     phaseAudioUnlocked = true;
-    // Mobile browsers may suspend an already-unlocked context after a tab or
-    // system overlay change.  Every later control gesture is allowed to wake
-    // it again, not only the very first gesture.
-    if (phaseAudioContext?.state === "suspended") void phaseAudioContext.resume().catch(() => {});
-    if (!phaseAudioUnlockPromise) {
-      // Resume synchronously inside the trusted gesture.  Deferring this to a
-      // promise microtask can lose iOS's transient user activation.
-      const resume = phaseAudioContext?.state === "suspended"
-        ? phaseAudioContext.resume().catch(() => null)
-        : Promise.resolve();
-      phaseAudioUnlockPromise = resume
-        .then(() => loadPhaseAudioBuffer())
-        .catch(() => null);
-    }
+    const resume = resumePhaseAudioContext();
+    // Do not reuse a fulfilled first-touch promise: a later phase can happen
+    // after Safari has suspended the context again. Each gesture now waits for
+    // that gesture's actual resume before declaring the sound path ready.
+    phaseAudioUnlockPromise = Promise.all([resume, loadPhaseAudioBuffer()])
+      .then(([resumed]) => Boolean(resumed || !phaseAudioContext))
+      .catch(() => false);
     return phaseAudioUnlockPromise;
   }
 
@@ -404,12 +413,14 @@ export function createEnvironmentPhasing({
     canvas.dataset.environmentPhaseSound = `${label}-media`;
     void fallback.play().catch(() => {
       // If the page restored with a suspended context, retain the request and
-      // play it as soon as the already-authorised context wakes up.
-      void unlockPhaseAudio()?.then(() => {
-        if (!playBufferedPhaseAudio(label)) {
-          canvas.dataset.environmentPhaseSound = `${label}-blocked`;
-        }
-      });
+      // play it once this particular resume has completed.
+      void resumePhaseAudioContext()
+        .then(() => loadPhaseAudioBuffer())
+        .then(() => {
+          if (!playBufferedPhaseAudio(label)) {
+            canvas.dataset.environmentPhaseSound = `${label}-blocked`;
+          }
+        });
     });
   }
 

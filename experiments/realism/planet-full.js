@@ -5,7 +5,7 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-18";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-19";
 import {
   createFlightPlayer,
   updateFlightPlayer,
@@ -255,8 +255,11 @@ const specialLandmarks = createSpecialLandmarks({
   sunDirection: SUN_DIRECTION,
   getSurfaceRadius,
   realism: settings.mode === "realism",
-  bookModelUrl: useGlbAssets ? "./assets/models/old-bible-1825.glb" : null,
-  deferBookModel: useGlbAssets,
+  // Keep one authored book visual across every quality profile. The former
+  // deferred GLB replacement made the book visibly change shape after boot
+  // (and left the fallback visible if the asset arrived late or failed).
+  bookModelUrl: null,
+  deferBookModel: false,
   castShadow: realismShadowsEnabled,
 });
 Object.assign(specialLandmarks.directions, {
@@ -1543,9 +1546,6 @@ function scheduleDeferredOpeningAssets() {
     // the loader has already absorbed shader compilation and first-frame work.
     scheduleIdle(installDeferredWaterSystems, mobileHighProfile ? 8500 : 6500, 4200);
   }
-  scheduleIdle(() => {
-    void specialLandmarks.loadDeferredBookModel?.().catch(() => {});
-  }, 12000, 4000);
   if (settings.mode === "realism" && settings.view === "flight") {
     scheduleIdle(() => {
       void scheduleWaterPlayerReflection();
