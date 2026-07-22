@@ -184,13 +184,22 @@ export function createEnvironmentPhasing({
     guardRemaining: 0,
   };
   const phaseAudioUrl = new URL("./assets/audio/phase-punch.mp3", import.meta.url).href;
-  const dematerializeAudio = new Audio(phaseAudioUrl);
-  const rematerializeAudio = new Audio(phaseAudioUrl);
-  for (const audio of [dematerializeAudio, rematerializeAudio]) {
+  // Keep a small pool alive from boot instead of creating an <audio> element
+  // at the instant of a phase.  iOS can reject or delay a just-created media
+  // element after the original touch has ended, which made this sound
+  // intermittent even though the visual phase had started.
+  const createPhaseAudioPool = () => Array.from({ length: 2 }, () => {
+    const audio = new Audio(phaseAudioUrl);
     audio.preload = "auto";
     audio.volume = 0.74;
     audio.playsInline = true;
-  }
+    audio.load();
+    return audio;
+  });
+  const dematerializeAudioPool = createPhaseAudioPool();
+  const rematerializeAudioPool = createPhaseAudioPool();
+  let dematerializeAudioIndex = 0;
+  let rematerializeAudioIndex = 0;
   let phaseAudioUnlocked = false;
   let phaseAudioUnlockPromise = null;
   const PhaseAudioContext = window.AudioContext || window.webkitAudioContext;
@@ -237,6 +246,9 @@ export function createEnvironmentPhasing({
   window.addEventListener("pointerdown", unlockPhaseAudio, { capture: true, passive: true });
   window.addEventListener("touchstart", unlockPhaseAudio, { capture: true, passive: true });
   window.addEventListener("keydown", unlockPhaseAudio);
+  // Fetching and decoding during boot means the first genuine phase normally
+  // reaches a ready AudioBuffer.  Playback still waits for a trusted gesture.
+  void loadPhaseAudioBuffer();
 
   const materialStates = new Map();
   const meshStates = new Map();
@@ -356,32 +368,48 @@ export function createEnvironmentPhasing({
   warpQuad.frustumCulled = false;
   warpScene.add(warpQuad);
 
-  function playPhaseAudio(audio, label) {
+  function playBufferedPhaseAudio(label) {
+    if (!phaseAudioContext || !phaseAudioBuffer || phaseAudioContext.state !== "running") return false;
+    const source = phaseAudioContext.createBufferSource();
+    const gain = phaseAudioContext.createGain();
+    source.buffer = phaseAudioBuffer;
+    gain.gain.value = 0.74;
+    source.connect(gain).connect(phaseAudioContext.destination);
+    source.start(0);
+    canvas.dataset.environmentPhaseSound = `${label}-buffer`;
+    return true;
+  }
+
+  function getPhaseFallback(pool, label) {
+    const index = label === "dematerialize"
+      ? dematerializeAudioIndex++ % pool.length
+      : rematerializeAudioIndex++ % pool.length;
+    return pool[index];
+  }
+
+  function playPhaseAudio(pool, label) {
     if (!phaseAudioUnlocked || state.guardRemaining > 0) {
       canvas.dataset.environmentPhaseSound = `${label}-guarded`;
       return;
     }
-    if (phaseAudioContext && phaseAudioBuffer && phaseAudioContext.state === "running") {
-      const source = phaseAudioContext.createBufferSource();
-      const gain = phaseAudioContext.createGain();
-      source.buffer = phaseAudioBuffer;
-      gain.gain.value = 0.74;
-      source.connect(gain).connect(phaseAudioContext.destination);
-      source.start(0);
-      canvas.dataset.environmentPhaseSound = label;
-      return;
-    }
-    // A fresh fallback element prevents a rapid phase/re-entry from cancelling
-    // the previous HTMLAudio playback request on mobile browsers.
-    const fallback = audio.cloneNode(true);
-    fallback.preload = "auto";
-    fallback.volume = audio.volume;
-    fallback.playsInline = true;
+    if (playBufferedPhaseAudio(label)) return;
+
+    // The prepared fallback covers the short decode window and browsers where
+    // Web Audio is unavailable.  It has already loaded before the phase, so it
+    // does not depend on a network request during collision recovery.
+    const fallback = getPhaseFallback(pool, label);
+    fallback.pause();
     fallback.currentTime = 0;
     fallback.playbackRate = 1;
-    canvas.dataset.environmentPhaseSound = label;
+    canvas.dataset.environmentPhaseSound = `${label}-media`;
     void fallback.play().catch(() => {
-      canvas.dataset.environmentPhaseSound = `${label}-blocked`;
+      // If the page restored with a suspended context, retain the request and
+      // play it as soon as the already-authorised context wakes up.
+      void unlockPhaseAudio()?.then(() => {
+        if (!playBufferedPhaseAudio(label)) {
+          canvas.dataset.environmentPhaseSound = `${label}-blocked`;
+        }
+      });
     });
   }
 
@@ -391,9 +419,9 @@ export function createEnvironmentPhasing({
     state.phaseElapsed = 0;
     canvas.dataset.environmentPhase = nextPhase;
     if (nextPhase === "dematerializing" && previousPhase !== nextPhase) {
-      playPhaseAudio(dematerializeAudio, "dematerialize");
+      playPhaseAudio(dematerializeAudioPool, "dematerialize");
     } else if (nextPhase === "rematerializing" && previousPhase !== nextPhase) {
-      playPhaseAudio(rematerializeAudio, "rematerialize");
+      playPhaseAudio(rematerializeAudioPool, "rematerialize");
     }
   }
 
@@ -883,7 +911,7 @@ export function createEnvironmentPhasing({
   }
 
   function reset({ guardSeconds = 0 } = {}) {
-    for (const audio of [dematerializeAudio, rematerializeAudio]) {
+    for (const audio of [...dematerializeAudioPool, ...rematerializeAudioPool]) {
       audio.pause();
       audio.currentTime = 0;
     }

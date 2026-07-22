@@ -644,6 +644,7 @@ export function createWholePlanetExperience({
         : null),
     }));
   let currentTrackIndex = Math.max(0, tracks.findIndex((track) => track.initial));
+  let randomTrackQueue = [];
   let audioUnlocked = false;
   let musicGesturePending = false;
   let lyricsRequest = 0;
@@ -844,6 +845,28 @@ export function createWholePlanetExperience({
     void loadLyrics(track);
     syncMusicUi();
     if (shouldPlay) void playMusic();
+  }
+
+  function shuffleTrackIndices(indices) {
+    for (let index = indices.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [indices[index], indices[swapIndex]] = [indices[swapIndex], indices[index]];
+    }
+    return indices;
+  }
+
+  // Match the original site's playback: the initial track stays fixed, then
+  // every following selection comes from a shuffled queue without immediately
+  // repeating the song that just played.
+  function getNextRandomTrackIndex() {
+    if (tracks.length <= 1) return 0;
+    if (!randomTrackQueue.length) {
+      const candidates = tracks
+        .map((_, index) => index)
+        .filter((index) => index !== currentTrackIndex);
+      randomTrackQueue = shuffleTrackIndices(candidates);
+    }
+    return randomTrackQueue.shift() ?? currentTrackIndex;
   }
 
   async function playMusic() {
@@ -1169,10 +1192,41 @@ export function createWholePlanetExperience({
     return card;
   }
 
+  function estimateBookMessageRows(entry) {
+    const text = `${entry.name || ""}\n${entry.message || ""}`;
+    const characterWidth = window.matchMedia("(max-width: 720px)").matches ? 24 : 42;
+    const bodyRows = text.split("\n").reduce(
+      (rows, line) => rows + Math.max(1, Math.ceil(Array.from(line).length / characterWidth)),
+      0,
+    );
+    // Name/date, the meta spacing, card padding and the page counter account
+    // for about four extra text rows in the actual book layout.
+    return bodyRows + 4;
+  }
+
+  function paginateBookEntries(entries) {
+    const rowBudget = window.matchMedia("(max-width: 720px)").matches ? 16 : 22;
+    const pages = [];
+    let page = [];
+    let usedRows = 0;
+    for (const entry of entries) {
+      const rows = estimateBookMessageRows(entry);
+      if (page.length && usedRows + rows > rowBudget) {
+        pages.push(page);
+        page = [];
+        usedRows = 0;
+      }
+      page.push(entry);
+      usedRows += rows;
+    }
+    if (page.length) pages.push(page);
+    return pages;
+  }
+
   function renderProductionBook(entries, stopped = false) {
     if (!bookMessagePage) return;
     bookMessagePage.textContent = "";
-    bookPages = entries.map((entry) => [entry]);
+    bookPages = paginateBookEntries(entries);
     if (!bookPages.length) {
       const card = document.createElement("div");
       card.className = "book-message-card";
@@ -2833,7 +2887,7 @@ export function createWholePlanetExperience({
     if (audio.paused) void playMusic();
     else pauseMusic();
   });
-  nextButton?.addEventListener("click", () => loadTrack(currentTrackIndex + 1, true));
+  nextButton?.addEventListener("click", () => loadTrack(getNextRandomTrackIndex(), true));
   lyricsButton?.addEventListener("click", () => {
     const isOpen = lyricsPanel?.classList.toggle("is-open") === true;
     lyricsButton.classList.toggle("is-active", isOpen);
@@ -2903,7 +2957,7 @@ export function createWholePlanetExperience({
   });
   audio.addEventListener("play", syncMusicUi);
   audio.addEventListener("pause", syncMusicUi);
-  audio.addEventListener("ended", () => loadTrack(currentTrackIndex + 1, true));
+  audio.addEventListener("ended", () => loadTrack(getNextRandomTrackIndex(), true));
   // Match the production page: start inside the first user gesture, before the
   // flight controls consume it. This is the path iOS Safari permits for audio.
   window.addEventListener("pointerdown", unlockMusic, { capture: true, once: true });
