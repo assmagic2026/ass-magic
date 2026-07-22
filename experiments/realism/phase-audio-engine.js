@@ -13,6 +13,8 @@
   let decodePromise = null;
   const activeSources = new Set();
   let unlockAttempts = 0;
+  let keepAliveSource = null;
+  let cueSequence = 0;
 
   document.documentElement.dataset.phaseAudioEngine = "loading";
   document.documentElement.dataset.phaseAudioContext = "uninitialized";
@@ -88,9 +90,35 @@
     }
   }
 
-  // Fetch the small encoded asset immediately, but do not create an
-  // AudioContext or decode it during opening. On mobile Safari a context made
-  // before user input can keep decodeAudioData pending and hold the loader.
+  function ensureKeepAlive(targetContext) {
+    if (!targetContext || keepAliveSource) return Boolean(keepAliveSource);
+    try {
+      // Keep the already-authorised Web Audio output graph active while the
+      // separate HTMLMediaElement continues playing music. A short looping
+      // zero buffer avoids Safari releasing an otherwise idle effects stream
+      // between the user's first touch and a later collision.
+      const silentLoop = targetContext.createBuffer(
+        1,
+        128,
+        targetContext.sampleRate || 44100,
+      );
+      const source = targetContext.createBufferSource();
+      source.buffer = silentLoop;
+      source.loop = true;
+      source.connect(targetContext.destination);
+      source.start(0);
+      keepAliveSource = source;
+      document.documentElement.dataset.phaseAudioKeepAlive = "running";
+      return true;
+    } catch {
+      document.documentElement.dataset.phaseAudioKeepAlive = "unavailable";
+      return false;
+    }
+  }
+
+  // Fetch the small encoded asset immediately. Decoding starts during the
+  // curtain, but neither this fetch nor decoding is part of the curtain's
+  // awaited critical work.
   const ready = fetch(audioUrl, { cache: "force-cache" })
     .then((response) => {
       if (!response.ok) throw new Error(`phase-audio-${response.status}`);
@@ -158,6 +186,15 @@
     return decodePromise;
   }
 
+  // Decode during the opening curtain as the previously reliable version did,
+  // but never add this promise to the curtain's critical loads. The first
+  // touch therefore only has to authorise output; it does not also pay the MP3
+  // decode cost that caused the first several collision cues to be missed.
+  const decodedReady = (() => {
+    const targetContext = ensureContext();
+    return targetContext ? decode(targetContext) : Promise.resolve(null);
+  })();
+
   function preparePlayback() {
     if (syncStatus()) return Promise.resolve(true);
     const targetContext = ensureContext();
@@ -177,6 +214,7 @@
     // may be rejected by WebKit while the following touchend/click succeeds.
     const resumeAttempt = resume(targetContext);
     const primed = primeOutput(targetContext);
+    ensureKeepAlive(targetContext);
     const decodeAttempt = decode(targetContext);
     document.documentElement.dataset.phaseAudioUnlockAttempts = String(unlockAttempts);
     document.documentElement.dataset.phaseAudioPrime = primed ? "started" : "unavailable";
@@ -187,7 +225,7 @@
     });
   }
 
-  function play(label = "dematerialize") {
+  function startCue(label, route = "buffer") {
     if (!context || !buffer || context.state !== "running") return false;
     const source = context.createBufferSource();
     const gain = context.createGain();
@@ -201,12 +239,34 @@
       activeSources.delete(source);
     };
     source.start(context.currentTime);
-    document.documentElement.dataset.phaseAudioLast = `${label}-buffer`;
+    document.documentElement.dataset.phaseAudioLast = `${label}-${route}`;
+    return true;
+  }
+
+  function play(label = "dematerialize") {
+    if (startCue(label)) return true;
+    if (!context || !buffer || !hasGesture || context.state === "closed") return false;
+
+    // Music may already be audible while iOS has temporarily interrupted the
+    // effects context. Try to recover at the exact cue request and keep only a
+    // very short timing window; an old cue is never replayed seconds later.
+    const cueId = ++cueSequence;
+    const requestedAt = performance.now();
+    document.documentElement.dataset.phaseAudioLast = `${label}-recovering`;
+    void Promise.race([
+      resume(context),
+      new Promise((resolve) => window.setTimeout(() => resolve(false), 220)),
+    ]).then((running) => {
+      const onTime = performance.now() - requestedAt <= 240;
+      if (running && onTime && startCue(label, "recovered")) return;
+      document.documentElement.dataset.phaseAudioLast = `${label}-missed-${cueId}`;
+    });
     return true;
   }
 
   window.__realismPhaseAudioEngine = {
     ready,
+    decodedReady,
     unlock,
     ensurePlayback() {
       return hasGesture ? preparePlayback() : Promise.resolve(false);
@@ -248,7 +308,7 @@
     // If music was allowed to start automatically, the origin already has
     // audible playback permission; wake the low-latency effects context too.
     document.querySelector("#experience-audio")?.addEventListener("playing", () => {
-      void unlock();
+      void unlock("music-playing");
     });
   }, { once: true });
 })();

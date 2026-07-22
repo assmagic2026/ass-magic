@@ -590,6 +590,7 @@ export function createWholePlanetExperience({
   const overlayClose = document.querySelector("#experience-modal-close");
   const toast = document.querySelector("#experience-toast");
   const audio = document.querySelector("#experience-audio");
+  const phaseAudioEngine = window.__realismPhaseAudioEngine || null;
   const bookOverlay = document.querySelector("#book-overlay");
   const bookBackdrop = document.querySelector("#book-backdrop");
   const bookClose = document.querySelector("#book-close");
@@ -885,6 +886,14 @@ export function createWholePlanetExperience({
     try {
       await audio.play();
       audioUnlocked = true;
+      // Once HTML music owns the iOS audio session, retry the effects context.
+      // This does not reroute or process the music, so its pitch is untouched.
+      const effectsReady = phaseAudioEngine?.ensurePlayback?.();
+      if (effectsReady) {
+        void Promise.resolve(effectsReady).then((playable) => {
+          canvas.dataset.phaseAudioMusicSync = playable ? "running" : "waiting-for-gesture";
+        });
+      }
     } catch (error) {
       console.warn("Music playback is waiting for a user gesture.", error);
     }
@@ -924,7 +933,7 @@ export function createWholePlanetExperience({
     }
   }
 
-  function unlockMusic() {
+  function unlockMusic(event) {
     if (audioUnlocked || musicGesturePending || state.phase === "challenge" || state.modalOpen) return;
     for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
       try {
@@ -934,7 +943,12 @@ export function createWholePlanetExperience({
       }
     }
     musicGesturePending = true;
-    void playMusic().finally(() => {
+    const musicAttempt = playMusic();
+    // playMusic() invokes audio.play() synchronously before its first await.
+    // Retry Web Audio immediately afterwards in the same trusted event so the
+    // music and effects join the same active iOS audio session.
+    void phaseAudioEngine?.unlock?.(`music-after-${event?.type || "gesture"}`);
+    void musicAttempt.finally(() => {
       musicGesturePending = false;
     });
   }
@@ -2984,10 +2998,13 @@ export function createWholePlanetExperience({
   audio.addEventListener("ended", () => loadTrack(getNextRandomTrackIndex(), true));
   // Match the production page: start inside the first user gesture, before the
   // flight controls consume it. This is the path iOS Safari permits for audio.
-  window.addEventListener("pointerdown", unlockMusic, { capture: true, once: true });
-  window.addEventListener("touchstart", unlockMusic, { capture: true, once: true, passive: true });
+  window.addEventListener("pointerdown", unlockMusic, { capture: true, passive: true });
+  window.addEventListener("pointerup", unlockMusic, { capture: true, passive: true });
+  window.addEventListener("touchstart", unlockMusic, { capture: true, passive: true });
+  window.addEventListener("touchend", unlockMusic, { capture: true, passive: true });
+  window.addEventListener("click", unlockMusic, { capture: true, passive: true });
   canvas.addEventListener("pointerdown", unlockMusic);
-  window.addEventListener("keydown", unlockMusic, { once: true });
+  window.addEventListener("keydown", unlockMusic);
 
   loadTrack(currentTrackIndex, false);
   // Begin the first track shortly after the flight appears.  Mobile browsers that
