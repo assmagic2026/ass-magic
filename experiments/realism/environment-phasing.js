@@ -193,16 +193,26 @@ export function createEnvironmentPhasing({
     document.querySelector("#environment-rematerialize-audio"),
   ].map((element) => element || new Audio(phaseAudioUrl));
   for (const audio of phaseMediaPool) {
-    audio.preload = "auto";
+    audio.preload = "metadata";
     audio.volume = 0.82;
     audio.playsInline = true;
     if (!audio.src) audio.src = phaseAudioUrl;
-    audio.load();
   }
   let phaseMediaIndex = 0;
+  let phaseInputReceived = false;
 
   function unlockPhaseAudio() {
-    phaseAudioEngine?.unlock?.();
+    phaseInputReceived = true;
+    const unlockResult = phaseAudioEngine?.unlock?.();
+    void Promise.resolve(unlockResult).then((playable) => {
+      const useMediaFallback = phaseAudioEngine?.failed === true;
+      canvas.dataset.environmentPhaseAudioReady = playable
+        ? "buffer"
+        : useMediaFallback ? "media" : "preparing";
+      canvas.dataset.environmentPhaseAudioGate = playable
+        ? "armed"
+        : useMediaFallback ? "fallback" : "preparing";
+    });
     for (const audio of phaseMediaPool) {
       // Never restart an already prepared/playing cue on a second touch event.
       if (audio.readyState === 0) audio.load();
@@ -218,7 +228,7 @@ export function createEnvironmentPhasing({
   document.addEventListener("visibilitychange", recoverPhaseAudio);
   window.addEventListener("pageshow", recoverPhaseAudio);
   void phaseAudioEngine?.ready?.then((buffer) => {
-    canvas.dataset.environmentPhaseAudioReady = buffer ? "buffer" : "media";
+    canvas.dataset.environmentPhaseAudioReady = buffer ? "encoded" : "media";
   });
 
   const materialStates = new Map();
@@ -677,19 +687,20 @@ export function createEnvironmentPhasing({
       protectedEventNearby = isNearProtected(predictedPosition, PHASE_CONFIG.protectedPadding);
     }
     const cooldownAllowsEmergency = state.cooldown <= 0 || minimumGap < -7;
-    const firstCueArmed = !phaseAudioEngine
-      || phaseAudioEngine.hasGesture
-      || phaseAudioEngine.contextState === "running";
-    if (!firstCueArmed && state.phaseStarts === 0) {
-      // The flight begins automatically, but audible media cannot legally
-      // start on some phones until the first touch. Keep terrain assistance in
-      // control instead of showing a silent first phase and replaying its cue
-      // later at the wrong moment.
-      canvas.dataset.environmentPhaseAudioGate = "waiting-for-input";
+    const phaseCueReady = phaseAudioEngine
+      ? phaseAudioEngine.isPlayable || (phaseAudioEngine.failed && phaseInputReceived)
+      : phaseInputReceived;
+    if (!phaseCueReady) {
+      // Do not begin a visual phase while the corresponding first sample is
+      // still waiting on Safari's asynchronous context resume/decode. Terrain
+      // assistance remains active during this short preparation window.
+      canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine.hasGesture
+        ? "preparing"
+        : "waiting-for-input";
       setPhase("normal");
       return false;
     }
-    canvas.dataset.environmentPhaseAudioGate = "armed";
+    canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine?.isPlayable ? "armed" : "fallback";
     if (
       cooldownAllowsEmergency
       && !protectedEventNearby
@@ -923,7 +934,7 @@ export function createEnvironmentPhasing({
   canvas.dataset.environmentPlayerVisible = playerObject.visible ? "visible" : "hidden";
   canvas.dataset.environmentPhaseSound = "ready";
   canvas.dataset.environmentPhaseAudioReady = "loading";
-  canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine ? "waiting-for-input" : "armed";
+  canvas.dataset.environmentPhaseAudioGate = phaseAudioEngine ? "waiting-for-input" : "fallback";
   canvas.dataset.environmentPhaseGuard = "0.00";
   return {
     state,

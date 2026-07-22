@@ -5,7 +5,7 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-24";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-25";
 import {
   createFlightPlayer,
   updateFlightPlayer,
@@ -221,9 +221,6 @@ const textureDisposables = [];
 const surfaceGeometryDisposables = [];
 const surfaceMaterialDisposables = [];
 const openingCriticalLoads = [];
-if (window.__realismPhaseAudioEngine?.ready) {
-  openingCriticalLoads.push(window.__realismPhaseAudioEngine.ready);
-}
 const movingSurfaceLayers = [];
 const cloudVolumes = [];
 let nightCrystals = null;
@@ -589,7 +586,11 @@ if (settings.mode === "realism" && settings.view === "flight") {
   if (bootParams.get("phaseaudiotest") === "1") {
     canvas.dataset.phaseAudioTest = "armed";
     window.addEventListener("pointerdown", () => {
-      environmentPhasing?.debugPlayAudio("dematerialize");
+      const unlockResult = window.__realismPhaseAudioEngine?.unlock?.();
+      void Promise.resolve(unlockResult).then((playable) => {
+        canvas.dataset.phaseAudioTest = playable ? "playing" : "unavailable";
+        if (playable) environmentPhasing?.debugPlayAudio("dematerialize");
+      });
     }, { capture: true, once: true });
   }
 }
