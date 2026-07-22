@@ -38,7 +38,102 @@ body {
 #scene {
   display: block;
   cursor: grab;
-  transition: filter 900ms ease;
+  transition: filter 900ms ease, opacity 360ms ease;
+}
+
+#opening-curtain {
+  --opening-sun-x: 80%;
+  --opening-sun-y: 50%;
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+  background:
+    radial-gradient(
+      circle at var(--opening-sun-x) var(--opening-sun-y),
+      rgba(255, 251, 191, 1) 0,
+      rgba(255, 218, 107, 0.98) 1.1%,
+      rgba(255, 127, 69, 0.72) 3.2%,
+      rgba(255, 92, 64, 0.2) 7%,
+      transparent 13%
+    ),
+    linear-gradient(
+      180deg,
+      #17376f 0%,
+      #243f78 24%,
+      #775170 57%,
+      #c96f5a 78%,
+      #361e29 100%
+    );
+  transition: opacity 780ms cubic-bezier(.22,.68,.24,1), visibility 780ms step-end;
+}
+
+#opening-curtain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 71%, rgba(255, 167, 117, 0.12), transparent 31%),
+    radial-gradient(ellipse at 50% 50%, transparent 48%, rgba(8, 15, 29, 0.22) 100%);
+}
+
+#opening-landscape {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  width: 100%;
+  height: 42%;
+}
+
+.opening-landscape-far {
+  fill: url(#opening-far-gradient);
+}
+
+.opening-landscape-near {
+  fill: url(#opening-near-gradient);
+}
+
+#opening-brand {
+  position: absolute;
+  z-index: 2;
+  top: max(18px, calc(env(safe-area-inset-top) + 10px));
+  left: 50%;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: clamp(16px, 3.2vw, 25px);
+  font-weight: 500;
+  letter-spacing: 0.3em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  text-shadow: 0 1px 18px rgba(10, 20, 34, 0.3);
+}
+
+body.is-booting:not(.is-opening-revealing) #scene {
+  opacity: 0;
+}
+
+body.is-booting #site-title,
+body.is-booting #menu-toggle,
+body.is-booting .flight-stick,
+body.is-booting .flight-speed-panel,
+body.is-booting .flight-readout,
+body.is-booting .experience-music {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+
+body.is-opening-revealing #opening-curtain {
+  opacity: 0;
+  visibility: hidden;
+}
+
+body.is-opening-revealing #scene {
+  opacity: 1;
 }
 
 body.is-monochrome #scene {
@@ -929,6 +1024,15 @@ body.flight-mode .help {
 }
 
 @media (max-width: 680px) {
+  #opening-curtain {
+    --opening-sun-x: 52%;
+    --opening-sun-y: 47%;
+  }
+
+  #opening-landscape {
+    height: 39%;
+  }
+
   .masthead {
     top: max(18px, env(safe-area-inset-top));
     left: max(16px, env(safe-area-inset-left));
