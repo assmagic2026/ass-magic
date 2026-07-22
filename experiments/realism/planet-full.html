@@ -10,25 +10,19 @@
     <link rel="preload" href="./assets/rocks-ground-04-normal-gl-1k.jpg" as="image">
     <link rel="preload" href="../../list/animalrobot/cover-17.jpg" as="image">
     <link rel="stylesheet" href="../../style.css?v=realism-136">
-    <link rel="stylesheet" href="./style.css?v=realism-151">
+    <link rel="stylesheet" href="./style.css?v=realism-152">
   </head>
   <body class="flight-mode is-booting">
     <div id="opening-curtain" aria-hidden="true">
       <div id="opening-brand">ASS MAGIC</div>
-      <svg id="opening-landscape" viewBox="0 0 1000 400" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <linearGradient id="opening-far-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#57404d" stop-opacity="0.54"></stop>
-            <stop offset="1" stop-color="#201c25" stop-opacity="0.72"></stop>
-          </linearGradient>
-          <linearGradient id="opening-near-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stop-color="#2b242c"></stop>
-            <stop offset="1" stop-color="#090d12"></stop>
-          </linearGradient>
-        </defs>
-        <path class="opening-landscape-far" d="M0,302 C95,274 150,276 223,251 C312,221 360,235 444,208 C535,177 602,207 680,171 C765,132 828,163 1000,111 L1000,400 L0,400 Z"></path>
-        <path class="opening-landscape-near" d="M0,340 C103,316 159,329 244,297 C330,264 389,287 486,250 C594,209 665,251 757,205 C846,161 899,188 1000,166 L1000,400 L0,400 Z"></path>
-      </svg>
+      <div id="opening-planet-wrap">
+        <div id="opening-planet" aria-hidden="true">
+          <div class="opening-planet-surface"></div>
+          <div class="opening-planet-clouds"></div>
+          <div class="opening-planet-shade"></div>
+        </div>
+      </div>
+      <div id="opening-loading"><span>LOADING</span><i></i><i></i><i></i></div>
     </div>
     <main id="stage">
       <canvas id="scene" aria-label="惑星全体のリアル表現負荷試験"></canvas>
@@ -241,6 +235,6 @@
       </div>
     </div>
 
-    <script type="module" src="./planet-full.js?v=realism-228"></script>
+    <script type="module" src="./planet-full.js?v=realism-230"></script>
   </body>
 </html>

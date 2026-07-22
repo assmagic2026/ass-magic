@@ -27,7 +27,7 @@ const WATER_LEVEL = -9;
 const WATER_RADIUS = PLANET_RADIUS + WATER_LEVEL;
 const WIND_VENT_DIRECTION = WORLD_UP.clone();
 const WIND_VENT_DEPTH = 12;
-const WIND_VENT_CORE_RADIUS = 0.03;
+const WIND_VENT_CORE_RADIUS = 0.012;
 const WIND_VENT_FIELD_RADIUS = 0.16;
 const FEATURE_AXIS_A = new THREE.Vector3().crossVectors(WORLD_UP, SUN_DIRECTION).normalize();
 const FEATURE_AXIS_B = new THREE.Vector3().crossVectors(SUN_DIRECTION, FEATURE_AXIS_A).normalize();
@@ -233,14 +233,19 @@ planet.receiveShadow = realismShadowsEnabled;
 scene.add(planet);
 const windVent = settings.mode === "realism" ? createPolarWindVent() : null;
 if (windVent) scene.add(windVent);
-const water = settings.mode === "realism" ? createWaterSurface() : null;
+const deferWaterSystems = settings.mode === "realism"
+  && settings.view === "flight"
+  && bootParams.get("start") !== "water"
+  && bootParams.get("waterboot") !== "1";
+let water = settings.mode === "realism" && !deferWaterSystems ? createWaterSurface() : null;
 if (water) scene.add(water);
 const cave = null;
 const sky = settings.view === "flight" ? createSky() : null;
 if (sky) scene.add(sky);
-const waterSpray = settings.mode === "realism" && settings.view === "flight"
+let waterSpray = settings.mode === "realism" && settings.view === "flight" && !deferWaterSystems
   ? createWaterSpray()
   : null;
+canvas.dataset.waterSystems = deferWaterSystems ? "deferred" : "ready";
 addLighting();
 const atmosphere = settings.view === "orbit" ? createAtmosphere() : null;
 if (atmosphere) scene.add(atmosphere);
@@ -729,148 +734,158 @@ function createPolarWindVent() {
   group.position.copy(WIND_VENT_DIRECTION).multiplyScalar(floorRadius + 0.12);
   group.quaternion.setFromUnitVectors(WORLD_UP, WIND_VENT_DIRECTION);
 
-  const throatMaterial = new THREE.MeshStandardMaterial({
-    color: 0x170906,
-    emissive: 0x080201,
-    emissiveIntensity: 0.12,
-    roughness: 1,
-    metalness: 0,
+  const throatMaterial = new THREE.MeshBasicMaterial({
+    color: 0x000000,
     side: THREE.DoubleSide,
+    toneMapped: false,
   });
   const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2b130d,
-    roughness: 0.96,
+    color: 0x070707,
+    roughness: 1,
     metalness: 0,
     side: THREE.DoubleSide,
   });
-  const rimMaterial = new THREE.MeshStandardMaterial({
-    color: 0x6f3d29,
-    roughness: 0.98,
-    metalness: 0,
-  });
-  const foldMaterial = new THREE.MeshStandardMaterial({
-    color: 0x5e3021,
-    roughness: 1,
-    metalness: 0,
-  });
-
-  const throat = new THREE.Mesh(new THREE.CircleGeometry(5.8, 64), throatMaterial);
+  const throat = new THREE.Mesh(new THREE.CircleGeometry(2.2, 48), throatMaterial);
   throat.rotation.x = -Math.PI * 0.5;
-  throat.position.y = -0.32;
+  throat.position.y = 0.04;
   throat.renderOrder = 1;
   group.add(throat);
 
-  const wall = new THREE.Mesh(
-    new THREE.CylinderGeometry(9.1, 6.4, WIND_VENT_DEPTH, 64, 4, true),
-    wallMaterial,
-  );
-  wall.position.y = WIND_VENT_DEPTH * 0.48;
+  const wallGeometry = new THREE.CylinderGeometry(3.05, 2.25, WIND_VENT_DEPTH, 48, 4, true);
+  const wallPositions = wallGeometry.attributes.position;
+  for (let index = 0; index < wallPositions.count; index += 1) {
+    const x = wallPositions.getX(index);
+    const y = wallPositions.getY(index);
+    const z = wallPositions.getZ(index);
+    const angle = Math.atan2(z, x);
+    const irregularity = 1
+      + Math.sin(angle * 5 + y * 0.21) * 0.035
+      + Math.sin(angle * 11 - y * 0.16) * 0.018;
+    wallPositions.setXYZ(index, x * irregularity, y, z * irregularity);
+  }
+  wallGeometry.computeVertexNormals();
+  const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+  wall.position.y = WIND_VENT_DEPTH * 0.5 - 0.45;
   group.add(wall);
 
-  const rim = new THREE.Mesh(
-    new THREE.TorusGeometry(10.2, 3.25, 18, 96),
-    rimMaterial,
-  );
-  rim.rotation.x = Math.PI * 0.5;
-  rim.position.y = WIND_VENT_DEPTH - 0.4;
-  rim.scale.z = 0.9;
-  group.add(rim);
-
-  const foldGeometry = new THREE.SphereGeometry(1, 12, 8);
-  const folds = new THREE.InstancedMesh(foldGeometry, foldMaterial, 18);
-  const foldMatrix = new THREE.Matrix4();
-  const foldPosition = new THREE.Vector3();
-  const foldScale = new THREE.Vector3();
-  const foldRotation = new THREE.Quaternion();
-  const foldEuler = new THREE.Euler();
-  for (let index = 0; index < 18; index += 1) {
-    const angle = (index / 18) * Math.PI * 2;
-    const alternating = index % 2 === 0 ? 1 : 0.74;
-    const radius = 11.7 + Math.sin(index * 2.17) * 0.65;
-    foldPosition.set(
-      Math.cos(angle) * radius,
-      WIND_VENT_DEPTH - 0.1 + Math.sin(index * 1.31) * 0.38,
-      Math.sin(angle) * radius,
-    );
-    foldScale.set(3.15 * alternating, 0.72, 1.46 + alternating * 0.28);
-    foldEuler.set(0, -angle, (index % 3 - 1) * 0.08);
-    foldRotation.setFromEuler(foldEuler);
-    foldMatrix.compose(foldPosition, foldRotation, foldScale);
-    folds.setMatrixAt(index, foldMatrix);
-  }
-  folds.instanceMatrix.needsUpdate = true;
-  group.add(folds);
-
-  const streakCount = mobileHighProfile ? 72 : 112;
-  const phases = new Float32Array(streakCount);
-  const angles = new Float32Array(streakCount);
-  const radii = new Float32Array(streakCount);
-  const speeds = new Float32Array(streakCount);
+  const dustCount = mobileHighProfile ? 120 : 180;
+  const dustPositions = new Float32Array(dustCount * 3);
+  const phases = new Float32Array(dustCount);
+  const angles = new Float32Array(dustCount);
+  const radii = new Float32Array(dustCount);
+  const speeds = new Float32Array(dustCount);
   const random = createSeededRandom(61093);
-  for (let index = 0; index < streakCount; index += 1) {
+  for (let index = 0; index < dustCount; index += 1) {
     phases[index] = random();
     angles[index] = random() * Math.PI * 2;
-    radii[index] = 1.8 + Math.pow(random(), 0.65) * 8.5;
-    speeds[index] = 0.68 + random() * 0.92;
+    radii[index] = 0.4 + Math.pow(random(), 0.72) * 3.8;
+    speeds[index] = 0.72 + random() * 0.8;
   }
-  const streakGeometry = new THREE.CylinderGeometry(0.055, 0.018, 1, 5, 1, true);
-  const streakMaterial = new THREE.MeshBasicMaterial({
-    color: 0xf2dfc2,
+  const dustGeometry = new THREE.BufferGeometry();
+  dustGeometry.setAttribute("position", new THREE.BufferAttribute(dustPositions, 3));
+  const dustMaterial = new THREE.PointsMaterial({
+    map: createSoftParticleTexture(),
+    color: 0xb8a78d,
+    size: 0.9,
     transparent: true,
-    opacity: 0.32,
+    opacity: 0.26,
+    alphaTest: 0.018,
     depthWrite: false,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-    toneMapped: false,
+    sizeAttenuation: true,
   });
-  const streaks = new THREE.InstancedMesh(streakGeometry, streakMaterial, streakCount);
-  streaks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  streaks.frustumCulled = false;
-  streaks.renderOrder = 4;
-  group.add(streaks);
+  const dust = new THREE.Points(dustGeometry, dustMaterial);
+  dust.frustumCulled = false;
+  dust.renderOrder = 4;
+  group.add(dust);
 
-  group.userData.streaks = streaks;
+  const hazeCount = mobileHighProfile ? 20 : 32;
+  const hazePositions = new Float32Array(hazeCount * 3);
+  const hazePhases = new Float32Array(hazeCount);
+  const hazeAngles = new Float32Array(hazeCount);
+  for (let index = 0; index < hazeCount; index += 1) {
+    hazePhases[index] = random();
+    hazeAngles[index] = random() * Math.PI * 2;
+  }
+  const hazeGeometry = new THREE.BufferGeometry();
+  hazeGeometry.setAttribute("position", new THREE.BufferAttribute(hazePositions, 3));
+  const haze = new THREE.Points(
+    hazeGeometry,
+    new THREE.PointsMaterial({
+      map: createSoftParticleTexture(),
+      color: 0xd7d0c2,
+      size: 7.5,
+      transparent: true,
+      opacity: 0.035,
+      alphaTest: 0.004,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      sizeAttenuation: true,
+    }),
+  );
+  haze.frustumCulled = false;
+  haze.renderOrder = 3;
+  group.add(haze);
+
+  group.userData.dust = dust;
+  group.userData.dustPositions = dustPositions;
   group.userData.phases = phases;
   group.userData.angles = angles;
   group.userData.radii = radii;
   group.userData.speeds = speeds;
-  group.userData.streakMatrix = new THREE.Matrix4();
-  group.userData.streakPosition = new THREE.Vector3();
-  group.userData.streakScale = new THREE.Vector3();
-  group.userData.streakRotation = new THREE.Quaternion();
+  group.userData.haze = haze;
+  group.userData.hazePositions = hazePositions;
+  group.userData.hazePhases = hazePhases;
+  group.userData.hazeAngles = hazeAngles;
+  group.userData.probeDirection = new THREE.Vector3();
   canvas.dataset.windVent = "ready";
   return group;
 }
 
 function updatePolarWindVent(vent, time) {
   const {
-    streaks,
+    dust,
+    dustPositions,
     phases,
     angles,
     radii,
     speeds,
-    streakMatrix,
-    streakPosition,
-    streakScale,
-    streakRotation,
+    haze,
+    hazePositions,
+    hazePhases,
+    hazeAngles,
+    probeDirection,
   } = vent.userData;
-  for (let index = 0; index < phases.length; index += 1) {
-    const progress = (phases[index] + time * speeds[index] * 0.42) % 1;
-    const gust = 0.82 + Math.sin(time * 8.4 + index * 1.73) * 0.18;
-    const height = WIND_VENT_DEPTH + 1.5 + progress * 76;
-    const widening = radii[index] + progress * progress * 15;
-    const angle = angles[index] + time * (0.75 + speeds[index] * 0.34) + progress * 5.2;
-    const x = Math.cos(angle) * widening;
-    const z = Math.sin(angle) * widening;
-    const length = (3.2 + progress * 9.5) * gust;
-    streakPosition.set(x, height + length * 0.5, z);
-    streakScale.set(0.5 + progress * 0.28, length, 0.5 + progress * 0.28);
-    streakRotation.setFromAxisAngle(WORLD_UP, angle + progress * 0.35);
-    streakMatrix.compose(streakPosition, streakRotation, streakScale);
-    streaks.setMatrixAt(index, streakMatrix);
+  if (flight.position.lengthSq() > 0.0001) {
+    probeDirection.copy(flight.position).normalize();
+    const distance = chordDistance(probeDirection, WIND_VENT_DIRECTION);
+    const visible = distance < 0.42;
+    dust.visible = visible;
+    haze.visible = visible;
+    if (!visible) return;
   }
-  streaks.instanceMatrix.needsUpdate = true;
-  streaks.material.opacity = 0.28 + Math.sin(time * 5.7) * 0.06;
+  for (let index = 0; index < phases.length; index += 1) {
+    const progress = (phases[index] + time * speeds[index] * 0.19) % 1;
+    const turbulence = Math.sin(time * 3.7 + index * 1.91 + progress * 8.2);
+    const widening = radii[index] + Math.pow(progress, 1.45) * 11 + turbulence * 0.7;
+    const angle = angles[index] + time * (0.48 + speeds[index] * 0.16) + progress * 3.8;
+    const offset = index * 3;
+    dustPositions[offset] = Math.cos(angle) * widening;
+    dustPositions[offset + 1] = WIND_VENT_DEPTH + 0.8 + progress * 68;
+    dustPositions[offset + 2] = Math.sin(angle) * widening;
+  }
+  dust.geometry.attributes.position.needsUpdate = true;
+  dust.material.opacity = 0.22 + Math.sin(time * 2.1) * 0.035;
+
+  for (let index = 0; index < hazePhases.length; index += 1) {
+    const progress = (hazePhases[index] + time * (0.07 + (index % 5) * 0.008)) % 1;
+    const angle = hazeAngles[index] + time * 0.15 + progress * 2.4;
+    const radius = 0.8 + progress * 8.5 + Math.sin(time * 0.9 + index) * 0.8;
+    const offset = index * 3;
+    hazePositions[offset] = Math.cos(angle) * radius;
+    hazePositions[offset + 1] = WIND_VENT_DEPTH + 1.5 + progress * 48;
+    hazePositions[offset + 2] = Math.sin(angle) * radius;
+  }
+  haze.geometry.attributes.position.needsUpdate = true;
 }
 
 function terrainHeightFromDirection(direction) {
@@ -939,7 +954,6 @@ function terrainFeatureHeight(direction) {
   }
   const ventDistance = chordDistance(direction, WIND_VENT_DIRECTION);
   height -= WIND_VENT_DEPTH * Math.exp(-Math.pow(ventDistance / WIND_VENT_CORE_RADIUS, 2));
-  height += 4.3 * Math.exp(-Math.pow((ventDistance - 0.055) / 0.018, 2));
   return height;
 }
 
@@ -995,7 +1009,7 @@ function getTerrainRadius(direction) {
 
 function getSurfaceRadius(direction) {
   const terrainRadius = getTerrainRadius(direction);
-  if (chordDistance(direction, WIND_VENT_DIRECTION) < 0.09) return terrainRadius;
+  if (chordDistance(direction, WIND_VENT_DIRECTION) < 0.04) return terrainRadius;
   return settings.mode === "realism" ? Math.max(terrainRadius, WATER_RADIUS) : terrainRadius;
 }
 
@@ -1527,6 +1541,18 @@ function scheduleWaterPlayerReflection(delayMs = 0) {
   });
 }
 
+function installDeferredWaterSystems() {
+  if (settings.mode !== "realism") return;
+  if (!water) {
+    water = createWaterSurface();
+    scene.add(water);
+  }
+  if (settings.view === "flight" && !waterSpray) {
+    waterSpray = createWaterSpray();
+  }
+  canvas.dataset.waterSystems = "ready";
+}
+
 function scheduleDeferredOpeningAssets() {
   const scheduleIdle = (callback, delay, timeout) => {
     window.setTimeout(() => {
@@ -1537,6 +1563,9 @@ function scheduleDeferredOpeningAssets() {
       }
     }, delay);
   };
+  if (deferWaterSystems) {
+    scheduleIdle(installDeferredWaterSystems, 5200, 4200);
+  }
   scheduleIdle(() => {
     void specialLandmarks.loadDeferredBookModel?.().catch(() => {});
   }, 12000, 4000);
