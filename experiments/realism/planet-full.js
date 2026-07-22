@@ -5,13 +5,13 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-3";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-16";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-18";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-47";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-148";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-165";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-166";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -350,8 +350,8 @@ let cloudPassageMix = 0;
 const flight = {
   position: new THREE.Vector3(),
   forward: new THREE.Vector3(),
-  speed: 30,
-  speedSelection: 30,
+  speed: 40,
+  speedSelection: 40,
   holdAccel: 0,
   radialSpeed: 0,
   cruiseAltitude: 10,
@@ -4748,7 +4748,7 @@ function resetFlight() {
   // Give the opening ridge a little extra clearance so the initial terrain
   // probe never enters the phasing threshold before the player can steer.
   if (isSunsetStart) flight.cruiseAltitude = Math.max(flight.cruiseAltitude, 28);
-  const startSurfaceRadius = getSurfaceRadius(startDirection);
+  let startSurfaceRadius = getSurfaceRadius(startDirection);
   let startRadius = startSurfaceRadius + PLAYER_CLEARANCE + flight.cruiseAltitude;
   if (startPreset === "day") {
     const safeStartForward = SUN_DIRECTION.clone()
@@ -4817,6 +4817,22 @@ function resetFlight() {
     flight.forward.copy(targetDirection)
       .addScaledVector(startDirection, -targetDirection.dot(startDirection))
       .normalize();
+  }
+  if (isSunsetStart) {
+    // Move the established opening a little way along its own open corridor,
+    // rather than changing its sun-facing composition.  This is the requested
+    // slightly-forward spawn while retaining the terrain-safe dusk framing.
+    const startAdvanceDistance = 14;
+    const startAdvanceAxis = new THREE.Vector3().crossVectors(startDirection, flight.forward);
+    if (startAdvanceAxis.lengthSq() > 0.0001) {
+      startAdvanceAxis.normalize();
+      startDirection.applyAxisAngle(startAdvanceAxis, startAdvanceDistance / Math.max(startRadius, 1)).normalize();
+      startSurfaceRadius = getSurfaceRadius(startDirection);
+      startRadius = startSurfaceRadius + PLAYER_CLEARANCE + flight.cruiseAltitude;
+      flight.position.copy(startDirection).multiplyScalar(startRadius);
+      flight.forward.addScaledVector(startDirection, -flight.forward.dot(startDirection)).normalize();
+      canvas.dataset.startAdvance = String(startAdvanceDistance);
+    }
   }
   let resetUp = startDirection;
   let resetSurfaceRadius = startRadius - PLAYER_CLEARANCE - flight.cruiseAltitude;
