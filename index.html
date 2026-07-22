@@ -4,6 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>ASS MAGIC | Official Site</title>
+  <script>
+    (() => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('legacy') === '1') return;
+      const destination = new URL('experiments/realism/planet-full.html', window.location.href);
+      destination.searchParams.set('mode', 'realism');
+      destination.searchParams.set('quality', 'high');
+      destination.searchParams.set('view', 'flight');
+      window.location.replace(destination.href);
+    })();
+  </script>
   <link rel="stylesheet" href="style.css?v=20260507-book-cache-fix">
   <script type="module" src="main.js?v=20260507-book-cache-fix"></script>
 </head>

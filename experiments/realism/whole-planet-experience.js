@@ -1250,11 +1250,30 @@ export function createWholePlanetExperience({
     state.returnRecorded = true;
     const playerName = getBookPlayerName();
     if (!playerName) return;
-    const message = `${RETURN_HISTORY_PREFIX}${JSON.stringify({
+    const createdAt = new Date().toISOString();
+    const historyEntry = {
       playerName,
       isTrueReturn: Boolean(isTrueReturn),
-      createdAt: new Date().toISOString(),
-    })}`;
+      createdAt,
+    };
+    try {
+      const response = await fetch(
+        getReturnHistoryUrl("?select=id,player_name,is_true_return,created_at"),
+        {
+          method: "POST",
+          headers: getBookHeaders("return=representation"),
+          body: JSON.stringify([{
+            player_name: playerName,
+            is_true_return: Boolean(isTrueReturn),
+          }]),
+        },
+      );
+      if (!response.ok) throw new Error(`return-history-table-save-${response.status}`);
+      return;
+    } catch (tableError) {
+      console.warn("Return history table is unavailable; using shared-book fallback.", tableError);
+    }
+    const message = `${RETURN_HISTORY_PREFIX}${JSON.stringify(historyEntry)}`;
     try {
       const response = await fetch(getBookUrl("?select=id"), {
         method: "POST",
@@ -1267,11 +1286,7 @@ export function createWholePlanetExperience({
       try {
         const stored = JSON.parse(localStorage.getItem(RETURN_HISTORY_STORAGE_KEY) || "[]");
         const entries = Array.isArray(stored) ? stored : [];
-        entries.unshift({
-          playerName,
-          isTrueReturn: Boolean(isTrueReturn),
-          createdAt: new Date().toISOString(),
-        });
+        entries.unshift(historyEntry);
         localStorage.setItem(RETURN_HISTORY_STORAGE_KEY, JSON.stringify(entries.slice(0, 80)));
       } catch (storageError) {
         console.warn("Local return history could not be saved.", storageError);
@@ -1300,6 +1315,25 @@ export function createWholePlanetExperience({
   }
 
   async function loadEndingNames() {
+    try {
+      const response = await fetch(
+        getReturnHistoryUrl("?select=id,player_name,is_true_return,created_at&order=created_at.asc&limit=80"),
+        { headers: getBookHeaders(), cache: "no-store" },
+      );
+      if (!response.ok) throw new Error(`return-history-table-${response.status}`);
+      const rows = await response.json();
+      const histories = (Array.isArray(rows) ? rows : []).map((row) => ({
+        name: typeof row.player_name === "string" ? row.player_name.trim() : "",
+        isTrue: row.is_true_return === true
+          || row.is_true_return === "true"
+          || row.is_true_return === 1
+          || row.is_true_return === "1",
+      }));
+      renderEndingHistories(histories);
+      return;
+    } catch (tableError) {
+      console.warn("Return history table could not be loaded; using shared-book fallback.", tableError);
+    }
     try {
       const response = await fetch(
         getBookUrl(`?select=id,name,message,created_at&name=eq.${encodeURIComponent(HIDDEN_BOOK_AUTHOR)}&order=created_at.asc&limit=120`),
@@ -2330,6 +2364,12 @@ export function createWholePlanetExperience({
   function getBookUrl(query = "") {
     const base = String(supabaseConfig?.url || "").replace(/\/+$/, "");
     const table = encodeURIComponent(supabaseConfig?.table || "book_messages");
+    return `${base}/rest/v1/${table}${query}`;
+  }
+
+  function getReturnHistoryUrl(query = "") {
+    const base = String(supabaseConfig?.url || "").replace(/\/+$/, "");
+    const table = encodeURIComponent(supabaseConfig?.returnHistoryTable || "return_histories");
     return `${base}/rest/v1/${table}${query}`;
   }
 

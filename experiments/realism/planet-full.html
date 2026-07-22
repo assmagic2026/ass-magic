@@ -4,13 +4,57 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#182f34">
-    <title>ASS MAGIC / Whole Planet Study</title>
+    <title>ASS MAGIC | Official Site</title>
     <link rel="stylesheet" href="../../style.css?v=realism-136">
     <link rel="stylesheet" href="./style.css?v=realism-145">
   </head>
   <body>
     <main id="stage">
       <canvas id="scene" aria-label="惑星全体のリアル表現負荷試験"></canvas>
+
+      <div id="site-title" class="capture-hide">ASS MAGIC</div>
+      <button id="menu-toggle" class="ui-control capture-hide" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="site-menu">
+        <span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+      </button>
+      <div id="site-menu" class="ui-control capture-hide" aria-hidden="true">
+        <div id="site-menu-backdrop" class="ui-control"></div>
+        <div id="site-menu-panel" class="ui-control">
+          <div id="site-menu-head">
+            <div id="site-menu-kicker">ASS MAGIC</div>
+            <div id="site-menu-title">Menu</div>
+          </div>
+          <div id="site-menu-body">
+            <nav id="site-menu-nav" class="ui-control" aria-label="Site sections">
+              <button class="menu-nav-btn ui-control is-active" type="button" data-page="about">ABOUT</button>
+              <button class="menu-nav-btn ui-control" type="button" data-page="game">GAME</button>
+              <button class="menu-nav-btn ui-control" type="button" data-href="https://big-up.style/artists/166607/tune_packages">DISCOGRAPHY</button>
+              <button class="menu-nav-btn ui-control" type="button" data-page="interview">INTERVIEW</button>
+              <button class="menu-nav-btn ui-control" type="button" data-page="goods">GOODS</button>
+              <button class="menu-nav-btn ui-control" type="button" data-href="https://x.com/ASSMAGIC2022">X</button>
+            </nav>
+            <div id="site-menu-pages" class="ui-control">
+              <section class="menu-page is-active" data-page="about">
+                <h2>ASS MAGICとは</h2>
+                <p>夫婦で活動する謎の音楽ユニット</p>
+                <a class="menu-link-card ui-control" href="https://x.com/ASSMAGIC2022" target="_blank" rel="noreferrer noopener" aria-label="ASS MAGIC on X">
+                  <span class="menu-link-label">X</span><span class="menu-link-value">@ASSMAGIC2022</span>
+                </a>
+              </section>
+              <section class="menu-page" data-page="game">
+                <h2>GAME</h2>
+                <a class="menu-link-card ui-control" data-menu-route href="../../mendako/" aria-label="メンダコを開く">
+                  <span class="menu-link-label">メンダコ</span><span class="menu-link-value">Play</span>
+                </a>
+                <a class="menu-link-card ui-control" data-menu-route href="../../?legacy=1" aria-label="旧・ASSの惑星を開く">
+                  <span class="menu-link-label">Legacy</span><span class="menu-link-value">旧・ASSの惑星</span>
+                </a>
+              </section>
+              <section class="menu-page" data-page="interview"><h2>INTERVIEW</h2><p>まだされてません</p></section>
+              <section class="menu-page" data-page="goods"><h2>GOODS</h2><p>まだ作ってません</p></section>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <header class="masthead">
         <div>
@@ -176,6 +220,6 @@
       </div>
     </div>
 
-    <script type="module" src="./planet-full.js?v=realism-200"></script>
+    <script type="module" src="./planet-full.js?v=realism-218"></script>
   </body>
 </html>

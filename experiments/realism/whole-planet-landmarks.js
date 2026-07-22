@@ -17,6 +17,7 @@ const BLACK_BOX_ORBIT_ANGULAR_SPEED = 0.54;
 const BLACK_BOX_ASCENT_RESPONSE = 2.8;
 const BLACK_BOX_DESCENT_RESPONSE = 0.58;
 const BLACK_BOX_DAY_AMBUSH_ANGLE = -0.58;
+const BLACK_BOX_START_DELAY = 1;
 
 function textureNoise(x, y, seed) {
   let value = Math.imul(x + seed, 374761393) ^ Math.imul(y + seed * 3, 668265263);
@@ -375,72 +376,28 @@ function createRecordPlayer(realism) {
 function createCompass(realism) {
   const group = new THREE.Group();
   const rotor = new THREE.Group();
-  const brass = createMaterial(0x8a6336, realism, {
-    roughness: 0.28,
-    metalness: 0.78,
+  // Keep the original two opposing pointer cones; only their material is
+  // upgraded so the silhouette and scale remain familiar.
+  const whiteNeedle = createMaterial(0xf3f7ff, realism, {
+    roughness: 0.32,
+    metalness: 0.32,
   });
-  const brassEdge = createMaterial(0xc59b5d, realism, {
-    roughness: 0.2,
-    metalness: 0.88,
+  const blackNeedle = createMaterial(0x080b0f, realism, {
+    roughness: 0.48,
+    metalness: 0.28,
   });
-  const dial = createMaterial(0xe8dfc5, realism, { roughness: 0.82 });
-  const redNeedle = createMaterial(0xb63b32, realism, {
-    roughness: 0.36,
-    metalness: 0.35,
-  });
-  const whiteNeedle = createMaterial(0xf2f0e8, realism, { roughness: 0.45 });
-  const darkMetal = createMaterial(0x1d252b, realism, {
-    roughness: 0.3,
-    metalness: 0.7,
-  });
-
-  // A real field compass: heavy case, bezel, printed dial and a balanced
-  // two-colour needle under a slightly tinted glass cover.
-  const caseBottom = new THREE.Mesh(new THREE.CylinderGeometry(5.35, 5.55, 1.25, 64), brass);
-  caseBottom.position.y = 0.1;
-  group.add(caseBottom);
-  const bezel = new THREE.Mesh(new THREE.TorusGeometry(4.75, 0.34, 14, 64), brassEdge);
-  bezel.position.y = 0.78;
-  group.add(bezel);
-  const dialFace = new THREE.Mesh(new THREE.CylinderGeometry(4.55, 4.55, 0.16, 64), dial);
-  dialFace.position.y = 0.73;
-  group.add(dialFace);
-
-  const tickGroup = new THREE.Group();
-  for (let index = 0; index < 16; index += 1) {
-    const major = index % 4 === 0;
-    const tick = new THREE.Mesh(
-      new THREE.BoxGeometry(major ? 0.18 : 0.1, 0.08, major ? 0.78 : 0.45),
-      darkMetal,
-    );
-    const angle = (index / 16) * Math.PI * 2;
-    tick.position.set(Math.sin(angle) * 3.65, 0.88, Math.cos(angle) * 3.65);
-    tick.rotation.y = angle;
-    tickGroup.add(tick);
-  }
-  group.add(tickGroup);
-
-  const north = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 3.95), redNeedle);
-  north.position.z = 1.82;
-  const south = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 3.95), whiteNeedle);
-  south.position.z = -1.82;
-  rotor.position.y = 0.99;
+  const north = new THREE.Mesh(new THREE.ConeGeometry(1.64, 16.8, 4), whiteNeedle);
+  const south = new THREE.Mesh(new THREE.ConeGeometry(1.64, 16.8, 4), blackNeedle);
+  north.position.z = 7.6;
+  south.position.z = -7.6;
+  north.rotation.x = Math.PI * 0.5;
+  south.rotation.x = -Math.PI * 0.5;
   rotor.add(north, south);
-  const pivot = new THREE.Mesh(new THREE.SphereGeometry(0.42, 20, 12), brassEdge);
-  pivot.position.y = 1.08;
+  const pivot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 20, 12),
+    createMaterial(0x7a8188, realism, { roughness: 0.26, metalness: 0.72 }),
+  );
   group.add(rotor, pivot);
-  const glass = new THREE.Mesh(new THREE.CylinderGeometry(4.62, 4.62, 0.08, 64), new THREE.MeshPhysicalMaterial({
-    color: 0xb7d8dc,
-    roughness: 0.08,
-    metalness: 0,
-    transmission: 0.35,
-    transparent: true,
-    opacity: 0.3,
-    depthWrite: false,
-  }));
-  glass.position.y = 1.25;
-  glass.renderOrder = 2;
-  group.add(glass);
   group.userData.rotor = rotor;
   group.userData.targetWorld = null;
   return group;
@@ -824,7 +781,10 @@ export function createSpecialLandmarks({
 
   const compass = createCompass(realism);
   compass.scale.setScalar(2.8);
-  const compassForward = sun.clone().addScaledVector(compassDirection, -sun.dot(compassDirection)).normalize();
+  // The white cone is the local +Z pointer.  Face it toward the night-side
+  // white sphere so the opposing black cone naturally points at the day-side
+  // black sphere; this orientation never needs animated correction.
+  const compassForward = night.clone().addScaledVector(compassDirection, -night.dot(compassDirection)).normalize();
   placeOnSphere(compass, compassDirection, compassForward, 24, getSurfaceRadius);
   root.add(compass);
 
@@ -833,9 +793,11 @@ export function createSpecialLandmarks({
   root.add(sanctuary);
 
   const blackBox = createBlackBox(realism);
+  blackBox.visible = false;
   root.add(blackBox);
   let blackBoxAngle = 2.15;
   let blackBoxFlightRadius = 0;
+  let blackBoxElapsed = 0;
   const blackBoxDirection = new THREE.Vector3();
   const blackBoxForward = new THREE.Vector3();
   const blackBoxLookaheadDirection = new THREE.Vector3();
@@ -911,10 +873,25 @@ export function createSpecialLandmarks({
       sanctuary,
       blackBox,
     },
+    reset() {
+      blackBoxElapsed = 0;
+      blackBoxAngle = 2.15;
+      blackBoxFlightRadius = 0;
+      blackBox.visible = false;
+      blackBox.userData.grounded = false;
+      blackBox.userData.opened = false;
+      blackBox.userData.beacon = 0;
+      blackBox.userData.flightAltitude = 0;
+      blackBox.userData.flightTargetAltitude = 0;
+    },
     directions: {
       day: sun,
       night,
       dusk: compassDirection,
+      // Keep a separate dusk-band heading for the default start.  The
+      // compass itself still uses the terminator heading above, while the
+      // sunset start can be moved away from the main mountain corridor.
+      sunset: duskDirection,
       recordPlayer: dayObjectDirection,
       book: bookDirection,
       sanctuary: sanctuaryDirection,
@@ -959,23 +936,9 @@ export function createSpecialLandmarks({
         recordPlayer.userData.recordDisc.rotation.y += delta * 1.55;
       }
 
-      const compassTarget = compass.userData.targetWorld;
-      if (compassTarget) {
-        compassLocalTarget.copy(compassTarget);
-        compass.worldToLocal(compassLocalTarget);
-        compassLocalTarget.y = 0;
-        if (compassLocalTarget.lengthSq() > 0.0001) {
-          const targetAngle = Math.atan2(compassLocalTarget.x, compassLocalTarget.z);
-          const currentAngle = compass.userData.rotor.rotation.y;
-          const angleDelta = Math.atan2(
-            Math.sin(targetAngle - currentAngle),
-            Math.cos(targetAngle - currentAngle),
-          );
-          compass.userData.rotor.rotation.y += angleDelta * (1 - Math.exp(-6.8 * delta));
-        }
-      } else {
-        compass.userData.rotor.rotation.y += delta * 0.42;
-      }
+      // The two compass pointers are permanently aligned with the two
+      // spheres.  Do not spin or steer the rotor during guidance.
+      compass.userData.rotor.rotation.y = 0;
 
       sanctuary.userData.activation = THREE.MathUtils.damp(
         sanctuary.userData.activation,
@@ -992,7 +955,10 @@ export function createSpecialLandmarks({
       const whitePulse = 0.92 + Math.sin(performance.now() * 0.0018) * 0.08;
       whiteSphere.userData.light.intensity = (realism ? 3900 : 35) * whitePulse;
       whiteSphere.userData.glow.material.opacity = (realism ? 0.72 : 0.5) * whitePulse;
-      blackBoxAngle += delta * BLACK_BOX_ORBIT_ANGULAR_SPEED;
+      blackBoxElapsed += delta;
+      const blackBoxActive = blackBoxElapsed >= BLACK_BOX_START_DELAY;
+      blackBox.visible = blackBoxActive;
+      if (blackBoxActive) blackBoxAngle += delta * BLACK_BOX_ORBIT_ANGULAR_SPEED;
 
       blackBox.userData.beacon = THREE.MathUtils.damp(
         blackBox.userData.beacon,
@@ -1008,7 +974,7 @@ export function createSpecialLandmarks({
       blackBox.userData.shellMaterial.emissiveIntensity = beacon * beaconPulse * 4.8;
       blackBox.userData.coreMaterial.emissiveIntensity = beacon * beaconPulse * 1.65;
 
-      if (!blackBox.userData.grounded) {
+      if (blackBoxActive && !blackBox.userData.grounded) {
         getBlackBoxDirectionAtAngle(blackBoxAngle, blackBoxDirection);
         blackBoxForward.copy(sun).multiplyScalar(-Math.sin(blackBoxAngle))
           .addScaledVector(nightAxisA, Math.cos(blackBoxAngle))
