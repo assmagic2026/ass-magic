@@ -15,9 +15,9 @@ const waistMeasureA = new THREE.Vector3();
 const waistMeasureB = new THREE.Vector3();
 const headMeasure = new THREE.Vector3();
 const CESIUM_MAN_TYPE_C = Object.freeze({
-  // E-2 chest/torso comparison preset: fuller torso while retaining the V silhouette.
-  chestWidth: 1.54,
-  chestDepth: 1.20,
+  // R comparison preset: relaxed chest with a fuller torso.
+  chestWidth: 1.30,
+  chestDepth: 1.12,
   midWidth: 1.21,
   waistWidth: 1.18,
 });
