@@ -15,10 +15,11 @@ const waistMeasureA = new THREE.Vector3();
 const waistMeasureB = new THREE.Vector3();
 const headMeasure = new THREE.Vector3();
 const CESIUM_MAN_TYPE_C = Object.freeze({
-  chestWidth: 1.16,
-  chestDepth: 1.10,
-  midWidth: 1.07,
-  waistWidth: 1.02,
+  // E-2 chest/torso comparison preset: fuller torso while retaining the V silhouette.
+  chestWidth: 1.54,
+  chestDepth: 1.20,
+  midWidth: 1.21,
+  waistWidth: 1.18,
 });
 
 export function createFlightPlayer(scene, options = {}) {
