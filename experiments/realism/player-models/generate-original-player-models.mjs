@@ -4,108 +4,99 @@ import { fileURLToPath } from "node:url";
 
 const OUTPUT_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const COPYRIGHT = "Copyright 2026 ASS MAGIC. Original procedural geometry.";
-const GENERATOR = "ASS MAGIC Original Space Suit Generator 1.0";
+const GENERATOR = "ASS MAGIC Original Silhouette Wear Generator 2.0";
 const TAU = Math.PI * 2;
 
 const CANDIDATES = [
   {
     id: "a",
-    label: "A / MINIMAL ORBIT",
-    type: "original-space-suit-a",
-    direction: "最もシンプル。遠景で潰れにくい、柔らかな一体型スーツ。",
-    notes: "minimal future / clean silhouette / no backpack",
+    label: "A / PURE SILHOUETTE",
+    type: "original-fitted-wear-a",
+    direction: "最もシンプル。装備を一切持たず、身体の輪郭だけが素直に見える薄手の服。",
+    notes: "pure silhouette / fitted cloth / zero equipment",
     body: { chest: 0.35, chestDepth: 0.225, mid: 0.285, waist: 0.245 },
-    helmet: [0.27, 0.3, 0.255],
     materials: {
-      base: material(0xe8e9df, 0.05, 0.62),
-      panel: material(0x363d3e, 0.08, 0.58),
-      accent: material(0x67c4cc, 0.12, 0.42, 0x164e55),
-      visor: material(0x102d36, 0.3, 0.2, 0x163f49, 0.88),
-      dark: material(0x171d1e, 0.12, 0.52),
-      glow: material(0xb7f2ed, 0.02, 0.32, 0x67c6c5),
+      top: material(0xdeddd4, 0, 0.88),
+      bottom: material(0x303536, 0, 0.86),
+      secondary: material(0xbbbdb6, 0, 0.9),
+      accent: material(0x7d9999, 0, 0.82),
+      skin: material(0xc99476, 0, 0.94),
+      hair: material(0x292321, 0, 0.96),
+      eyes: material(0x201d1b, 0, 0.72),
     },
-    details: ["minimal-panel", "wrist-cuffs", "ankle-cuffs"],
+    details: ["center-seam"],
   },
   {
     id: "b",
-    label: "B / HORIZON SUIT",
-    type: "original-space-suit-b",
-    direction: "最も自然。未来感と宇宙服感を均衡させた基準案。",
-    notes: "balanced future / space suit / soft utility",
+    label: "B / NATURAL LINE",
+    type: "original-fitted-wear-b",
+    direction: "最も自然。身体に沿う長袖トップと細身のパンツで、胸から腰のラインを見せる基準案。",
+    notes: "natural body line / soft long sleeves / tapered pants",
     body: { chest: 0.36, chestDepth: 0.232, mid: 0.292, waist: 0.248 },
-    helmet: [0.272, 0.303, 0.26],
     materials: {
-      base: material(0xe6e2d7, 0.06, 0.65),
-      panel: material(0x3b4a4d, 0.12, 0.5),
-      accent: material(0x4f9ea4, 0.15, 0.38, 0x153e43),
-      visor: material(0x172a35, 0.38, 0.18, 0x172c3a, 0.9),
-      dark: material(0x1e2528, 0.16, 0.48),
-      glow: material(0xc9eee3, 0.02, 0.28, 0x74b9ad),
+      top: material(0xc9d0c9, 0, 0.91),
+      bottom: material(0x283038, 0, 0.88),
+      secondary: material(0x6d7774, 0, 0.9),
+      accent: material(0xaebcaf, 0, 0.86),
+      skin: material(0xc99476, 0, 0.94),
+      hair: material(0x292321, 0, 0.96),
+      eyes: material(0x201d1b, 0, 0.72),
     },
-    details: ["chest-shell", "soft-backpack", "belt", "knee-pads", "joint-cuffs"],
+    details: ["waist-seam", "center-seam"],
   },
   {
     id: "c",
-    label: "C / LUNAR SOFTSHELL",
-    type: "original-space-suit-c",
-    direction: "宇宙服感がやや強め。首・胸・関節に軽量機能パーツを配置。",
-    notes: "soft pressure suit / collar / joint rings",
+    label: "C / SOFT LAYER",
+    type: "original-fitted-wear-c",
+    direction: "薄い布を一枚重ねたような柔らかな案。装甲ではなく、体幹に沿う布の切り替えだけを加えています。",
+    notes: "soft layered cloth / curved yoke / body-following panels",
     body: { chest: 0.365, chestDepth: 0.238, mid: 0.296, waist: 0.25 },
-    helmet: [0.275, 0.305, 0.265],
     materials: {
-      base: material(0xe7e3d6, 0.05, 0.7),
-      panel: material(0x35464a, 0.1, 0.56),
-      accent: material(0xc97b49, 0.12, 0.42, 0x4a2415),
-      visor: material(0x452b24, 0.4, 0.16, 0x5c3322, 0.9),
-      dark: material(0x20292b, 0.18, 0.5),
-      glow: material(0xffd29a, 0.02, 0.3, 0xd87f44),
+      top: material(0xd7c9ba, 0, 0.93),
+      bottom: material(0x4a4544, 0, 0.91),
+      secondary: material(0x9d8574, 0, 0.94),
+      accent: material(0xb8a08f, 0, 0.9),
+      skin: material(0xc99476, 0, 0.94),
+      hair: material(0x292321, 0, 0.96),
+      eyes: material(0x201d1b, 0, 0.72),
     },
-    details: [
-      "pressure-collar",
-      "life-support-chest",
-      "twin-pod-backpack",
-      "belt",
-      "knee-pads",
-      "joint-rings",
-      "boot-soles",
-    ],
+    details: ["soft-yoke", "side-cloth", "waist-seam"],
   },
   {
     id: "d",
-    label: "D / AETHER FLIGHT",
-    type: "original-space-suit-d",
-    direction: "未来感がやや強め。滑らかな胸部レンズと流線型の肩を持つ飛行スーツ。",
-    notes: "abstract flight suit / luminous lines / smooth shell",
+    label: "D / FLOW LINE",
+    type: "original-fitted-wear-d",
+    direction: "斜めに流れる布の切り替えで、飛行中の身体の伸びを強調する軽やかな服。",
+    notes: "flowing cloth line / close fit / elongated posture",
     body: { chest: 0.355, chestDepth: 0.228, mid: 0.288, waist: 0.245 },
-    helmet: [0.262, 0.318, 0.25],
     materials: {
-      base: material(0xcfd6d8, 0.28, 0.32),
-      panel: material(0x29313c, 0.38, 0.3),
-      accent: material(0x7186dc, 0.25, 0.28, 0x252e72),
-      visor: material(0x17182d, 0.52, 0.12, 0x222550, 0.9),
-      dark: material(0x171b25, 0.36, 0.28),
-      glow: material(0xb8c7ff, 0.05, 0.22, 0x657cff),
+      top: material(0x61717a, 0, 0.88),
+      bottom: material(0x242b31, 0, 0.9),
+      secondary: material(0x89969b, 0, 0.9),
+      accent: material(0xb6c2c0, 0, 0.86),
+      skin: material(0xc99476, 0, 0.94),
+      hair: material(0x292321, 0, 0.96),
+      eyes: material(0x201d1b, 0, 0.72),
     },
-    details: ["future-lens", "flight-lines", "shoulder-fins", "spine-tabs", "joint-cuffs"],
+    details: ["diagonal-drape"],
   },
   {
     id: "e",
-    label: "E / NOCTILUCA",
-    type: "original-space-suit-e",
-    direction: "ASS MAGICらしい変化球。夜光色の軌道リングを持つ詩的な宇宙スーツ。",
-    notes: "poetic future / orbit collar / noctilucent accents",
+    label: "E / POETIC CLOTH",
+    type: "original-fitted-wear-e",
+    direction: "ASS MAGICらしい静かな変化球。淡い色面を非対称に重ねても、身体の輪郭は隠さない服。",
+    notes: "poetic cloth / asymmetrical color / visible body silhouette",
     body: { chest: 0.368, chestDepth: 0.23, mid: 0.298, waist: 0.25 },
-    helmet: [0.282, 0.294, 0.258],
     materials: {
-      base: material(0x222735, 0.2, 0.42),
-      panel: material(0xdedcd3, 0.08, 0.52),
-      accent: material(0xbc8fbf, 0.16, 0.34, 0x4b2857),
-      visor: material(0x10242d, 0.42, 0.12, 0x123d4e, 0.9),
-      dark: material(0x11151e, 0.28, 0.32),
-      glow: material(0xcef7e9, 0.02, 0.2, 0x72d8c1),
-      warmGlow: material(0xffddb0, 0.02, 0.24, 0xd79a5e),
+      top: material(0x374151, 0, 0.91),
+      bottom: material(0x20262f, 0, 0.92),
+      secondary: material(0xd7d2c6, 0, 0.94),
+      accent: material(0x9b829e, 0, 0.92),
+      skin: material(0xc99476, 0, 0.94),
+      hair: material(0x292321, 0, 0.96),
+      eyes: material(0x201d1b, 0, 0.72),
     },
-    details: ["orbit-collar", "constellation-chest", "asymmetric-panels", "joint-cuffs"],
+    details: ["asymmetric-cloth", "soft-neckline"],
   },
 ];
 
@@ -121,6 +112,36 @@ function buildCandidate(config) {
     cylinder: builder.addGeometry("unit_cylinder", makeCylinder(16)),
     torusThin: builder.addGeometry("torus_thin", makeTorus(1, 0.075, 20, 8)),
     torusMedium: builder.addGeometry("torus_medium", makeTorus(1, 0.13, 20, 8)),
+    pointedFoot: builder.addGeometry(
+      "pointed_foot",
+      makeLoft([
+        { y: -0.22, x: 0.035, z: 0.055 },
+        { y: -0.14, x: 0.075, z: 0.085 },
+        { y: -0.03, x: 0.11, z: 0.115 },
+        { y: 0.09, x: 0.105, z: 0.105 },
+        { y: 0.17, x: 0.09, z: 0.09 },
+      ], 18),
+    ),
+    fittedArm: builder.addGeometry(
+      "fitted_arm",
+      makeLoft([
+        { y: -0.37, x: 0.135, z: 0.13 },
+        { y: -0.24, x: 0.118, z: 0.112 },
+        { y: -0.04, x: 0.098, z: 0.098 },
+        { y: 0.15, x: 0.09, z: 0.09 },
+        { y: 0.37, x: 0.078, z: 0.078 },
+      ], 18),
+    ),
+    fittedLeg: builder.addGeometry(
+      "fitted_leg",
+      makeLoft([
+        { y: -0.485, x: 0.09, z: 0.09 },
+        { y: -0.28, x: 0.105, z: 0.105 },
+        { y: -0.04, x: 0.1, z: 0.102 },
+        { y: 0.18, x: 0.12, z: 0.12 },
+        { y: 0.485, x: 0.135, z: 0.13 },
+      ], 18),
+    ),
     torso: builder.addGeometry(
       `torso_${config.id}`,
       makeLoft([
@@ -129,6 +150,16 @@ function buildCandidate(config) {
         { y: -0.02, x: config.body.mid, z: config.body.chestDepth * 0.86 },
         { y: 0.25, x: config.body.chest, z: config.body.chestDepth },
         { y: 0.43, x: config.body.chest * 0.93, z: config.body.chestDepth * 0.94 },
+      ], 18),
+    ),
+    pelvis: builder.addGeometry(
+      `pelvis_${config.id}`,
+      makeLoft([
+        { y: -0.2, x: 0.145, z: 0.12 },
+        { y: -0.12, x: 0.225, z: 0.16 },
+        { y: 0.02, x: 0.265, z: 0.19 },
+        { y: 0.13, x: 0.26, z: 0.185 },
+        { y: 0.18, x: config.body.waist * 0.98, z: config.body.chestDepth * 0.75 },
       ], 18),
     ),
   };
@@ -147,28 +178,30 @@ function buildCandidate(config) {
 
   // Core original body. Dimensions are authored around the current game's
   // measured 2.75 height / 2.46 fingertip span, without reusing its mesh.
-  add("TorsoShell", "torso", "base", [0, 0.35, 0], [1, 1, 1], [0, 0, 0], { role: "torso" });
-  add("PelvisShell", "sphere", "panel", [0, -0.23, 0], [0.265, 0.23, 0.19], [0, 0, 0], { role: "pelvis" });
-  add("NeckSeal", "cylinder", "dark", [0, 0.84, 0], [0.105, 0.17, 0.105], [0, 0, 0], { role: "neck" });
-  add("HelmetShell", "sphere", "base", [0, 1.075, 0], config.helmet, [0, 0, 0], { role: "head" });
-  add("VisorLens", "sphere", "visor", [0, 1.075, config.helmet[2] * 0.83], [
-    config.helmet[0] * 0.82,
-    config.helmet[1] * 0.67,
-    config.helmet[2] * 0.25,
-  ], [0, 0, 0], { role: "visor" });
+  add("FittedTop", "torso", "top", [0, 0.35, 0], [1, 1, 1], [0, 0, 0], { role: "torso" });
+  add("FittedPelvis", "pelvis", "bottom", [0, -0.25, 0], [1, 1, 1], [0, 0, 0], { role: "pelvis" });
+  add("Neck", "cylinder", "skin", [0, 0.86, 0], [0.087, 0.18, 0.087], [0, 0, 0], { role: "neck" });
+  add("Head", "sphere", "skin", [0, 1.13, 0], [0.18, 0.25, 0.19], [0, 0, 0], { role: "head" });
+  add("Hair", "sphere", "hair", [0, 1.235, -0.025], [0.187, 0.145, 0.19], [0, 0, 0], { role: "hair" });
+  add("Nose", "sphere", "skin", [0, 1.105, 0.186], [0.025, 0.04, 0.03], [0, 0, 0], { role: "face" });
+  add("Eye_L", "sphere", "eyes", [-0.058, 1.16, 0.184], [0.016, 0.012, 0.01], [0, 0, 0], { role: "face" });
+  add("Eye_R", "sphere", "eyes", [0.058, 1.16, 0.184], [0.016, 0.012, 0.01], [0, 0, 0], { role: "face" });
 
   for (const side of [-1, 1]) {
     const suffix = side < 0 ? "L" : "R";
-    add(`Shoulder_${suffix}`, "sphere", "base", [side * 0.35, 0.7, 0], [0.16, 0.145, 0.16]);
-    add(`UpperArm_${suffix}`, "cylinder", "base", [side * 0.55, 0.7, 0], [0.112, 0.4, 0.112], [0, 0, Math.PI * 0.5]);
-    add(`Elbow_${suffix}`, "sphere", "panel", [side * 0.75, 0.7, 0], [0.12, 0.105, 0.115]);
-    add(`Forearm_${suffix}`, "cylinder", "base", [side * 0.935, 0.7, 0], [0.097, 0.37, 0.097], [0, 0, Math.PI * 0.5]);
-    add(`Hand_${suffix}`, "sphere", "panel", [side * 1.16, 0.7, 0.018], [0.07, 0.14, 0.09], [0, 0, Math.PI * 0.5]);
+    add(`SoftShoulder_${suffix}`, "sphere", "top", [side * 0.35, 0.7, 0], [0.12, 0.11, 0.12]);
+    add(`FittedArm_${suffix}`, "fittedArm", "top", [side * 0.73, 0.7, 0], [1, 1, 1], [
+      0,
+      0,
+      side > 0 ? -Math.PI * 0.5 : Math.PI * 0.5,
+    ]);
+    add(`Hand_${suffix}`, "sphere", "skin", [side * 1.16, 0.7, 0.018], [0.07, 0.135, 0.075]);
 
-    add(`UpperLeg_${suffix}`, "cylinder", "base", [side * 0.15, -0.57, 0], [0.14, 0.52, 0.14]);
-    add(`Knee_${suffix}`, "sphere", "panel", [side * 0.15, -0.83, 0.025], [0.145, 0.12, 0.15]);
-    add(`LowerLeg_${suffix}`, "cylinder", "base", [side * 0.15, -1.06, 0], [0.115, 0.46, 0.115]);
-    add(`Boot_${suffix}`, "box", "dark", [side * 0.15, -1.28, 0.07], [0.22, 0.18, 0.34]);
+    add(`FittedLeg_${suffix}`, "fittedLeg", "bottom", [side * 0.15, -0.795, 0], [1, 1, 1]);
+    add(`PointedFoot_${suffix}`, "pointedFoot", "bottom", [side * 0.15, -1.15, 0], [1, 1, 1], [0, 0, 0], {
+      role: "pointedFoot",
+      toesExtended: true,
+    });
   }
 
   addDesignDetails(config, geometry, add);
@@ -179,8 +212,8 @@ function buildCandidate(config) {
   addAnchor("Anchor_Shoulder_R", [0.35, 0.7, 0], "shoulderRight");
   addAnchor("Anchor_HandTip_L", [-1.23, 0.7, 0], "handTipLeft");
   addAnchor("Anchor_HandTip_R", [1.23, 0.7, 0], "handTipRight");
-  addAnchor("Anchor_Foot_L", [-0.15, -1.37, 0.07], "footLeft");
-  addAnchor("Anchor_Foot_R", [0.15, -1.37, 0.07], "footRight");
+  addAnchor("Anchor_Foot_L", [-0.15, -1.37, 0], "footLeft");
+  addAnchor("Anchor_Foot_R", [0.15, -1.37, 0], "footRight");
 
   builder.setScene(nodes, {
     candidate: config.id.toUpperCase(),
@@ -188,6 +221,10 @@ function buildCandidate(config) {
     bodyProfile: "c-like",
     originalGeometry: true,
     creditRequiredForModel: false,
+    clothingStyle: "body-silhouette-fitted-cloth",
+    mechanicalEquipment: false,
+    spaceSuitElements: false,
+    toesExtended: true,
     height: 2.75,
     fingertipSpan: 2.46,
   });
@@ -197,93 +234,40 @@ function buildCandidate(config) {
 function addDesignDetails(config, geometry, add) {
   const has = (name) => config.details.includes(name);
 
-  if (has("minimal-panel")) {
-    add("MinimalChestLine", "box", "accent", [0, 0.38, config.body.chestDepth + 0.018], [0.09, 0.5, 0.025]);
-    add("MinimalBelt", "torusThin", "panel", [0, 0.02, 0], [config.body.waist, 0.72, config.body.chestDepth * 0.76]);
+  // All details stay close to the torso surface so the human silhouette remains
+  // visible. These are fabric color blocks and seams, not armor or equipment.
+  if (has("center-seam")) {
+    add("ClothCenterSeam", "box", "secondary", [0, 0.37, config.body.chestDepth + 0.012], [0.014, 0.58, 0.008]);
   }
-  if (has("chest-shell")) {
-    add("SoftChestPlate", "sphere", "panel", [0, 0.45, config.body.chestDepth * 0.94], [0.27, 0.3, 0.055]);
-    add("ChestHorizon", "box", "accent", [0, 0.46, config.body.chestDepth + 0.03], [0.38, 0.055, 0.025]);
+  if (has("waist-seam")) {
+    add("SoftWaistSeam", "torusThin", "secondary", [0, 0.015, 0], [
+      config.body.waist * 1.01,
+      0.28,
+      config.body.chestDepth * 0.77,
+    ]);
   }
-  if (has("life-support-chest")) {
-    add("LifeSupportPlate", "box", "panel", [0, 0.43, config.body.chestDepth + 0.035], [0.34, 0.34, 0.08]);
-    add("LifeSupportCore", "sphere", "glow", [0, 0.46, config.body.chestDepth + 0.083], [0.09, 0.09, 0.03]);
-    add("ChestRail_L", "box", "accent", [-0.14, 0.39, config.body.chestDepth + 0.08], [0.035, 0.22, 0.025]);
-    add("ChestRail_R", "box", "accent", [0.14, 0.39, config.body.chestDepth + 0.08], [0.035, 0.22, 0.025]);
+  if (has("soft-yoke")) {
+    add("SoftChestYoke", "sphere", "secondary", [0, 0.59, config.body.chestDepth * 0.94], [0.3, 0.11, 0.018]);
   }
-  if (has("future-lens")) {
-    add("AetherChestLens", "sphere", "visor", [0, 0.46, config.body.chestDepth * 0.97], [0.26, 0.31, 0.055]);
-    add("AetherCore", "sphere", "glow", [0, 0.48, config.body.chestDepth + 0.04], [0.055, 0.13, 0.025]);
+  if (has("side-cloth")) {
+    add("SideCloth_L", "box", "accent", [-0.235, 0.31, config.body.chestDepth + 0.012], [0.045, 0.38, 0.01], [0, 0, -0.12]);
+    add("SideCloth_R", "box", "accent", [0.235, 0.31, config.body.chestDepth + 0.012], [0.045, 0.38, 0.01], [0, 0, 0.12]);
   }
-  if (has("flight-lines")) {
-    add("FlightLine_L", "box", "accent", [-0.12, 0.38, config.body.chestDepth + 0.032], [0.035, 0.42, 0.02], [0, 0, -0.28]);
-    add("FlightLine_R", "box", "glow", [0.12, 0.38, config.body.chestDepth + 0.032], [0.035, 0.42, 0.02], [0, 0, 0.28]);
+  if (has("diagonal-drape")) {
+    add("DiagonalCloth", "box", "secondary", [0, 0.43, config.body.chestDepth + 0.013], [0.075, 0.53, 0.011], [0, 0, -0.48]);
   }
-  if (has("constellation-chest")) {
-    add("NoctilucaPlate", "sphere", "panel", [0, 0.43, config.body.chestDepth * 0.96], [0.255, 0.29, 0.045]);
-    add("Constellation_1", "sphere", "glow", [-0.09, 0.54, config.body.chestDepth + 0.035], [0.027, 0.027, 0.018]);
-    add("Constellation_2", "sphere", "warmGlow", [0.06, 0.46, config.body.chestDepth + 0.035], [0.035, 0.035, 0.018]);
-    add("Constellation_3", "sphere", "glow", [0.13, 0.31, config.body.chestDepth + 0.035], [0.022, 0.022, 0.018]);
-  }
-
-  if (has("pressure-collar")) {
-    add("PressureCollar", "torusMedium", "panel", [0, 0.82, 0], [0.17, 0.72, 0.17]);
-    add("CollarGlow", "torusThin", "glow", [0, 0.835, 0], [0.185, 0.7, 0.185]);
-  }
-  if (has("orbit-collar")) {
-    add("OrbitCollar", "torusThin", "glow", [0, 0.78, 0], [0.33, 0.8, 0.25], [0.42, 0, 0.18]);
-    add("OrbitCounterweight", "sphere", "warmGlow", [0.25, 0.83, 0.1], [0.04, 0.04, 0.04]);
-  }
-  if (has("belt")) {
-    add("UtilityBelt", "torusThin", "dark", [0, 0.02, 0], [config.body.waist * 1.04, 0.72, config.body.chestDepth * 0.82]);
-    add("BeltLight", "box", "glow", [0, 0.02, config.body.chestDepth * 0.82], [0.08, 0.055, 0.025]);
-  }
-  if (has("soft-backpack")) {
-    add("SoftBackpack", "sphere", "panel", [0, 0.39, -config.body.chestDepth * 0.95], [0.21, 0.31, 0.09]);
-  }
-  if (has("twin-pod-backpack")) {
-    add("BackpackBridge", "box", "panel", [0, 0.39, -config.body.chestDepth - 0.035], [0.28, 0.3, 0.08]);
-    add("Pod_L", "cylinder", "dark", [-0.16, 0.38, -config.body.chestDepth - 0.09], [0.07, 0.34, 0.07]);
-    add("Pod_R", "cylinder", "dark", [0.16, 0.38, -config.body.chestDepth - 0.09], [0.07, 0.34, 0.07]);
-  }
-  if (has("shoulder-fins")) {
-    add("ShoulderFin_L", "box", "panel", [-0.37, 0.76, -0.01], [0.24, 0.07, 0.16], [0, 0, -0.16]);
-    add("ShoulderFin_R", "box", "panel", [0.37, 0.76, -0.01], [0.24, 0.07, 0.16], [0, 0, 0.16]);
-  }
-  if (has("spine-tabs")) {
-    for (let index = 0; index < 4; index += 1) {
-      add(`SpineTab_${index + 1}`, "box", index % 2 ? "accent" : "panel", [
-        0,
-        0.2 + index * 0.16,
-        -config.body.chestDepth - 0.025,
-      ], [0.1, 0.075, 0.035]);
+  if (has("sleeve-inset")) {
+    for (const side of [-1, 1]) {
+      const suffix = side < 0 ? "L" : "R";
+      add(`SleeveInset_${suffix}`, "sphere", "secondary", [side * 0.36, 0.7, 0.02], [0.115, 0.12, 0.125]);
     }
   }
-  if (has("asymmetric-panels")) {
-    add("LeftPearlPanel", "box", "panel", [-0.11, 0.28, config.body.chestDepth + 0.025], [0.12, 0.34, 0.025], [0, 0, -0.14]);
-    add("RightNightPanel", "box", "accent", [0.15, 0.42, config.body.chestDepth + 0.025], [0.08, 0.28, 0.025], [0, 0, 0.2]);
+  if (has("asymmetric-cloth")) {
+    add("LeftSoftCloth", "box", "secondary", [-0.105, 0.34, config.body.chestDepth + 0.013], [0.095, 0.42, 0.011], [0, 0, -0.16]);
+    add("RightSoftCloth", "box", "accent", [0.135, 0.48, config.body.chestDepth + 0.014], [0.055, 0.27, 0.012], [0, 0, 0.22]);
   }
-
-  for (const side of [-1, 1]) {
-    const suffix = side < 0 ? "L" : "R";
-    if (has("wrist-cuffs") || has("joint-cuffs") || has("joint-rings")) {
-      add(`WristCuff_${suffix}`, "torusThin", "accent", [side * 1.08, 0.7, 0], [0.1, 0.8, 0.1], [0, 0, Math.PI * 0.5]);
-    }
-    if (has("joint-cuffs") || has("joint-rings")) {
-      add(`ElbowRing_${suffix}`, "torusThin", "panel", [side * 0.75, 0.7, 0], [0.125, 0.82, 0.125], [0, 0, Math.PI * 0.5]);
-    }
-    if (has("joint-rings")) {
-      add(`KneeRing_${suffix}`, "torusThin", "accent", [side * 0.15, -0.83, 0.02], [0.15, 0.76, 0.15]);
-    }
-    if (has("knee-pads")) {
-      add(`KneePad_${suffix}`, "sphere", "panel", [side * 0.15, -0.83, 0.12], [0.12, 0.105, 0.04]);
-    }
-    if (has("ankle-cuffs")) {
-      add(`AnkleCuff_${suffix}`, "torusThin", "accent", [side * 0.15, -1.25, 0], [0.12, 0.76, 0.12]);
-    }
-    if (has("boot-soles")) {
-      add(`BootSole_${suffix}`, "box", "accent", [side * 0.15, -1.375, 0.08], [0.23, 0.025, 0.35]);
-    }
+  if (has("soft-neckline")) {
+    add("SoftNeckline", "torusThin", "secondary", [0, 0.79, 0], [0.15, 0.25, 0.125]);
   }
 }
 
@@ -713,7 +697,7 @@ function encodeGlb(json, binary) {
 }
 
 const manifest = {
-  version: 1,
+  version: 5,
   generator: GENERATOR,
   copyright: COPYRIGHT,
   rights: {
@@ -727,6 +711,13 @@ const manifest = {
     source: "Current player measurements used only as numeric compatibility targets",
     targetHeight: 2.75,
     targetFingertipSpan: 2.46,
+  },
+  designConstraints: {
+    bodySilhouetteVisible: true,
+    fittedClothing: true,
+    mechanicalEquipment: false,
+    spaceSuitElements: false,
+    toesExtended: true,
   },
   candidates: [],
 };
@@ -742,6 +733,10 @@ for (const config of CANDIDATES) {
     direction: config.direction,
     notes: config.notes,
     bodyProfile: "c-like",
+    clothingStyle: "body-silhouette-fitted-cloth",
+    mechanicalEquipment: false,
+    spaceSuitElements: false,
+    toesExtended: true,
     body: config.body,
     dimensions: {
       height: 2.75,

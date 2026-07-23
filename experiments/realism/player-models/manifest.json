@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "generator": "ASS MAGIC Original Space Suit Generator 1.0",
+  "version": 5,
+  "generator": "ASS MAGIC Original Silhouette Wear Generator 2.0",
   "copyright": "Copyright 2026 ASS MAGIC. Original procedural geometry.",
   "rights": {
     "originalGeometry": true,
@@ -14,14 +14,25 @@
     "targetHeight": 2.75,
     "targetFingertipSpan": 2.46
   },
+  "designConstraints": {
+    "bodySilhouetteVisible": true,
+    "fittedClothing": true,
+    "mechanicalEquipment": false,
+    "spaceSuitElements": false,
+    "toesExtended": true
+  },
   "candidates": [
     {
       "id": "A",
-      "type": "original-space-suit-a",
+      "type": "original-fitted-wear-a",
       "file": "original-player-a.glb",
-      "direction": "最もシンプル。遠景で潰れにくい、柔らかな一体型スーツ。",
-      "notes": "minimal future / clean silhouette / no backpack",
+      "direction": "最もシンプル。装備を一切持たず、身体の輪郭だけが素直に見える薄手の服。",
+      "notes": "pure silhouette / fitted cloth / zero equipment",
       "bodyProfile": "c-like",
+      "clothingStyle": "body-silhouette-fitted-cloth",
+      "mechanicalEquipment": false,
+      "spaceSuitElements": false,
+      "toesExtended": true,
       "body": {
         "chest": 0.35,
         "chestDepth": 0.225,
@@ -35,19 +46,23 @@
         "headTop": 1.38,
         "footBase": -1.37
       },
-      "triangleCount": 5912,
-      "nodeCount": 38,
-      "materialCount": 6,
-      "byteLength": 35980,
+      "triangleCount": 4396,
+      "nodeCount": 28,
+      "materialCount": 7,
+      "byteLength": 50080,
       "modelingMethod": "Original authored parameters and procedural primitives"
     },
     {
       "id": "B",
-      "type": "original-space-suit-b",
+      "type": "original-fitted-wear-b",
       "file": "original-player-b.glb",
-      "direction": "最も自然。未来感と宇宙服感を均衡させた基準案。",
-      "notes": "balanced future / space suit / soft utility",
+      "direction": "最も自然。身体に沿う長袖トップと細身のパンツで、胸から腰のラインを見せる基準案。",
+      "notes": "natural body line / soft long sleeves / tapered pants",
       "bodyProfile": "c-like",
+      "clothingStyle": "body-silhouette-fitted-cloth",
+      "mechanicalEquipment": false,
+      "spaceSuitElements": false,
+      "toesExtended": true,
       "body": {
         "chest": 0.36,
         "chestDepth": 0.232,
@@ -61,19 +76,23 @@
         "headTop": 1.38,
         "footBase": -1.37
       },
-      "triangleCount": 7204,
-      "nodeCount": 43,
-      "materialCount": 6,
-      "byteLength": 36924,
+      "triangleCount": 4716,
+      "nodeCount": 29,
+      "materialCount": 7,
+      "byteLength": 50356,
       "modelingMethod": "Original authored parameters and procedural primitives"
     },
     {
       "id": "C",
-      "type": "original-space-suit-c",
+      "type": "original-fitted-wear-c",
       "file": "original-player-c.glb",
-      "direction": "宇宙服感がやや強め。首・胸・関節に軽量機能パーツを配置。",
-      "notes": "soft pressure suit / collar / joint rings",
+      "direction": "薄い布を一枚重ねたような柔らかな案。装甲ではなく、体幹に沿う布の切り替えだけを加えています。",
+      "notes": "soft layered cloth / curved yoke / body-following panels",
       "bodyProfile": "c-like",
+      "clothingStyle": "body-silhouette-fitted-cloth",
+      "mechanicalEquipment": false,
+      "spaceSuitElements": false,
+      "toesExtended": true,
       "body": {
         "chest": 0.365,
         "chestDepth": 0.238,
@@ -87,19 +106,23 @@
         "headTop": 1.38,
         "footBase": -1.37
       },
-      "triangleCount": 8352,
-      "nodeCount": 53,
-      "materialCount": 6,
-      "byteLength": 38616,
+      "triangleCount": 5048,
+      "nodeCount": 31,
+      "materialCount": 7,
+      "byteLength": 50780,
       "modelingMethod": "Original authored parameters and procedural primitives"
     },
     {
       "id": "D",
-      "type": "original-space-suit-d",
+      "type": "original-fitted-wear-d",
       "file": "original-player-d.glb",
-      "direction": "未来感がやや強め。滑らかな胸部レンズと流線型の肩を持つ飛行スーツ。",
-      "notes": "abstract flight suit / luminous lines / smooth shell",
+      "direction": "斜めに流れる布の切り替えで、飛行中の身体の伸びを強調する軽やかな服。",
+      "notes": "flowing cloth line / close fit / elongated posture",
       "bodyProfile": "c-like",
+      "clothingStyle": "body-silhouette-fitted-cloth",
+      "mechanicalEquipment": false,
+      "spaceSuitElements": false,
+      "toesExtended": true,
       "body": {
         "chest": 0.355,
         "chestDepth": 0.228,
@@ -113,19 +136,23 @@
         "headTop": 1.38,
         "footBase": -1.37
       },
-      "triangleCount": 6316,
-      "nodeCount": 46,
-      "materialCount": 6,
-      "byteLength": 37532,
+      "triangleCount": 4396,
+      "nodeCount": 28,
+      "materialCount": 7,
+      "byteLength": 50140,
       "modelingMethod": "Original authored parameters and procedural primitives"
     },
     {
       "id": "E",
-      "type": "original-space-suit-e",
+      "type": "original-fitted-wear-e",
       "file": "original-player-e.glb",
-      "direction": "ASS MAGICらしい変化球。夜光色の軌道リングを持つ詩的な宇宙スーツ。",
-      "notes": "poetic future / orbit collar / noctilucent accents",
+      "direction": "ASS MAGICらしい静かな変化球。淡い色面を非対称に重ねても、身体の輪郭は隠さない服。",
+      "notes": "poetic cloth / asymmetrical color / visible body silhouette",
       "bodyProfile": "c-like",
+      "clothingStyle": "body-silhouette-fitted-cloth",
+      "mechanicalEquipment": false,
+      "spaceSuitElements": false,
+      "toesExtended": true,
       "body": {
         "chest": 0.368,
         "chestDepth": 0.23,
@@ -139,10 +166,10 @@
         "headTop": 1.38,
         "footBase": -1.37
       },
-      "triangleCount": 7524,
-      "nodeCount": 44,
+      "triangleCount": 4728,
+      "nodeCount": 30,
       "materialCount": 7,
-      "byteLength": 37680,
+      "byteLength": 50672,
       "modelingMethod": "Original authored parameters and procedural primitives"
     }
   ]

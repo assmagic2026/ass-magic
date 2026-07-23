@@ -175,10 +175,10 @@ function buildCompareOptions() {
 
 function candidateLabel(id) {
   return {
-    A: "MINIMAL",
-    B: "BALANCE",
-    C: "SPACE",
-    D: "FUTURE",
+    A: "PURE",
+    B: "NATURAL",
+    C: "LAYER",
+    D: "FLOW",
     E: "POETIC",
   }[id] || id;
 }
@@ -188,7 +188,7 @@ async function loadCandidate(id) {
   const candidate = candidateById(id);
   if (!candidate) throw new Error(`Unknown candidate: ${id}`);
 
-  const promise = loader.loadAsync(`${MODEL_DIRECTORY}${candidate.file}`).then((gltf) => {
+  const promise = loader.loadAsync(`${MODEL_DIRECTORY}${candidate.file}?v=${manifest.version}`).then((gltf) => {
     const root = gltf.scene;
     root.name = `OriginalPlayerCandidate_${id}`;
     root.visible = false;
@@ -574,6 +574,10 @@ function selectionPayload() {
     bodyProfile: candidate.bodyProfile,
     notes: candidate.notes,
     direction: candidate.direction,
+    clothingStyle: candidate.clothingStyle,
+    mechanicalEquipment: candidate.mechanicalEquipment,
+    spaceSuitElements: candidate.spaceSuitElements,
+    toesExtended: candidate.toesExtended,
     dimensions: candidate.dimensions,
     triangleCount: candidate.triangleCount,
     byteLength: candidate.byteLength,
