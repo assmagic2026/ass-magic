@@ -9,12 +9,15 @@ import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-26"
 import {
   createFlightPlayer,
   updateFlightPlayer,
-} from "./whole-planet-player.js?v=realism-47";
-import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-149";
+} from "./whole-planet-player.js?v=realism-48";
+import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-168";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
+const MAX_FLIGHT_ALTITUDE = 300;
+const RETURN_ALTITUDE_CORRIDOR_RADIUS = 220;
+const RETURN_ALTITUDE_CORRIDOR_BELOW_ORIGIN = 42;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 const SUN_DIRECTION = new THREE.Vector3(0.82, 0.33, 0.46).normalize();
 const WORLD_SUN_DIRECTION = SUN_DIRECTION.clone();
@@ -276,8 +279,19 @@ let waterPlayerReflection = null;
 const flightPlayer = createFlightPlayer(scene, {
   modelUrl: useGlbAssets ? "./assets/models/cesium-man.glb" : null,
   castShadow: realismShadowsEnabled,
+  bodyProfile: useGlbAssets ? "cesium-type-c" : null,
 });
-if (flightPlayer.ready) openingCriticalLoads.push(flightPlayer.ready);
+if (flightPlayer.ready) {
+  openingCriticalLoads.push(flightPlayer.ready);
+  void flightPlayer.ready.then(() => {
+    canvas.dataset.playerBodyProfile = flightPlayer.modelVisual?.userData.bodyProfile || "cesium-man";
+    canvas.dataset.playerBodyProfileVertices = String(flightPlayer.modelVisual?.userData.bodyProfileVertices || 0);
+  }).catch(() => {
+    canvas.dataset.playerBodyProfile = "procedural-fallback";
+  });
+} else {
+  canvas.dataset.playerBodyProfile = "procedural-fallback";
+}
 flightPlayer.player.visible = settings.view === "flight";
 flightPlayer.shadow.visible = false;
 if (realismShadowsEnabled) {
@@ -323,6 +337,9 @@ const flightEarthDirection = new THREE.Vector3();
 const flightEarthProjected = new THREE.Vector3();
 const flightBeamClosestPoint = new THREE.Vector3();
 const flightBeamOffset = new THREE.Vector3();
+const flightAltitudeCapPosition = new THREE.Vector3();
+const flightAltitudeCapClosestPoint = new THREE.Vector3();
+const flightAltitudeCapOffset = new THREE.Vector3();
 const flightTerrainAheadUp = new THREE.Vector3();
 const terrainAssistDirection = new THREE.Vector3();
 const terrainAssistLaneDirection = new THREE.Vector3();
@@ -1005,6 +1022,28 @@ function getFlightAltitude(position) {
   if (!position || position.lengthSq() < 0.0001) return 0;
   flightAltitudeDirection.copy(position).normalize();
   return position.length() - getSurfaceRadius(flightAltitudeDirection) - PLAYER_CLEARANCE;
+}
+
+function isInsideReturnAltitudeCorridor(position, returnState) {
+  if (
+    returnState?.phase !== "sanctuary"
+    || returnState.ending
+    || returnState.spaceFlightActive
+    || !returnState.beamOrigin
+    || !returnState.beamDirection
+    || returnState.beamDirection.lengthSq() < 0.0001
+  ) return false;
+
+  const beamLength = specialLandmarks.objects.sanctuary.userData.beamLength || 0;
+  if (beamLength <= 0) return false;
+  flightAltitudeCapOffset.copy(position).sub(returnState.beamOrigin);
+  const axisDistance = flightAltitudeCapOffset.dot(returnState.beamDirection);
+  if (axisDistance < -RETURN_ALTITUDE_CORRIDOR_BELOW_ORIGIN || axisDistance > beamLength + 42) return false;
+  flightAltitudeCapClosestPoint.copy(returnState.beamOrigin).addScaledVector(
+    returnState.beamDirection,
+    THREE.MathUtils.clamp(axisDistance, 0, beamLength),
+  );
+  return position.distanceTo(flightAltitudeCapClosestPoint) <= RETURN_ALTITUDE_CORRIDOR_RADIUS;
 }
 
 function getTerrainColor(direction, height, target) {
@@ -4138,6 +4177,20 @@ function updateFlight(delta) {
   flight.forward.addScaledVector(flightNextUp, -flight.forward.dot(flightNextUp)).normalize();
   const nextSurface = getSurfaceRadius(flightNextUp) + PLAYER_CLEARANCE;
   let nextRadius = currentRadius + flight.radialSpeed * delta;
+  const returnAltitudeCorridor = isInsideReturnAltitudeCorridor(
+    flightAltitudeCapPosition.copy(flightNextUp).multiplyScalar(nextRadius),
+    returnState,
+  );
+  const maximumRadius = nextSurface + MAX_FLIGHT_ALTITUDE;
+  if (!returnAltitudeCorridor && nextRadius > maximumRadius) {
+    nextRadius = maximumRadius;
+    if (flight.radialSpeed > 0) flight.radialSpeed = 0;
+    canvas.dataset.altitudeCap = "300";
+    canvas.dataset.altitudeCapMode = "standard";
+  } else {
+    canvas.dataset.altitudeCap = returnAltitudeCorridor ? "unlocked" : "300";
+    canvas.dataset.altitudeCapMode = returnAltitudeCorridor ? "return-corridor" : "standard";
+  }
   let surfaceGap = nextRadius - nextSurface;
   terrainAssistDirection.copy(flightUp)
     .applyAxisAngle(
@@ -5074,6 +5127,52 @@ function setupOrbitInteraction() {
 }
 
 function setupFlightInteraction() {
+  let speedPointerId = null;
+  const setFlightSpeedFromPointer = (event) => {
+    const rail = flightSpeedPanel?.querySelector(".flight-speed-rail");
+    if (!rail) return false;
+    const railRect = rail.getBoundingClientRect();
+    // Keep the visual rail narrow, but accept a full finger-width target around
+    // it.  This also makes the entire length of the control deterministic on
+    // Safari instead of relying on its tiny native vertical-range hit target.
+    const horizontalReach = 34;
+    const verticalReach = 20;
+    if (
+      event.clientX < railRect.left - horizontalReach
+      || event.clientX > railRect.right + horizontalReach
+      || event.clientY < railRect.top - verticalReach
+      || event.clientY > railRect.bottom + verticalReach
+    ) return false;
+    const top = railRect.top + 12;
+    const bottom = railRect.bottom - 12;
+    const ratio = 1 - THREE.MathUtils.clamp(
+      (event.clientY - top) / Math.max(bottom - top, 1),
+      0,
+      1,
+    );
+    const minimum = Number(flightSpeedSlider.min) || 12;
+    const maximum = Number(flightSpeedSlider.max) || 120;
+    flightSpeedSlider.value = String(Math.round(minimum + (maximum - minimum) * ratio));
+    flightSpeedSlider.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  };
+  flightSpeedPanel?.addEventListener("pointerdown", (event) => {
+    if (!setFlightSpeedFromPointer(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    speedPointerId = event.pointerId;
+    flightSpeedPanel.setPointerCapture?.(event.pointerId);
+  }, { capture: true, passive: false });
+  flightSpeedPanel?.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== speedPointerId) return;
+    event.preventDefault();
+    setFlightSpeedFromPointer(event);
+  }, { passive: false });
+  const releaseSpeedPointer = (event) => {
+    if (event.pointerId === speedPointerId) speedPointerId = null;
+  };
+  flightSpeedPanel?.addEventListener("pointerup", releaseSpeedPointer);
+  flightSpeedPanel?.addEventListener("pointercancel", releaseSpeedPointer);
   flightStick.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     event.stopPropagation();

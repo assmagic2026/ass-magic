@@ -14,6 +14,12 @@ const poseFrameQuaternion = new THREE.Quaternion();
 const waistMeasureA = new THREE.Vector3();
 const waistMeasureB = new THREE.Vector3();
 const headMeasure = new THREE.Vector3();
+const CESIUM_MAN_TYPE_C = Object.freeze({
+  chestWidth: 1.16,
+  chestDepth: 1.10,
+  midWidth: 1.07,
+  waistWidth: 1.02,
+});
 
 export function createFlightPlayer(scene, options = {}) {
   const player = new THREE.Group();
@@ -126,12 +132,17 @@ export function createFlightPlayer(scene, options = {}) {
   };
 
   if (options.modelUrl) {
-    rig.ready = loadPlayerModel(rig, options.modelUrl, options.castShadow === true);
+    rig.ready = loadPlayerModel(
+      rig,
+      options.modelUrl,
+      options.castShadow === true,
+      options.bodyProfile,
+    );
   }
   return rig;
 }
 
-function loadPlayerModel(rig, modelUrl, castShadow) {
+function loadPlayerModel(rig, modelUrl, castShadow, bodyProfile) {
   const loader = new GLTFLoader();
   return loader.loadAsync(modelUrl).then((gltf) => {
     const imported = gltf.scene;
@@ -160,6 +171,11 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
 
     extendImportedArms(imported, 1.44);
     poseSuperman(imported, rig.player);
+    if (bodyProfile === "cesium-type-c") {
+      const activeVertexCount = applyCesiumManTypeCBody(imported);
+      modelVisual.userData.bodyProfile = "cesium-type-c";
+      modelVisual.userData.bodyProfileVertices = activeVertexCount;
+    }
     measureImportedAnchors(imported, rig);
     rig.modelVisual = modelVisual;
     disposeVisual(rig.proceduralVisual);
@@ -167,6 +183,92 @@ function loadPlayerModel(rig, modelUrl, castShadow) {
     console.warn("Realism human GLB could not be loaded; using the lightweight human.", error);
     throw error;
   });
+}
+
+// This is the approved Type C body profile from the comparison page.  It is
+// applied only to a cloned runtime geometry: cesium-man.glb itself remains
+// intact for attribution, future comparison, and fallback use.
+function applyCesiumManTypeCBody(imported) {
+  let skinnedMesh = null;
+  imported.traverse((object) => {
+    if (!skinnedMesh && object.isSkinnedMesh && object.geometry?.attributes?.position) {
+      skinnedMesh = object;
+    }
+  });
+  if (!skinnedMesh) return 0;
+
+  skinnedMesh.geometry = skinnedMesh.geometry.clone();
+  const geometry = skinnedMesh.geometry;
+  const position = geometry.attributes.position;
+  const skinIndex = geometry.attributes.skinIndex;
+  const skinWeight = geometry.attributes.skinWeight;
+  if (!skinIndex || !skinWeight) return 0;
+
+  const basePositions = new Float32Array(position.array);
+  const masks = new Float32Array(position.count);
+  let centerDepthWeighted = 0;
+  let centerWeight = 0;
+  let activeVertexCount = 0;
+
+  for (let index = 0; index < position.count; index += 1) {
+    let torsoWeight = 0;
+    let otherWeight = 0;
+    const joints = [skinIndex.getX(index), skinIndex.getY(index), skinIndex.getZ(index), skinIndex.getW(index)];
+    const weights = [skinWeight.getX(index), skinWeight.getY(index), skinWeight.getZ(index), skinWeight.getW(index)];
+    for (let influence = 0; influence < 4; influence += 1) {
+      if (joints[influence] <= 2) torsoWeight += weights[influence];
+      else otherWeight += weights[influence];
+    }
+    const z = basePositions[index * 3 + 2];
+    const anatomyWeight = smoothstep(0.025, 0.5, torsoWeight) * (1 - otherWeight * 0.18);
+    const lowerFade = smoothstep(0.62, 0.75, z);
+    const upperFade = 1 - smoothstep(1.1, 1.18, z);
+    const mask = anatomyWeight * lowerFade * upperFade;
+    masks[index] = mask;
+    if (mask > 0.03) {
+      activeVertexCount += 1;
+      const centerSampleWeight = mask * smoothstep(0.69, 0.79, z) * (1 - smoothstep(1.17, 1.29, z));
+      centerDepthWeighted += basePositions[index * 3] * centerSampleWeight;
+      centerWeight += centerSampleWeight;
+    }
+  }
+
+  const depthCenter = centerWeight > 0 ? centerDepthWeighted / centerWeight : 0.02;
+  for (let index = 0; index < position.count; index += 1) {
+    const offset = index * 3;
+    const x = basePositions[offset];
+    const y = basePositions[offset + 1];
+    const z = basePositions[offset + 2];
+    const mask = masks[index];
+    const compensatedMidWidth = 1 + (CESIUM_MAN_TYPE_C.midWidth - 1) * 1.15;
+    const targetWidth = z < 0.94
+      ? THREE.MathUtils.lerp(CESIUM_MAN_TYPE_C.waistWidth, compensatedMidWidth, smoothstep(0.78, 0.94, z))
+      : THREE.MathUtils.lerp(
+        compensatedMidWidth,
+        1 + (CESIUM_MAN_TYPE_C.chestWidth - 1) * 3.1,
+        smoothstep(0.94, 1.05, z),
+      );
+    const lowerDepth = 1 + (CESIUM_MAN_TYPE_C.waistWidth - 1) * 0.32;
+    const targetDepth = THREE.MathUtils.lerp(
+      lowerDepth,
+      1 + (CESIUM_MAN_TYPE_C.chestDepth - 1) * 1.02,
+      smoothstep(0.78, 1.05, z),
+    );
+    const widthScale = 1 + (targetWidth - 1) * mask;
+    const depthScale = 1 + (targetDepth - 1) * mask;
+    position.setXYZ(index, depthCenter + (x - depthCenter) * depthScale, y * widthScale, z);
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  skinnedMesh.updateMatrixWorld(true);
+  return activeVertexCount;
+}
+
+function smoothstep(minimum, maximum, value) {
+  const t = THREE.MathUtils.clamp((value - minimum) / Math.max(maximum - minimum, 0.00001), 0, 1);
+  return t * t * (3 - 2 * t);
 }
 
 function measureImportedAnchors(imported, rig) {

@@ -6,11 +6,14 @@
 - Donor: Cesium
 - License: CC BY 4.0
 - Local change: copied without geometry, animation, or texture modification for
-  the isolated high-quality experiment
-- Preview-only Type C reference: `../../cesium-c-reference.html` applies a
-  runtime-only torso body-proportion deformation. The GLB file is not rewritten;
-  see `../../cesium-c-reference-attribution.md` for the visible credit text and
-  the official-adoption credit plan.
+  the isolated high-quality experiment.
+- Official player profile: the high-quality flight page applies the approved
+  Type C torso body-proportion deformation only at runtime. The GLB file is not
+  rewritten. The in-game `CREDITS / ASSET LICENSES` menu states the source,
+  donor, CC BY 4.0 license, modification, and non-endorsement notice.
+- Reference: `../../cesium-c-reference.html` preserves the same Type C values
+  for visual comparison; see `../../cesium-c-reference-attribution.md` for the
+  full visible-credit wording and attribution rationale.
 
 ## old-bible-1825.glb
 

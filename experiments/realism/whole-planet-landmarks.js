@@ -970,9 +970,14 @@ export function createSpecialLandmarks({
       blackBox.visible = blackBoxActive;
       if (blackBoxActive) blackBoxAngle += delta * BLACK_BOX_ORBIT_ANGULAR_SPEED;
 
+      // The beacon is a marker for the discovered, stationary box only.  It
+      // must not reveal the moving target after the sanctuary starts.
+      const blackBoxCanBeacon = activation > 0.03
+        && blackBox.userData.grounded === true
+        && blackBox.userData.opened === true;
       blackBox.userData.beacon = THREE.MathUtils.damp(
         blackBox.userData.beacon,
-        activation > 0.03 ? 1 : 0,
+        blackBoxCanBeacon ? 1 : 0,
         activation > blackBox.userData.beacon ? 2.8 : 5.5,
         delta,
       );
