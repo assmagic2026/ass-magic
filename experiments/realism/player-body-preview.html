@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="theme-color" content="#101310">
+  <title>ASS MAGIC / PLAYER BODY PREVIEW</title>
+  <link rel="stylesheet" href="./player-body-preview.css?v=1">
+</head>
+<body>
+  <div class="preview-shell">
+    <header class="preview-header">
+      <div>
+        <p class="eyebrow">ASS MAGIC / PRIVATE MODEL STUDY</p>
+        <h1>PLAYER BODY PREVIEW</h1>
+      </div>
+      <div class="header-status">
+        <span class="privacy-pill">NOINDEX</span>
+        <span>比較専用・本編未反映</span>
+      </div>
+    </header>
+
+    <main class="preview-main">
+      <section class="stage-card" aria-label="プレイヤー3Dプレビュー">
+        <canvas id="preview-canvas"></canvas>
+
+        <div id="loading-panel" class="loading-panel" role="status" aria-live="polite">
+          <span class="loading-orbit" aria-hidden="true"></span>
+          <strong>OFFICIAL PLAYER LOADING</strong>
+          <small>現行モデルと飛行姿勢を読み込んでいます</small>
+        </div>
+
+        <div class="stage-topline">
+          <div>
+            <span class="stage-kicker">ACTIVE BODY</span>
+            <strong id="active-name">CURRENT</strong>
+          </div>
+          <span id="model-source" class="source-label">cesium-man.glb</span>
+        </div>
+
+        <div class="stage-hint">
+          <span>ドラッグ：回転</span>
+          <span>ホイール / ピンチ：拡大</span>
+        </div>
+
+        <div class="view-presets" role="group" aria-label="視点プリセット">
+          <button type="button" data-view="front" class="is-active">正面</button>
+          <button type="button" data-view="front-quarter">斜め前</button>
+          <button type="button" data-view="side">側面</button>
+          <button type="button" data-view="back-quarter">斜め後</button>
+          <button type="button" data-view="back">背面</button>
+        </div>
+      </section>
+
+      <aside class="control-panel" aria-label="体型比較コントロール">
+        <section class="control-section candidate-section">
+          <div class="section-heading">
+            <div>
+              <span class="section-number">01</span>
+              <h2>BODY CANDIDATE</h2>
+            </div>
+            <span id="saved-candidate" class="saved-candidate">未保存</span>
+          </div>
+          <div id="candidate-list" class="candidate-list"></div>
+          <p id="candidate-description" class="candidate-description"></p>
+        </section>
+
+        <section class="control-section compare-section">
+          <div class="section-heading compact">
+            <div>
+              <span class="section-number">02</span>
+              <h2>COMPARE</h2>
+            </div>
+          </div>
+          <button id="compare-hold" class="compare-hold" type="button">
+            <span>押している間だけ現状体型</span>
+            <small>同じ角度・同じ距離で比較</small>
+          </button>
+          <div class="segmented-row">
+            <span>表示サイズ</span>
+            <div id="size-options" class="segmented" role="group" aria-label="表示サイズ">
+              <button type="button" data-size="close">近接</button>
+              <button type="button" data-size="whole" class="is-active">全身</button>
+              <button type="button" data-size="phone">スマホ実景</button>
+            </div>
+          </div>
+          <div class="segmented-row">
+            <span>背景</span>
+            <div id="background-options" class="segmented" role="group" aria-label="背景">
+              <button type="button" data-background="neutral" class="is-active">中立</button>
+              <button type="button" data-background="sky">空色</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="control-section">
+          <div class="section-heading compact">
+            <div>
+              <span class="section-number">03</span>
+              <h2>MEASURE</h2>
+            </div>
+            <span class="ratio-note">CURRENT = 1.000</span>
+          </div>
+          <dl id="measurements" class="measurements">
+            <div><dt>全高</dt><dd data-measure="height">1.000</dd></div>
+            <div><dt>指先間</dt><dd data-measure="armSpan">1.000</dd></div>
+            <div><dt>肩関節間</dt><dd data-measure="shoulderWidth">1.000</dd></div>
+            <div><dt>上胸横幅</dt><dd data-measure="chestWidth">1.000</dd></div>
+            <div><dt>上胸奥行</dt><dd data-measure="chestDepth">1.000</dd></div>
+            <div><dt>胴中央</dt><dd data-measure="midWidth">1.000</dd></div>
+            <div><dt>ウエスト</dt><dd data-measure="waistWidth">1.000</dd></div>
+          </dl>
+        </section>
+
+        <section class="control-section">
+          <div class="section-heading compact">
+            <div>
+              <span class="section-number">04</span>
+              <h2>FINE TUNE</h2>
+            </div>
+            <button id="reset-button" class="text-button" type="button">候補値に戻す</button>
+          </div>
+          <div id="sliders" class="sliders">
+            <label>
+              <span>上胸横幅 <output data-output="chestWidth">1.000</output></span>
+              <input type="range" min="1" max="1.2" step="0.005" value="1" data-control="chestWidth">
+            </label>
+            <label>
+              <span>上胸奥行 <output data-output="chestDepth">1.000</output></span>
+              <input type="range" min="1" max="1.15" step="0.005" value="1" data-control="chestDepth">
+            </label>
+            <label>
+              <span>胴中央 <output data-output="midWidth">1.000</output></span>
+              <input type="range" min="1" max="1.1" step="0.005" value="1" data-control="midWidth">
+            </label>
+            <label>
+              <span>ウエスト <output data-output="waistWidth">1.000</output></span>
+              <input type="range" min="0.99" max="1.05" step="0.005" value="1" data-control="waistWidth">
+            </label>
+          </div>
+        </section>
+
+        <section class="save-section">
+          <div class="save-actions">
+            <button id="choose-button" class="save-button" type="button">この案を選ぶ</button>
+            <button id="copy-button" class="copy-button" type="button">設定値をコピー</button>
+          </div>
+          <p id="save-status" aria-live="polite">
+            保存先はこのブラウザ内だけです。公式プレイヤーは変更されません。
+          </p>
+          <textarea
+            id="copy-fallback"
+            class="copy-fallback"
+            aria-label="コピーする設定JSON"
+            readonly
+            hidden
+          ></textarea>
+        </section>
+      </aside>
+    </main>
+
+    <footer class="preview-footer">
+      <span>DIRECT PREVIEW ONLY</span>
+      <p>現行モデルの表示・ポーズ・腕の長さを固定し、胴体だけを比較しています。</p>
+    </footer>
+  </div>
+
+  <script type="module" src="./player-body-preview.js?v=1"></script>
+</body>
+</html>
