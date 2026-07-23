@@ -17,7 +17,10 @@ const CONTACTS = [
   { id: "recordPlayer", radius: 31 },
   { id: "book", radius: 64 },
   { id: "compass", radius: 17 },
-  { id: "sanctuary", radius: 34 },
+  // The sanctuary is a tall, radial structure: its upper rings and outer
+  // towers extend well beyond the group's surface anchor. Use a sphere that
+  // covers every physical part plus a small approach margin.
+  { id: "sanctuary", radius: 88 },
   { id: "blackBox", radius: 8 },
 ];
 const SPACE_RETURN_ALTITUDE = 150;

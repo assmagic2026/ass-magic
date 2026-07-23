@@ -11,7 +11,7 @@ import {
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-168";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-169";
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
