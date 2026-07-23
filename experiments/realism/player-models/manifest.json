@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "generator": "ASS MAGIC Original Space Suit Generator 1.0",
+  "copyright": "Copyright 2026 ASS MAGIC. Original procedural geometry.",
+  "rights": {
+    "originalGeometry": true,
+    "externalMeshes": false,
+    "externalTextures": false,
+    "thirdPartyLogos": false,
+    "creditRequiredForModelData": false
+  },
+  "referenceDimensions": {
+    "source": "Current player measurements used only as numeric compatibility targets",
+    "targetHeight": 2.75,
+    "targetFingertipSpan": 2.46
+  },
+  "candidates": [
+    {
+      "id": "A",
+      "type": "original-space-suit-a",
+      "file": "original-player-a.glb",
+      "direction": "最もシンプル。遠景で潰れにくい、柔らかな一体型スーツ。",
+      "notes": "minimal future / clean silhouette / no backpack",
+      "bodyProfile": "c-like",
+      "body": {
+        "chest": 0.35,
+        "chestDepth": 0.225,
+        "mid": 0.285,
+        "waist": 0.245
+      },
+      "dimensions": {
+        "height": 2.75,
+        "fingertipSpan": 2.46,
+        "shoulderSpan": 0.7,
+        "headTop": 1.38,
+        "footBase": -1.37
+      },
+      "triangleCount": 5912,
+      "nodeCount": 38,
+      "materialCount": 6,
+      "byteLength": 35980,
+      "modelingMethod": "Original authored parameters and procedural primitives"
+    },
+    {
+      "id": "B",
+      "type": "original-space-suit-b",
+      "file": "original-player-b.glb",
+      "direction": "最も自然。未来感と宇宙服感を均衡させた基準案。",
+      "notes": "balanced future / space suit / soft utility",
+      "bodyProfile": "c-like",
+      "body": {
+        "chest": 0.36,
+        "chestDepth": 0.232,
+        "mid": 0.292,
+        "waist": 0.248
+      },
+      "dimensions": {
+        "height": 2.75,
+        "fingertipSpan": 2.46,
+        "shoulderSpan": 0.7,
+        "headTop": 1.38,
+        "footBase": -1.37
+      },
+      "triangleCount": 7204,
+      "nodeCount": 43,
+      "materialCount": 6,
+      "byteLength": 36924,
+      "modelingMethod": "Original authored parameters and procedural primitives"
+    },
+    {
+      "id": "C",
+      "type": "original-space-suit-c",
+      "file": "original-player-c.glb",
+      "direction": "宇宙服感がやや強め。首・胸・関節に軽量機能パーツを配置。",
+      "notes": "soft pressure suit / collar / joint rings",
+      "bodyProfile": "c-like",
+      "body": {
+        "chest": 0.365,
+        "chestDepth": 0.238,
+        "mid": 0.296,
+        "waist": 0.25
+      },
+      "dimensions": {
+        "height": 2.75,
+        "fingertipSpan": 2.46,
+        "shoulderSpan": 0.7,
+        "headTop": 1.38,
+        "footBase": -1.37
+      },
+      "triangleCount": 8352,
+      "nodeCount": 53,
+      "materialCount": 6,
+      "byteLength": 38616,
+      "modelingMethod": "Original authored parameters and procedural primitives"
+    },
+    {
+      "id": "D",
+      "type": "original-space-suit-d",
+      "file": "original-player-d.glb",
+      "direction": "未来感がやや強め。滑らかな胸部レンズと流線型の肩を持つ飛行スーツ。",
+      "notes": "abstract flight suit / luminous lines / smooth shell",
+      "bodyProfile": "c-like",
+      "body": {
+        "chest": 0.355,
+        "chestDepth": 0.228,
+        "mid": 0.288,
+        "waist": 0.245
+      },
+      "dimensions": {
+        "height": 2.75,
+        "fingertipSpan": 2.46,
+        "shoulderSpan": 0.7,
+        "headTop": 1.38,
+        "footBase": -1.37
+      },
+      "triangleCount": 6316,
+      "nodeCount": 46,
+      "materialCount": 6,
+      "byteLength": 37532,
+      "modelingMethod": "Original authored parameters and procedural primitives"
+    },
+    {
+      "id": "E",
+      "type": "original-space-suit-e",
+      "file": "original-player-e.glb",
+      "direction": "ASS MAGICらしい変化球。夜光色の軌道リングを持つ詩的な宇宙スーツ。",
+      "notes": "poetic future / orbit collar / noctilucent accents",
+      "bodyProfile": "c-like",
+      "body": {
+        "chest": 0.368,
+        "chestDepth": 0.23,
+        "mid": 0.298,
+        "waist": 0.25
+      },
+      "dimensions": {
+        "height": 2.75,
+        "fingertipSpan": 2.46,
+        "shoulderSpan": 0.7,
+        "headTop": 1.38,
+        "footBase": -1.37
+      },
+      "triangleCount": 7524,
+      "nodeCount": 44,
+      "materialCount": 7,
+      "byteLength": 37680,
+      "modelingMethod": "Original authored parameters and procedural primitives"
+    }
+  ]
+}
