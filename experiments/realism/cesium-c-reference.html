@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="theme-color" content="#0a0d0e">
+  <title>ASS MAGIC / CESIUM MAN TYPE C REFERENCE</title>
+  <link rel="stylesheet" href="./cesium-c-reference.css?v=1">
+</head>
+<body>
+  <div class="reference-shell">
+    <header class="reference-header">
+      <div>
+        <p class="eyebrow">ASS MAGIC / PRIVATE HISTORICAL REFERENCE</p>
+        <h1>CESIUM MAN / TYPE C</h1>
+      </div>
+      <span class="privacy-pill">NOINDEX · NOT ADOPTED</span>
+    </header>
+
+    <main class="reference-main">
+      <section class="stage-card" aria-label="Cesium Man Type C プレビュー">
+        <canvas id="preview-canvas"></canvas>
+        <div id="loading-panel" class="loading-panel" role="status" aria-live="polite">
+          <span class="loading-orbit" aria-hidden="true"></span>
+          <strong>REFERENCE MODEL LOADING</strong>
+          <small>歴史的なType C変形値を復元しています</small>
+        </div>
+        <div class="stage-topline">
+          <div>
+            <span class="stage-kicker">RESTORED BODY PRESET</span>
+            <strong>TYPE C / STRONG</strong>
+          </div>
+          <span class="source-label">cesium-man.glb · runtime deformation only</span>
+        </div>
+        <div class="stage-hint"><span>ドラッグ：回転</span><span>ホイール / ピンチ：拡大</span></div>
+        <div class="view-presets" role="group" aria-label="視点プリセット">
+          <button type="button" data-view="front" class="is-active">正面</button>
+          <button type="button" data-view="front-quarter">斜め前</button>
+          <button type="button" data-view="side">側面</button>
+          <button type="button" data-view="back-quarter">斜め後</button>
+          <button type="button" data-view="back">背面</button>
+        </div>
+      </section>
+
+      <aside class="information-panel" aria-label="Type C仕様とライセンス">
+        <section>
+          <p class="section-number">01</p>
+          <h2>復活したType C</h2>
+          <p>旧比較ページのType Cと同じ、上胸・奥行・胴中央・腰幅の変形値で表示しています。元GLBファイル自体は書き換えていません。</p>
+          <dl class="values">
+            <div><dt>上胸横幅</dt><dd>1.160</dd></div>
+            <div><dt>胸部奥行</dt><dd>1.100</dd></div>
+            <div><dt>胴中央</dt><dd>1.070</dd></div>
+            <div><dt>腰幅</dt><dd>1.020</dd></div>
+          </dl>
+          <button id="compare-hold" class="compare-button" type="button">押している間だけ未変形のCesium Man</button>
+        </section>
+
+        <section class="credit-section">
+          <p class="section-number">02</p>
+          <h2>モデルクレジット</h2>
+          <p><strong>Cesium Man</strong> — CesiumがglTFテスト用に寄贈。<a href="https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/CesiumMan" target="_blank" rel="noopener noreferrer">配布元（KhronosGroup / glTF Sample Models）</a></p>
+          <p>ライセンス：<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="license noopener noreferrer">CC BY 4.0</a>。このプレビューでは、胴体の頂点位置だけを実行時にType Cへ変形しています。Cesiumによる支持・提携を示すものではありません。</p>
+        </section>
+
+        <section class="credit-section recommendation">
+          <p class="section-number">03</p>
+          <h2>正式採用する場合の表記案</h2>
+          <p>ゲーム内メニューの「CREDITS / ASSET LICENSES」と、公式サイトの同名ページに同一文面を常設する案です。HUDへの常時表示は不要ですが、起動後に合理的に見つけられる場所に置きます。</p>
+          <blockquote>Player model: “Cesium Man”, donated by Cesium for glTF testing. Source: KhronosGroup/glTF-Sample-Models. Licensed under CC BY 4.0. Modified by ASS MAGIC (runtime body-proportion deformation). No endorsement by Cesium implied.</blockquote>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <script type="module" src="./cesium-c-reference.js?v=1"></script>
+</body>
+</html>

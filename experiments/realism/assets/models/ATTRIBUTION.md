@@ -7,6 +7,10 @@
 - License: CC BY 4.0
 - Local change: copied without geometry, animation, or texture modification for
   the isolated high-quality experiment
+- Preview-only Type C reference: `../../cesium-c-reference.html` applies a
+  runtime-only torso body-proportion deformation. The GLB file is not rewritten;
+  see `../../cesium-c-reference-attribution.md` for the visible credit text and
+  the official-adoption credit plan.
 
 ## old-bible-1825.glb
 
