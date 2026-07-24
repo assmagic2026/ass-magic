@@ -59,9 +59,17 @@ const QUALITY_PRESETS = Object.freeze({
 
 export function getExperimentSettings() {
   const params = new URLSearchParams(window.location.search);
-  const mode = params.get("mode") === "realism" ? "realism" : "current";
-  const requestedQuality = params.get("quality") || "standard";
-  const view = params.get("view") === "flight" ? "flight" : "orbit";
+  const rootDefaults = globalThis.__ASS_MAGIC_ROOT_DEFAULTS__ || {};
+  const defaultMode = rootDefaults.mode === "realism" ? "realism" : "current";
+  const defaultQuality = typeof rootDefaults.quality === "string" ? rootDefaults.quality : "standard";
+  const defaultView = rootDefaults.view === "flight" ? "flight" : "orbit";
+  const mode = params.has("mode")
+    ? (params.get("mode") === "realism" ? "realism" : "current")
+    : defaultMode;
+  const requestedQuality = params.has("quality") ? params.get("quality") : defaultQuality;
+  const view = params.has("view")
+    ? (params.get("view") === "flight" ? "flight" : "orbit")
+    : defaultView;
   const quality = Object.hasOwn(QUALITY_PRESETS, requestedQuality)
     ? requestedQuality
     : "standard";

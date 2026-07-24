@@ -3,7 +3,7 @@ import {
   AdaptivePixelRatio,
   configureLinks,
   getExperimentSettings,
-} from "./quality.js?v=realism-3";
+} from "./quality.js?v=realism-4";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
 import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-26";
 import {
@@ -11,7 +11,13 @@ import {
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-169";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-170";
+
+const REALISM_ASSET_BASE = new URL("./", import.meta.url);
+
+function resolveRealismAsset(path) {
+  return new URL(path, REALISM_ASSET_BASE).href;
+}
 
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
@@ -260,7 +266,9 @@ const specialLandmarks = createSpecialLandmarks({
   realism: settings.mode === "realism",
   // Load the authored book behind the opening curtain and never swap its
   // design after flight has begun.
-  bookModelUrl: settings.mode === "realism" ? "./assets/models/old-bible-1825.glb" : null,
+  bookModelUrl: settings.mode === "realism"
+    ? resolveRealismAsset("./assets/models/old-bible-1825.glb")
+    : null,
   deferBookModel: false,
   castShadow: realismShadowsEnabled,
 });
@@ -277,7 +285,7 @@ Object.assign(specialLandmarks.directions, {
 });
 let waterPlayerReflection = null;
 const flightPlayer = createFlightPlayer(scene, {
-  modelUrl: useGlbAssets ? "./assets/models/cesium-man.glb" : null,
+  modelUrl: useGlbAssets ? resolveRealismAsset("./assets/models/cesium-man.glb") : null,
   castShadow: realismShadowsEnabled,
   bodyProfile: useGlbAssets ? "cesium-type-c" : null,
 });
@@ -1951,7 +1959,7 @@ function loadPbrTexture(
     resolveLoad = resolve;
   });
   const texture = new THREE.TextureLoader().load(
-    path,
+    resolveRealismAsset(path),
     () => resolveLoad(),
     undefined,
     (error) => {

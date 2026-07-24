@@ -282,7 +282,7 @@ function createDevilModel() {
 
 function resolveRootAsset(path) {
   if (!path) return "";
-  return path.replace(/^\.\//, "../../");
+  return new URL(path, new URL("../../", import.meta.url)).href;
 }
 
 function createButton(label, className = "") {
