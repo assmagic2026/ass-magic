@@ -12,7 +12,7 @@ import {
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
-import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-6";
+import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-7";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
