@@ -615,7 +615,7 @@ function syncSkateStanceMirror() {
     ? mirror
     : flightPlayer.player;
   if (skater.root.parent !== parent) parent.add(skater.root);
-  // The transition pose is deliberately neutral around the board's Y axis.
+  // The skater model also receives this exact neutral Y=-0° in its pose rig.
   if (REAL_SKATE.stanceTransitionTarget) skater.root.rotation.y = -0;
 }
 

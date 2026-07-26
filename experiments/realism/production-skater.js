@@ -140,27 +140,23 @@ export function updateProductionSkaterPose(rig, state, delta) {
   const key = phase === "crouch" ? "crouch" : phase === "nose" || (phase === "air" && !falling) ? "rise" : falling ? "fall" : "ride";
   const pose = key === "crouch" ? CROUCH_POSE : key === "rise" ? RISE_POSE : key === "fall" ? FALL_POSE : RIDE_POSE;
   const offset = OFFSETS[key];
-  // A short 180-switch beat uses the existing crouch pose as a neutral,
-  // centred compression. The parent performs the actual exact reflection.
+  // During the short 180 beat the imported model itself is set to Y=-0°.
+  // Cesium Man's native forward is the board nose, so the abdomen faces the
+  // travel direction without changing board or flight physics.
   const stanceTransition = THREE.MathUtils.clamp(Number(state.stanceTransition) || 0, 0, 1);
   rig.root.userData.skatePose = key;
   rig.root.userData.skateStanceTransition = stanceTransition;
   rig.root.userData.skatePoseBones = REQUIRED_POSE_BONES.length;
-  rig.visual.rotation.y = THREE.MathUtils.damp(rig.visual.rotation.y, -Math.PI * 0.5, 9, delta);
-  rig.visual.position.x = THREE.MathUtils.damp(rig.visual.position.x, THREE.MathUtils.lerp(offset.x, OFFSETS.crouch.x, stanceTransition), 13, delta);
-  rig.visual.position.y = THREE.MathUtils.damp(rig.visual.position.y, THREE.MathUtils.lerp(offset.y, OFFSETS.crouch.y, stanceTransition), 13, delta);
-  rig.visual.position.z = THREE.MathUtils.damp(rig.visual.position.z, THREE.MathUtils.lerp(offset.z, OFFSETS.crouch.z, stanceTransition), 13, delta);
+  if (stanceTransition > 0) rig.visual.rotation.y = -0;
+  else rig.visual.rotation.y = THREE.MathUtils.damp(rig.visual.rotation.y, -Math.PI * 0.5, 9, delta);
+  rig.visual.position.x = THREE.MathUtils.damp(rig.visual.position.x, offset.x, 13, delta);
+  rig.visual.position.y = THREE.MathUtils.damp(rig.visual.position.y, offset.y, 13, delta);
+  rig.visual.position.z = THREE.MathUtils.damp(rig.visual.position.z, offset.z, 13, delta);
   rig.visual.scale.y = THREE.MathUtils.damp(rig.visual.scale.y, 1, 10, delta);
   for (const [name, [x, y, z]] of Object.entries(pose)) {
     const entry = rig.bones.get(name);
     if (!entry) continue;
-    const [crouchX = x, crouchY = y, crouchZ = z] = CROUCH_POSE[name] || [x, y, z];
-    poseEuler.set(
-      THREE.MathUtils.degToRad(THREE.MathUtils.lerp(x, crouchX, stanceTransition)),
-      THREE.MathUtils.degToRad(THREE.MathUtils.lerp(y, crouchY, stanceTransition)),
-      THREE.MathUtils.degToRad(THREE.MathUtils.lerp(z, crouchZ, stanceTransition)),
-      "XYZ",
-    );
+    poseEuler.set(THREE.MathUtils.degToRad(x), THREE.MathUtils.degToRad(y), THREE.MathUtils.degToRad(z), "XYZ");
     poseQuaternion.setFromEuler(poseEuler);
     entry.bone.quaternion.copy(entry.base).multiply(poseQuaternion);
   }
