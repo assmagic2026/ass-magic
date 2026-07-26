@@ -1259,7 +1259,12 @@ body.skate-mode .flight-stick span { width: 42px; height: 42px; }
 @media (max-width: 700px) {
   #real-skate-toggle,
   body.skate-mode #real-skate-fly {
-    top: max(336px, calc(env(safe-area-inset-top) + 320px));
+    /* Keep the switch beneath the speed control on tall phones, but never
+       place it outside a short landscape viewport. */
+    top: min(
+      max(306px, calc(env(safe-area-inset-top) + 292px)),
+      calc(100dvh - env(safe-area-inset-bottom) - 54px)
+    );
     right: max(10px, env(safe-area-inset-right));
   }
 }
