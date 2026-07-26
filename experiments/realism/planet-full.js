@@ -1,9 +1,10 @@
 import * as THREE from "../../three.module.js";
 import {
   AdaptivePixelRatio,
+  MOBILE_HIGH_FLIGHT_DPR_POLICY,
   configureLinks,
   getExperimentSettings,
-} from "./quality.js?v=realism-4";
+} from "./quality.js?v=realism-5";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
 import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-skate-switch-local-2";
 import {
@@ -156,7 +157,7 @@ const runtimePreset = mobileHighProfile
   ? {
     ...baseSettings.preset,
     dprMin: 1,
-    dprMax: 1.45,
+    dprMax: 1.5,
     shadowSize: 1024,
   }
   : baseSettings.preset;
@@ -202,12 +203,47 @@ renderer.shadowMap.enabled = realismShadowsEnabled;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset, {
-  // High quality previously started at DPR 2 on recent phones.  Beginning at
-  // 1.12 cuts the first-frame fill work by roughly two thirds, then the normal
-  // adaptive sampler can raise it once the scene has settled.
-  initialRatio: isMobileFlightProfile ? 1.12 : null,
+  initialRatio: mobileHighProfile ? 1.18 : isMobileFlightProfile ? 1.12 : null,
   settleSeconds: isMobileFlightProfile ? 6 : 3,
+  policy: mobileHighProfile ? MOBILE_HIGH_FLIGHT_DPR_POLICY : null,
+  storageKey: mobileHighProfile ? "assmagic:mobile-high-flight:dpr:v1" : null,
+  onEvaluation: mobileHighProfile
+    ? (state) => {
+      canvas.dataset.adaptiveDprPolicy = state.policy;
+      canvas.dataset.adaptiveDprReason = state.reason;
+      canvas.dataset.adaptiveDprRatio = state.ratio.toFixed(2);
+      canvas.dataset.adaptiveDprAverage = Number.isFinite(state.average)
+        ? state.average.toFixed(2)
+        : "n/a";
+      canvas.dataset.adaptiveDprP95 = Number.isFinite(state.p95)
+        ? state.p95.toFixed(2)
+        : "n/a";
+      canvas.dataset.adaptiveDprMaximum = Number.isFinite(state.maximum)
+        ? state.maximum.toFixed(2)
+        : "n/a";
+      canvas.dataset.adaptiveDprFps = Number.isFinite(state.average)
+        ? (1000 / state.average).toFixed(1)
+        : "n/a";
+      canvas.dataset.adaptiveDprJankRatio = Number.isFinite(state.jankRatio)
+        ? state.jankRatio.toFixed(3)
+        : "n/a";
+      canvas.dataset.adaptiveDprConsecutiveJank = String(
+        state.maximumConsecutiveJank ?? 0,
+      );
+      canvas.dataset.adaptiveDprStableWindows = String(state.stableWindows);
+      canvas.dataset.adaptiveDprCooldown = state.cooldownRemaining.toFixed(1);
+      canvas.dataset.adaptiveDprLastChange = state.lastChangeAt === null
+        ? "never"
+        : new Date(state.lastChangeAt).toISOString();
+    }
+    : null,
 });
+if (mobileHighProfile) {
+  const initialDprState = adaptiveDpr.getDiagnostics();
+  canvas.dataset.adaptiveDprPolicy = initialDprState.policy;
+  canvas.dataset.adaptiveDprReason = initialDprState.lastReason;
+  canvas.dataset.adaptiveDprRatio = initialDprState.ratio.toFixed(2);
+}
 const scene = new THREE.Scene();
 let hemisphereLight = null;
 let twilightFillLight = null;
@@ -901,7 +937,28 @@ setupSiteMenu();
 setupInteraction();
 setupZoomProtection();
 resize();
-window.addEventListener("resize", resize, { passive: true });
+let adaptiveViewportWidth = Math.max(1, window.innerWidth);
+let adaptiveViewportHeight = Math.max(1, window.innerHeight);
+window.addEventListener("resize", () => {
+  const nextWidth = Math.max(1, window.innerWidth);
+  const nextHeight = Math.max(1, window.innerHeight);
+  const orientationChanged = (adaptiveViewportWidth >= adaptiveViewportHeight)
+    !== (nextWidth >= nextHeight);
+  const widthChange = Math.abs(nextWidth - adaptiveViewportWidth) / adaptiveViewportWidth;
+  const heightChange = Math.abs(nextHeight - adaptiveViewportHeight) / adaptiveViewportHeight;
+  resize();
+  if (
+    mobileHighProfile
+    && (orientationChanged || Math.max(widthChange, heightChange) >= 0.18)
+  ) {
+    adaptiveDpr.resetSampling({
+      settleSeconds: MOBILE_HIGH_FLIGHT_DPR_POLICY.resumeSettleSeconds,
+      reason: orientationChanged ? "orientation-change" : "viewport-change",
+    });
+  }
+  adaptiveViewportWidth = nextWidth;
+  adaptiveViewportHeight = nextHeight;
+}, { passive: true });
 const loadingElement = document.querySelector("#loading");
 // The scene already has a complete procedural fallback before external models
 // finish.  Do not cover it (or let flight continue behind a loading page).
@@ -5773,15 +5830,47 @@ function resize() {
   camera.updateProjectionMatrix();
 }
 
-window.addEventListener("pagehide", () => {
+let rendererDisposed = false;
+window.addEventListener("pagehide", (event) => {
+  if (mobileHighProfile && event.persisted) {
+    adaptiveDpr.resetSampling({
+      settleSeconds: MOBILE_HIGH_FLIGHT_DPR_POLICY.resumeSettleSeconds,
+      reason: "page-cache",
+    });
+    return;
+  }
+  if (rendererDisposed) return;
+  rendererDisposed = true;
   renderer.setAnimationLoop(null);
   environmentPhasing?.dispose();
   textureDisposables.forEach((texture) => texture.dispose());
   surfaceGeometryDisposables.forEach((geometry) => geometry.dispose());
   surfaceMaterialDisposables.forEach((material) => material.dispose());
   renderer.dispose();
-}, { once: true });
+});
+
+window.addEventListener("pageshow", (event) => {
+  if (!mobileHighProfile || !event.persisted) return;
+  clock.getDelta();
+  adaptiveDpr.resetSampling({
+    settleSeconds: MOBILE_HIGH_FLIGHT_DPR_POLICY.resumeSettleSeconds,
+    reason: "page-restored",
+  });
+});
 
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) environmentPhasing?.reset();
+  if (document.hidden) {
+    environmentPhasing?.reset();
+    if (mobileHighProfile) {
+      adaptiveDpr.resetSampling({ reason: "page-hidden" });
+    }
+    return;
+  }
+  clock.getDelta();
+  if (mobileHighProfile) {
+    adaptiveDpr.resetSampling({
+      settleSeconds: MOBILE_HIGH_FLIGHT_DPR_POLICY.resumeSettleSeconds,
+      reason: "page-visible",
+    });
+  }
 });
