@@ -11,7 +11,7 @@ import {
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-170";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
 import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
@@ -439,7 +439,10 @@ const REAL_SKATE = {
   board: null,
   skater: null,
 };
-const SKATE_BOARD_SURFACE_CLEARANCE = 0.295;
+// The wheel bottom was only 0.06 units over the mathematical terrain.  On the
+// full planet's high-detail surface shading that reads as a sunk board, so keep
+// a small visual margin while moving rider and board together.
+const SKATE_BOARD_SURFACE_CLEARANCE = 0.35;
 const OLLIE_FALL_POSE_START = 0.2;
 const APPROVED_SKATE_BOARD_TRANSFORMS = {
   ride: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 } },
@@ -744,6 +747,7 @@ const experience = settings.view === "flight"
     getAltitude: getFlightAltitude,
     getSurfaceRadius,
     isEnvironmentPhasing: () => environmentPhasing?.isCollisionSuppressed() === true,
+    isSkating: () => document.body.classList.contains("skate-mode"),
     quality: settings.quality,
     onGuideSpeedChange(speed) {
       flight.speedSelection = speed;

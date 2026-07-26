@@ -574,6 +574,7 @@ export function createWholePlanetExperience({
   getAltitude,
   getSurfaceRadius,
   isEnvironmentPhasing = null,
+  isSkating = () => false,
   quality = "standard",
   onGuideSpeedChange,
   onWorldInversion,
@@ -765,6 +766,7 @@ export function createWholePlanetExperience({
       anchorPosition: new THREE.Vector3(),
       anchorUp: new THREE.Vector3(0, 1, 0),
       lastPlayerPosition: new THREE.Vector3(),
+      skateSuppressed: false,
       bobTime: 0,
       evadeWave: 0,
       navigation: {
@@ -2215,6 +2217,32 @@ export function createWholePlanetExperience({
 
   function updateDevil(delta) {
     const devil = state.devil;
+    if (isSkating?.()) {
+      // Skate is an intentionally separate play mode: no surprise encounter,
+      // no active guide route, and no summon control while riding.
+      if (!devil.skateSuppressed) {
+        devil.skateSuppressed = true;
+        if (devil.phase === "route" || devil.phase === "route-wait") stopDevilRoute(false);
+        devil.phase = "dormant";
+        devil.route = null;
+        devil.navigation.destination = null;
+        devilModel.visible = false;
+        devilUi.overlay.classList.remove("is-open");
+        devilUi.overlay.setAttribute("aria-hidden", "true");
+        devilUi.navigation.classList.remove("is-visible");
+        devilUi.navigation.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("devil-guide-navigating");
+        state.modalOpen = false;
+      }
+      devilUi.summon.classList.remove("is-visible");
+      devilUi.summon.setAttribute("aria-hidden", "true");
+      return;
+    }
+    if (devil.skateSuppressed) {
+      devil.skateSuppressed = false;
+      devilUi.summon.classList.add("is-visible");
+      devilUi.summon.setAttribute("aria-hidden", "false");
+    }
     if (state.modalOpen && devil.phase !== "dialog") return;
     if (devil.phase === "route" || devil.phase === "route-wait") {
       updateDevilRoute(delta);
@@ -2983,6 +3011,7 @@ export function createWholePlanetExperience({
   musicSelectorClose?.addEventListener("click", closeNativeOverlay);
   musicSelectorBackdrop?.addEventListener("click", closeNativeOverlay);
   devilUi.summon.addEventListener("click", () => {
+    if (isSkating?.()) return;
     summonDevil(true);
   });
   devilUi.navigationCancel.addEventListener("click", () => stopDevilRoute(false));
