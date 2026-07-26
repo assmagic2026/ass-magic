@@ -1244,11 +1244,11 @@ body.skate-mode #real-skate-jump {
   position: fixed;
   z-index: 7;
   right: max(18px, env(safe-area-inset-right));
-  bottom: max(92px, calc(env(safe-area-inset-bottom) + 72px));
+  bottom: max(22px, env(safe-area-inset-bottom));
 }
 body.skate-mode .flight-stick {
   right: max(18px, env(safe-area-inset-right));
-  bottom: max(22px, env(safe-area-inset-bottom));
+  bottom: max(92px, calc(env(safe-area-inset-bottom) + 72px));
   width: 142px;
   height: 52px;
   border-radius: 999px;
