@@ -1,5 +1,6 @@
 import * as THREE from "../../three.module.js";
 import { GLTFLoader } from "./vendor/GLTFLoader.js";
+import { applyCesiumManTypeCBody } from "./whole-planet-player.js?v=realism-48";
 
 const MODEL_URL = "./assets/models/cesium-man.glb";
 const poseQuaternion = new THREE.Quaternion();
@@ -39,6 +40,7 @@ const OFFSETS = Object.freeze({
   rise: { x: 0.05, y: 0.18, z: -0.37 },
   fall: { x: 0.05, y: 0.44, z: -0.23 },
 });
+const REQUIRED_POSE_BONES = Object.freeze(Object.keys(RIDE_POSE));
 
 function disposeFallback(root) {
   root.traverse((object) => {
@@ -72,7 +74,18 @@ export function createProductionSkater(options = {}) {
   fallback.position.y = 1.35;
   fallback.castShadow = options.castShadow === true;
   visual.add(fallback);
-  const rig = { root, visual, model: null, bones: new Map(), ready: null, loaded: false, failed: false, bodyHeight: 2.6 };
+  const rig = {
+    root,
+    visual,
+    model: null,
+    bones: new Map(),
+    ready: null,
+    loaded: false,
+    failed: false,
+    bodyHeight: 2.6,
+    poseVerified: false,
+    missingPoseBones: [],
+  };
   rig.ready = new GLTFLoader().loadAsync(options.modelUrl || MODEL_URL).then((gltf) => {
     const imported = gltf.scene;
     imported.updateMatrixWorld(true);
@@ -91,10 +104,18 @@ export function createProductionSkater(options = {}) {
       if (object.material?.map) object.material.map.anisotropy = 8;
     });
     extendImportedArms(imported, 1.44);
+    if (options.bodyProfile === "cesium-type-c") {
+      visual.userData.bodyProfile = "cesium-type-c";
+      visual.userData.bodyProfileVertices = applyCesiumManTypeCBody(imported);
+    }
     for (const name of BONE_NAMES) {
       const bone = imported.getObjectByName(name);
       if (bone) rig.bones.set(name, { bone, base: bone.quaternion.clone() });
     }
+    rig.missingPoseBones = REQUIRED_POSE_BONES.filter((name) => !rig.bones.has(name));
+    rig.poseVerified = rig.missingPoseBones.length === 0;
+    root.userData.skatePoseVerified = rig.poseVerified;
+    root.userData.skatePoseMissingBones = rig.missingPoseBones.join(",");
     visual.add(imported);
     rig.model = imported;
     rig.loaded = true;
@@ -109,13 +130,15 @@ export function createProductionSkater(options = {}) {
 }
 
 export function updateProductionSkaterPose(rig, state, delta) {
-  if (!rig?.model) return;
+  if (!rig?.model || !rig.poseVerified) return;
   for (const { bone, base } of rig.bones.values()) bone.quaternion.copy(base);
   const phase = state.olliePhase || "grounded";
   const falling = phase === "air" && (Number(state.ollieElapsed) >= 0.2 || Number(state.ollieVerticalSpeed) <= 0);
   const key = phase === "crouch" ? "crouch" : phase === "nose" || (phase === "air" && !falling) ? "rise" : falling ? "fall" : "ride";
   const pose = key === "crouch" ? CROUCH_POSE : key === "rise" ? RISE_POSE : key === "fall" ? FALL_POSE : RIDE_POSE;
   const offset = OFFSETS[key];
+  rig.root.userData.skatePose = key;
+  rig.root.userData.skatePoseBones = REQUIRED_POSE_BONES.length;
   rig.visual.rotation.y = THREE.MathUtils.damp(rig.visual.rotation.y, -Math.PI * 0.5, 9, delta);
   rig.visual.position.x = THREE.MathUtils.damp(rig.visual.position.x, offset.x, 13, delta);
   rig.visual.position.y = THREE.MathUtils.damp(rig.visual.position.y, offset.y, 13, delta);

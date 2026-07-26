@@ -12,7 +12,7 @@ import {
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
-import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js";
+import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-2";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
@@ -579,7 +579,11 @@ function syncSkateVisuals() {
 
 REAL_SKATE.board = createSkateboard();
 applyRealSkateBoardTransform("grounded");
-REAL_SKATE.skater = createProductionSkater({ modelUrl: "./assets/models/cesium-man.glb", castShadow: realismShadowsEnabled });
+REAL_SKATE.skater = createProductionSkater({
+  modelUrl: "./assets/models/cesium-man.glb",
+  castShadow: realismShadowsEnabled,
+  bodyProfile: "cesium-type-c",
+});
 REAL_SKATE.skater.root.position.y = -REAL_SKATE.clearance + SKATE_BOARD_SURFACE_CLEARANCE;
 REAL_SKATE.skater.root.visible = false;
 flightPlayer.player.add(REAL_SKATE.skater.root);

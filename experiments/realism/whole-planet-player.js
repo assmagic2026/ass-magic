@@ -189,7 +189,7 @@ function loadPlayerModel(rig, modelUrl, castShadow, bodyProfile) {
 // This is the approved Type C body profile from the comparison page.  It is
 // applied only to a cloned runtime geometry: cesium-man.glb itself remains
 // intact for attribution, future comparison, and fallback use.
-function applyCesiumManTypeCBody(imported) {
+export function applyCesiumManTypeCBody(imported) {
   let skinnedMesh = null;
   imported.traverse((object) => {
     if (!skinnedMesh && object.isSkinnedMesh && object.geometry?.attributes?.position) {
