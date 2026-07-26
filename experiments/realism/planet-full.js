@@ -12,7 +12,7 @@ import {
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
-import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-2";
+import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-3";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
@@ -569,9 +569,12 @@ function createCurvedDeckGeometry() {
 
 function syncSkateVisuals() {
   const skating = REAL_SKATE.active;
-  const skaterReady = REAL_SKATE.skater?.model != null;
+  // Do not replace the flight figure until every approved pose bone has been
+  // found. This prevents a partially loaded or incompatible rig from showing
+  // an unposed body for a frame.
+  const skaterReady = REAL_SKATE.skater?.model != null && REAL_SKATE.skater?.poseVerified === true;
   if (REAL_SKATE.board) REAL_SKATE.board.visible = skating;
-  if (REAL_SKATE.skater) REAL_SKATE.skater.root.visible = skating;
+  if (REAL_SKATE.skater) REAL_SKATE.skater.root.visible = skating && skaterReady;
   if (flightPlayer.proceduralVisual) flightPlayer.proceduralVisual.visible = !skating || !skaterReady;
   if (flightPlayer.modelVisual) flightPlayer.modelVisual.visible = !skating || !skaterReady;
   document.body.classList.toggle("skate-mode", skating);
