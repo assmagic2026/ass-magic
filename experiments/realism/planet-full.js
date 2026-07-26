@@ -330,6 +330,7 @@ const flightHelp = document.querySelector(".help");
 const realSkateToggleButton = document.querySelector("#real-skate-toggle");
 const realSkateFlyButton = document.querySelector("#real-skate-fly");
 const realSkateJumpButton = document.querySelector("#real-skate-jump");
+const skateSwitchFx = document.querySelector("#skate-switch-fx");
 const flightStickTarget = new THREE.Vector2();
 const flightKeyTarget = new THREE.Vector2();
 const flightUp = new THREE.Vector3();
@@ -4031,23 +4032,33 @@ function activateSkate() {
 }
 
 function setRealSkateMode(active) {
+  triggerSkateSwitchEffect();
   if (!active) {
     REAL_SKATE.descending = false;
     REAL_SKATE.active = false;
-    flight.position.addScaledVector(REAL_SKATE.supportUp, 6);
     flight.radialSpeed = 0;
     applyRealSkateBoardTransform("grounded");
     syncSkateVisuals();
     return;
   }
-  const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
-  const altitude = flight.position.length() - getSkateSurfaceRadius(up) - REAL_SKATE.clearance;
-  if (altitude > 0.35) {
-    REAL_SKATE.descending = true;
-    flightReadout.textContent = "SKATE: AUTO LANDING";
-    return;
-  }
+  // The effect masks an immediate mode transfer.  Do not fly through an
+  // automatic descent: even an airborne request becomes a ground skate state
+  // in the same switch moment.
   activateSkate();
+}
+
+let skateSwitchEffectTimer = 0;
+function triggerSkateSwitchEffect() {
+  document.body.classList.remove("skate-switching");
+  // Restart the CSS animation on repeated, rapid SKATE/FLY changes.
+  void skateSwitchFx?.offsetWidth;
+  document.body.classList.add("skate-switching");
+  environmentPhasing?.debugPlayAudio("dematerialize");
+  window.clearTimeout(skateSwitchEffectTimer);
+  window.setTimeout(() => environmentPhasing?.debugPlayAudio("rematerialize"), 155);
+  skateSwitchEffectTimer = window.setTimeout(() => {
+    document.body.classList.remove("skate-switching");
+  }, 430);
 }
 
 function updateSkateApproach(delta) {

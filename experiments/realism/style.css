@@ -1224,22 +1224,28 @@ body.devil-guide-navigating .flight-stick {
 #real-skate-toggle {
   position: fixed;
   z-index: 7;
-  right: max(22px, env(safe-area-inset-right));
-  bottom: max(166px, calc(env(safe-area-inset-bottom) + 142px));
+  top: 376px;
+  right: max(20px, env(safe-area-inset-right));
 }
 
 #real-skate-controls {
+  display: none;
+}
+
+body.skate-mode #real-skate-toggle { display: none; }
+body.skate-mode #real-skate-controls { display: block; }
+body.skate-mode #real-skate-fly {
+  position: fixed;
+  z-index: 7;
+  top: 376px;
+  right: max(20px, env(safe-area-inset-right));
+}
+body.skate-mode #real-skate-jump {
   position: fixed;
   z-index: 7;
   right: max(18px, env(safe-area-inset-right));
   bottom: max(92px, calc(env(safe-area-inset-bottom) + 72px));
-  display: none;
-  flex-direction: column;
-  gap: 8px;
 }
-
-body.skate-mode #real-skate-toggle { display: none; }
-body.skate-mode #real-skate-controls { display: flex; }
 body.skate-mode .flight-stick {
   right: max(18px, env(safe-area-inset-right));
   bottom: max(22px, env(safe-area-inset-bottom));
@@ -1249,6 +1255,35 @@ body.skate-mode .flight-stick {
 }
 
 body.skate-mode .flight-stick span { width: 42px; height: 42px; }
+
+#skate-switch-fx {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(232, 252, 255, 0.6) 0 2%, rgba(122, 214, 239, 0.26) 8%, rgba(16, 32, 52, 0.08) 30%, transparent 64%),
+    repeating-radial-gradient(circle at 50% 50%, rgba(196, 246, 255, 0.25) 0 1px, transparent 2px 12px);
+  mix-blend-mode: screen;
+}
+
+body.skate-switching #skate-switch-fx { animation: skate-switch-phase 0.42s cubic-bezier(0.2, 0.75, 0.2, 1) both; }
+
+@keyframes skate-switch-phase {
+  0% { opacity: 0; transform: scale(0.5); filter: blur(0); }
+  26% { opacity: 0.95; transform: scale(1.12); filter: blur(2px); }
+  58% { opacity: 0.52; transform: scale(1.8); filter: blur(6px); }
+  100% { opacity: 0; transform: scale(2.3); filter: blur(10px); }
+}
+
+@media (max-width: 700px) {
+  #real-skate-toggle,
+  body.skate-mode #real-skate-fly {
+    top: max(336px, calc(env(safe-area-inset-top) + 320px));
+    right: max(10px, env(safe-area-inset-right));
+  }
+}
 
 /* Keep the summon button clear of the flight ALT readout on every viewport. */
 body.flight-mode #devil-guide-summon {
