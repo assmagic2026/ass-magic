@@ -1307,7 +1307,7 @@ body.skate-mode .flight-stick span { width: 42px; height: 42px; }
   body.skate-mode #real-skate-stance {
     display: grid;
     place-items: center;
-    right: 112px;
+    right: 130px;
     bottom: 14px;
     z-index: 8;
     pointer-events: auto;
@@ -1320,7 +1320,7 @@ body.skate-mode .flight-stick span { width: 42px; height: 42px; }
     }
 
     body.skate-mode #real-skate-stance {
-      right: calc(env(safe-area-inset-right) + 102px);
+      right: calc(env(safe-area-inset-right) + 120px);
       bottom: max(14px, env(safe-area-inset-bottom));
     }
   }
