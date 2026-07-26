@@ -622,7 +622,7 @@ function syncSkateStanceMirror() {
 function updateSkateStanceTransition(delta) {
   const skate = REAL_SKATE;
   if (!skate.stanceTransitionTarget) return 0;
-  const duration = 0.20;
+  const duration = 0.04;
   skate.stanceTransitionElapsed += delta;
   const progress = THREE.MathUtils.clamp(skate.stanceTransitionElapsed / duration, 0, 1);
   const compression = Math.sin(progress * Math.PI);
