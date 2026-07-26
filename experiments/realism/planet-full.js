@@ -426,6 +426,8 @@ const REAL_SKATE = {
   phase: "grounded",
   phaseElapsed: 0,
   jumpImpulse: 16.8,
+  bigJump: false,
+  boardFlipElapsed: -1,
   supportUp: new THREE.Vector3(0, 1, 0),
   surfaceNormal: new THREE.Vector3(0, 1, 0),
   forward: new THREE.Vector3(0, 0, 1),
@@ -449,6 +451,7 @@ const REAL_SKATE = {
 // a small visual margin while moving rider and board together.
 const SKATE_BOARD_SURFACE_CLEARANCE = 0.35;
 const OLLIE_FALL_POSE_START = 0.2;
+const BIG_JUMP_BOARD_FLIP_DURATION = 0.2;
 const APPROVED_SKATE_BOARD_TRANSFORMS = {
   ride: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 } },
   crouch: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 } },
@@ -463,7 +466,7 @@ function getSkatePoseKey(phase, verticalSpeed = 0, airElapsed = 0) {
   return "ride";
 }
 
-function applyRealSkateBoardTransform(phase, verticalSpeed = 0, airElapsed = 0, delta = 0) {
+function applyRealSkateBoardTransform(phase, verticalSpeed = 0, airElapsed = 0, delta = 0, boardFlipProgress = -1) {
   if (!REAL_SKATE.board) return;
   const transform = APPROVED_SKATE_BOARD_TRANSFORMS[getSkatePoseKey(phase, verticalSpeed, airElapsed)];
   const targetPosition = {
@@ -486,7 +489,15 @@ function applyRealSkateBoardTransform(phase, verticalSpeed = 0, airElapsed = 0, 
   REAL_SKATE.board.position.z = THREE.MathUtils.damp(REAL_SKATE.board.position.z, targetPosition.z, 18, delta);
   REAL_SKATE.board.rotation.x = THREE.MathUtils.damp(REAL_SKATE.board.rotation.x, targetRotation.x, 18, delta);
   REAL_SKATE.board.rotation.y = THREE.MathUtils.damp(REAL_SKATE.board.rotation.y, targetRotation.y, 18, delta);
-  REAL_SKATE.board.rotation.z = THREE.MathUtils.damp(REAL_SKATE.board.rotation.z, targetRotation.z, 18, delta);
+  if (boardFlipProgress >= 0) {
+    // A complete board flip uses the deck's nose-to-tail axis. Set this axis
+    // directly so the visual always completes exactly one turn in 0.2s.
+    REAL_SKATE.board.rotation.z = boardFlipProgress >= 1
+      ? targetRotation.z
+      : targetRotation.z + Math.PI * 2 * boardFlipProgress;
+  } else {
+    REAL_SKATE.board.rotation.z = THREE.MathUtils.damp(REAL_SKATE.board.rotation.z, targetRotation.z, 18, delta);
+  }
 }
 
 function createSkateboard() {
@@ -4112,6 +4123,8 @@ function setRealSkateMode(active) {
     REAL_SKATE.active = false;
     REAL_SKATE.stanceTransitionTarget = null;
     REAL_SKATE.stanceTransitionElapsed = 0;
+    REAL_SKATE.bigJump = false;
+    REAL_SKATE.boardFlipElapsed = -1;
     const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
     // Keep the same world position when leaving the board. The phase effect's
     // collision guard lets normal flight regain clearance smoothly afterward.
@@ -4218,6 +4231,8 @@ function updateRealPlanetSkate(delta) {
   const jumpPressed = flight.keys.has("Space");
   if (jumpPressed && !skate.jumpHeld && skate.phase === "grounded") {
     skate.jumpImpulse = getUphillOllieImpulse({ normalImpulse: 16.8, speed: skate.speed, slopeAcceleration });
+    skate.bigJump = skate.jumpImpulse > 16.8 + 0.001;
+    skate.boardFlipElapsed = -1;
     skate.phase = "crouch";
     skate.phaseElapsed = 0;
   }
@@ -4226,7 +4241,16 @@ function updateRealPlanetSkate(delta) {
   if (skate.phase === "crouch" && skate.phaseElapsed >= 0.12) { skate.phase = "nose"; skate.phaseElapsed = 0; }
   else if (skate.phase === "nose" && skate.phaseElapsed >= 0.09) { skate.phase = "air"; skate.phaseElapsed = 0; skate.verticalSpeed = skate.jumpImpulse; skate.airRadius = getSkateSurfaceRadius(up) + skate.clearance; }
   if (skate.phase === "air") { skate.verticalSpeed -= 21 * delta; skate.airRadius += skate.verticalSpeed * delta; }
-  applyRealSkateBoardTransform(skate.phase, skate.verticalSpeed, skate.phaseElapsed, delta);
+  const boardPoseKey = getSkatePoseKey(skate.phase, skate.verticalSpeed, skate.phaseElapsed);
+  if (skate.bigJump && boardPoseKey === "fall") {
+    if (skate.boardFlipElapsed < 0) skate.boardFlipElapsed = 0;
+    skate.boardFlipElapsed += delta;
+  }
+  const boardFlipProgress = skate.boardFlipElapsed < 0
+    ? -1
+    : THREE.MathUtils.clamp(skate.boardFlipElapsed / BIG_JUMP_BOARD_FLIP_DURATION, 0, 1);
+  canvas.dataset.skateBoardFlip = boardFlipProgress < 0 ? "idle" : boardFlipProgress >= 1 ? "complete" : "flipping";
+  applyRealSkateBoardTransform(skate.phase, skate.verticalSpeed, skate.phaseElapsed, delta, boardFlipProgress);
   const currentRadius = skate.phase === "air" ? skate.airRadius : getSkateSurfaceRadius(up) + skate.clearance;
   const moveAngle = skate.speed * delta / Math.max(currentRadius, 1);
   skate.right.crossVectors(up, flight.forward).normalize();
@@ -4236,7 +4260,16 @@ function updateRealPlanetSkate(delta) {
   const landingRadius = getSkateSurfaceRadius(skate.nextUp) + skate.clearance;
   let radius = landingRadius;
   if (skate.phase === "air") {
-    if (skate.airRadius <= landingRadius) { skate.airRadius = landingRadius; if (skate.verticalSpeed <= 0) { skate.phase = "grounded"; skate.phaseElapsed = 0; skate.verticalSpeed = 0; } }
+    if (skate.airRadius <= landingRadius) {
+      skate.airRadius = landingRadius;
+      if (skate.verticalSpeed <= 0) {
+        skate.phase = "grounded";
+        skate.phaseElapsed = 0;
+        skate.verticalSpeed = 0;
+        skate.bigJump = false;
+        skate.boardFlipElapsed = -1;
+      }
+    }
     radius = skate.airRadius;
     skate.airHeight = Math.max(0, radius - landingRadius);
   } else skate.airHeight = 0;
