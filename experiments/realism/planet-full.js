@@ -415,6 +415,8 @@ const REAL_SKATE = {
   active: false,
   descending: false,
   stance: "regular",
+  stanceTransitionElapsed: 0,
+  stanceTransitionTarget: null,
   speed: 0,
   clearance: 1.03,
   airRadius: 0,
@@ -581,6 +583,7 @@ function syncSkateVisuals() {
     : REAL_SKATE.skater?.failed ? "failed" : "loading";
   canvas.dataset.skateStance = REAL_SKATE.stance;
   canvas.dataset.skateStanceMode = "exact-mirror";
+  canvas.dataset.skateStancePhase = REAL_SKATE.stanceTransitionTarget ? "turning" : "ready";
   syncSkateStanceMirror();
   if (REAL_SKATE.board) REAL_SKATE.board.visible = skating;
   if (REAL_SKATE.skater) REAL_SKATE.skater.root.visible = skating && skaterReady;
@@ -590,11 +593,14 @@ function syncSkateVisuals() {
   document.body.classList.toggle("skate-goofy", skating && REAL_SKATE.stance === "goofy");
   if (realSkateStanceButton) {
     const isGoofy = REAL_SKATE.stance === "goofy";
-    realSkateStanceButton.disabled = !skating;
+    const isTurning = REAL_SKATE.stanceTransitionTarget != null;
+    realSkateStanceButton.disabled = !skating || isTurning;
     realSkateStanceButton.setAttribute("aria-pressed", String(isGoofy));
     realSkateStanceButton.setAttribute(
       "aria-label",
-      isGoofy ? "スタンスをグーフィーからレギュラーへ切り替え" : "スタンスをレギュラーからグーフィーへ切り替え",
+      isTurning
+        ? "スタンスを切り替え中"
+        : isGoofy ? "スタンスをグーフィーからレギュラーへ切り替え" : "スタンスをレギュラーからグーフィーへ切り替え",
     );
   }
 }
@@ -605,8 +611,28 @@ function syncSkateStanceMirror() {
   if (!skater?.root || !mirror) return;
   // The mirror parent reflects the complete skinned rider at board-local
   // X=0. The deck remains a sibling, so its nose and travel stay unchanged.
-  const parent = REAL_SKATE.stance === "goofy" ? mirror : flightPlayer.player;
+  const parent = !REAL_SKATE.stanceTransitionTarget && REAL_SKATE.stance === "goofy"
+    ? mirror
+    : flightPlayer.player;
   if (skater.root.parent !== parent) parent.add(skater.root);
+  // The transition pose is deliberately neutral around the board's Y axis.
+  if (REAL_SKATE.stanceTransitionTarget) skater.root.rotation.y = -0;
+}
+
+function updateSkateStanceTransition(delta) {
+  const skate = REAL_SKATE;
+  if (!skate.stanceTransitionTarget) return 0;
+  const duration = 0.20;
+  skate.stanceTransitionElapsed += delta;
+  const progress = THREE.MathUtils.clamp(skate.stanceTransitionElapsed / duration, 0, 1);
+  const compression = Math.sin(progress * Math.PI);
+  if (progress >= 1) {
+    skate.stance = skate.stanceTransitionTarget;
+    skate.stanceTransitionTarget = null;
+    skate.stanceTransitionElapsed = 0;
+    syncSkateVisuals();
+  }
+  return compression;
 }
 
 REAL_SKATE.board = createSkateboard();
@@ -4084,6 +4110,8 @@ function setRealSkateMode(active) {
   if (!active) {
     REAL_SKATE.descending = false;
     REAL_SKATE.active = false;
+    REAL_SKATE.stanceTransitionTarget = null;
+    REAL_SKATE.stanceTransitionElapsed = 0;
     const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
     // Keep the same world position when leaving the board. The phase effect's
     // collision guard lets normal flight regain clearance smoothly afterward.
@@ -4172,6 +4200,7 @@ function updateRealSkateCamera(delta, snap = false) {
 
 function updateRealPlanetSkate(delta) {
   const skate = REAL_SKATE;
+  const stanceTransition = updateSkateStanceTransition(delta);
   const up = skate.nextUp.copy(flight.position).normalize();
   getTerrainSurfaceNormal(up, skate.surfaceNormal);
   skate.supportUp.lerp(up, 1 - Math.exp(-5.6 * delta)).lerp(skate.surfaceNormal, 1 - Math.exp(-3.4 * delta)).normalize();
@@ -4219,6 +4248,7 @@ function updateRealPlanetSkate(delta) {
     olliePhase: skate.phase,
     ollieVerticalSpeed: skate.verticalSpeed,
     ollieElapsed: skate.phaseElapsed,
+    stanceTransition,
   }, delta);
   updateRealSkateCamera(delta);
   updateFlightEnvironment(skate.nextUp, delta);
@@ -5680,8 +5710,9 @@ function setupFlightInteraction() {
   realSkateToggleButton?.addEventListener("click", () => setRealSkateMode(true));
   realSkateFlyButton?.addEventListener("click", () => setRealSkateMode(false));
   realSkateStanceButton?.addEventListener("click", () => {
-    if (!REAL_SKATE.active) return;
-    REAL_SKATE.stance = REAL_SKATE.stance === "regular" ? "goofy" : "regular";
+    if (!REAL_SKATE.active || REAL_SKATE.stanceTransitionTarget) return;
+    REAL_SKATE.stanceTransitionTarget = REAL_SKATE.stance === "regular" ? "goofy" : "regular";
+    REAL_SKATE.stanceTransitionElapsed = 0;
     syncSkateVisuals();
   });
   realSkateJumpButton?.addEventListener("pointerdown", (event) => {
