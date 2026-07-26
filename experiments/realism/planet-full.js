@@ -439,13 +439,51 @@ const REAL_SKATE = {
   board: null,
   skater: null,
 };
+const SKATE_BOARD_SURFACE_CLEARANCE = 0.295;
+const OLLIE_FALL_POSE_START = 0.2;
+const APPROVED_SKATE_BOARD_TRANSFORMS = {
+  ride: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 } },
+  crouch: { position: { x: 0, y: 0, z: 0 }, rotationDeg: { x: 0, y: 0, z: 0 } },
+  rise: { position: { x: -0.02, y: 0.48, z: -0.09 }, rotationDeg: { x: -34.5, y: 0, z: 0 } },
+  fall: { position: { x: -0.02, y: 0.81, z: 0.1 }, rotationDeg: { x: 10, y: 0, z: 0 } },
+};
+
+function getSkatePoseKey(phase, verticalSpeed = 0, airElapsed = 0) {
+  if (phase === "crouch") return "crouch";
+  if (phase === "nose" || (phase === "air" && airElapsed < OLLIE_FALL_POSE_START && verticalSpeed > 0)) return "rise";
+  if (phase === "air") return "fall";
+  return "ride";
+}
+
+function applyRealSkateBoardTransform(phase, verticalSpeed = 0, airElapsed = 0, delta = 0) {
+  if (!REAL_SKATE.board) return;
+  const transform = APPROVED_SKATE_BOARD_TRANSFORMS[getSkatePoseKey(phase, verticalSpeed, airElapsed)];
+  const targetPosition = {
+    x: transform.position.x,
+    y: -REAL_SKATE.clearance + SKATE_BOARD_SURFACE_CLEARANCE + transform.position.y,
+    z: transform.position.z,
+  };
+  const targetRotation = {
+    x: THREE.MathUtils.degToRad(transform.rotationDeg.x),
+    y: THREE.MathUtils.degToRad(transform.rotationDeg.y),
+    z: THREE.MathUtils.degToRad(transform.rotationDeg.z),
+  };
+  if (delta <= 0) {
+    REAL_SKATE.board.position.set(targetPosition.x, targetPosition.y, targetPosition.z);
+    REAL_SKATE.board.rotation.set(targetRotation.x, targetRotation.y, targetRotation.z);
+    return;
+  }
+  REAL_SKATE.board.position.x = THREE.MathUtils.damp(REAL_SKATE.board.position.x, targetPosition.x, 18, delta);
+  REAL_SKATE.board.position.y = THREE.MathUtils.damp(REAL_SKATE.board.position.y, targetPosition.y, 18, delta);
+  REAL_SKATE.board.position.z = THREE.MathUtils.damp(REAL_SKATE.board.position.z, targetPosition.z, 18, delta);
+  REAL_SKATE.board.rotation.x = THREE.MathUtils.damp(REAL_SKATE.board.rotation.x, targetRotation.x, 18, delta);
+  REAL_SKATE.board.rotation.y = THREE.MathUtils.damp(REAL_SKATE.board.rotation.y, targetRotation.y, 18, delta);
+  REAL_SKATE.board.rotation.z = THREE.MathUtils.damp(REAL_SKATE.board.rotation.z, targetRotation.z, 18, delta);
+}
 
 function createSkateboard() {
   const board = new THREE.Group();
-  const deck = new THREE.Mesh(
-    new THREE.BoxGeometry(0.58, 0.045, 2.05, 5, 1, 18),
-    new THREE.MeshStandardMaterial({ color: 0x090a0a, roughness: 0.96 }),
-  );
+  const deck = new THREE.Mesh(createCurvedDeckGeometry(), new THREE.MeshStandardMaterial({ color: 0x090a0a, roughness: 0.96 }));
   deck.castShadow = realismShadowsEnabled;
   board.add(deck);
   const truckMaterial = new THREE.MeshStandardMaterial({ color: 0x9ba09d, metalness: 0.85, roughness: 0.3 });
@@ -462,10 +500,68 @@ function createSkateboard() {
       board.add(wheel);
     }
   }
-  board.position.y = -REAL_SKATE.clearance + 0.295;
+  board.position.y = -REAL_SKATE.clearance + SKATE_BOARD_SURFACE_CLEARANCE;
   board.visible = false;
   flightPlayer.player.add(board);
   return board;
+}
+
+function createCurvedDeckGeometry() {
+  const zSegments = 48;
+  const acrossSegments = 6;
+  const vertices = [];
+  const indices = [];
+  const layerStride = (acrossSegments + 1) * 2;
+  const halfWidthAt = (z) => {
+    const distance = Math.abs(z);
+    if (distance <= 0.72) return 0.29;
+    if (distance <= 0.92) return THREE.MathUtils.lerp(0.29, 0.245, THREE.MathUtils.smoothstep((distance - 0.72) / 0.2, 0, 1));
+    return THREE.MathUtils.lerp(0.245, 0.205, THREE.MathUtils.smoothstep((distance - 0.92) / 0.11, 0, 1));
+  };
+  const kickAt = (z) => {
+    if (z > 0.58) return THREE.MathUtils.smoothstep((z - 0.58) / 0.45, 0, 1) * 0.14;
+    if (z < -0.58) return THREE.MathUtils.smoothstep((-z - 0.58) / 0.45, 0, 1) * 0.11;
+    return 0;
+  };
+  for (let zIndex = 0; zIndex <= zSegments; zIndex += 1) {
+    const z = THREE.MathUtils.lerp(-1.03, 1.03, zIndex / zSegments);
+    const width = halfWidthAt(z);
+    const kick = kickAt(z);
+    for (const bottom of [false, true]) {
+      for (let xIndex = 0; xIndex <= acrossSegments; xIndex += 1) {
+        const x = THREE.MathUtils.lerp(-width, width, xIndex / acrossSegments);
+        const concave = (Math.abs(x) / width) ** 2 * 0.006;
+        const topY = 0.0175 + kick + concave;
+        vertices.push(x, bottom ? topY - 0.035 : topY, z);
+      }
+    }
+  }
+  const addQuad = (a, b, c, d) => indices.push(a, b, d, b, c, d);
+  for (let zIndex = 0; zIndex < zSegments; zIndex += 1) {
+    const top = zIndex * layerStride;
+    const nextTop = (zIndex + 1) * layerStride;
+    const bottom = top + acrossSegments + 1;
+    const nextBottom = nextTop + acrossSegments + 1;
+    for (let xIndex = 0; xIndex < acrossSegments; xIndex += 1) {
+      addQuad(top + xIndex, nextTop + xIndex, nextTop + xIndex + 1, top + xIndex + 1);
+      addQuad(bottom + xIndex + 1, nextBottom + xIndex + 1, nextBottom + xIndex, bottom + xIndex);
+    }
+    addQuad(top, top + acrossSegments + 1, nextTop + acrossSegments + 1, nextTop);
+    addQuad(top + acrossSegments, nextTop, nextTop + acrossSegments + 1, top + acrossSegments + 1);
+  }
+  const firstTop = 0;
+  const firstBottom = acrossSegments + 1;
+  const lastTop = zSegments * layerStride;
+  const lastBottom = lastTop + acrossSegments + 1;
+  for (let xIndex = 0; xIndex < acrossSegments; xIndex += 1) {
+    addQuad(firstTop + xIndex + 1, firstBottom + xIndex + 1, firstBottom + xIndex, firstTop + xIndex);
+    addQuad(lastTop + xIndex, lastBottom + xIndex, lastBottom + xIndex + 1, lastTop + xIndex + 1);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function syncSkateVisuals() {
@@ -479,8 +575,9 @@ function syncSkateVisuals() {
 }
 
 REAL_SKATE.board = createSkateboard();
-REAL_SKATE.skater = createProductionSkater({ castShadow: realismShadowsEnabled });
-REAL_SKATE.skater.root.position.y = -REAL_SKATE.clearance + 0.295;
+applyRealSkateBoardTransform("grounded");
+REAL_SKATE.skater = createProductionSkater({ modelUrl: "./assets/models/cesium-man.glb", castShadow: realismShadowsEnabled });
+REAL_SKATE.skater.root.position.y = -REAL_SKATE.clearance + SKATE_BOARD_SURFACE_CLEARANCE;
 REAL_SKATE.skater.root.visible = false;
 flightPlayer.player.add(REAL_SKATE.skater.root);
 REAL_SKATE.skater.ready.then(syncSkateVisuals, syncSkateVisuals);
@@ -761,11 +858,14 @@ renderer.setAnimationLoop(() => {
     });
     experience?.update(simulationDelta);
     if (settings.view === "flight") {
-      const skateOwnsMovement = REAL_SKATE.active || REAL_SKATE.descending;
+      const skateAutoLanding = REAL_SKATE.descending;
+      const skateOwnsMovement = REAL_SKATE.active || skateAutoLanding;
       if (experience?.isGuideNavigating() && !skateOwnsMovement) updateGuidedFlight(simulationDelta);
       // A deliberate SKATE request must be able to finish its automatic landing
-      // even while an optional site overlay has paused ordinary flight.
-      else if (skateOwnsMovement || !experience?.isPaused()) updateFlight(simulationDelta);
+      // even while an optional site overlay has paused ordinary flight. Once
+      // riding, however, every native overlay (including the book) freezes
+      // skateboard movement just like normal flight.
+      else if (skateAutoLanding || !experience?.isPaused()) updateFlight(simulationDelta);
     } else {
       updateOrbit(simulationDelta);
     }
@@ -3922,6 +4022,7 @@ function activateSkate() {
   skate.forward.copy(flight.forward);
   flight.position.copy(up).multiplyScalar(surfaceRadius + skate.clearance);
   flight.speed = skate.speed;
+  applyRealSkateBoardTransform("grounded");
   syncSkateVisuals();
 }
 
@@ -3931,6 +4032,7 @@ function setRealSkateMode(active) {
     REAL_SKATE.active = false;
     flight.position.addScaledVector(REAL_SKATE.supportUp, 6);
     flight.radialSpeed = 0;
+    applyRealSkateBoardTransform("grounded");
     syncSkateVisuals();
     return;
   }
@@ -4024,6 +4126,7 @@ function updateRealPlanetSkate(delta) {
   if (skate.phase === "crouch" && skate.phaseElapsed >= 0.12) { skate.phase = "nose"; skate.phaseElapsed = 0; }
   else if (skate.phase === "nose" && skate.phaseElapsed >= 0.09) { skate.phase = "air"; skate.phaseElapsed = 0; skate.verticalSpeed = skate.jumpImpulse; skate.airRadius = getSkateSurfaceRadius(up) + skate.clearance; }
   if (skate.phase === "air") { skate.verticalSpeed -= 21 * delta; skate.airRadius += skate.verticalSpeed * delta; }
+  applyRealSkateBoardTransform(skate.phase, skate.verticalSpeed, skate.phaseElapsed, delta);
   const currentRadius = skate.phase === "air" ? skate.airRadius : getSkateSurfaceRadius(up) + skate.clearance;
   const moveAngle = skate.speed * delta / Math.max(currentRadius, 1);
   skate.right.crossVectors(up, flight.forward).normalize();
