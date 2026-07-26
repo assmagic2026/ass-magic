@@ -12,7 +12,7 @@ import {
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
-import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-4";
+import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-5";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
@@ -329,6 +329,7 @@ const flightReadout = document.querySelector("#flight-readout");
 const flightHelp = document.querySelector(".help");
 const realSkateToggleButton = document.querySelector("#real-skate-toggle");
 const realSkateFlyButton = document.querySelector("#real-skate-fly");
+const realSkateStanceButton = document.querySelector("#real-skate-stance");
 const realSkateJumpButton = document.querySelector("#real-skate-jump");
 const flightStickTarget = new THREE.Vector2();
 const flightKeyTarget = new THREE.Vector2();
@@ -413,6 +414,7 @@ const flight = {
 const REAL_SKATE = {
   active: false,
   descending: false,
+  stance: "regular",
   speed: 0,
   clearance: 1.03,
   airRadius: 0,
@@ -576,11 +578,23 @@ function syncSkateVisuals() {
   canvas.dataset.skatePoseRig = skaterReady
     ? "ready"
     : REAL_SKATE.skater?.failed ? "failed" : "loading";
+  canvas.dataset.skateStance = REAL_SKATE.stance;
   if (REAL_SKATE.board) REAL_SKATE.board.visible = skating;
   if (REAL_SKATE.skater) REAL_SKATE.skater.root.visible = skating && skaterReady;
   if (flightPlayer.proceduralVisual) flightPlayer.proceduralVisual.visible = !skating || !skaterReady;
   if (flightPlayer.modelVisual) flightPlayer.modelVisual.visible = !skating || !skaterReady;
   document.body.classList.toggle("skate-mode", skating);
+  document.body.classList.toggle("skate-goofy", skating && REAL_SKATE.stance === "goofy");
+  if (realSkateStanceButton) {
+    const canSwitchStance = skating && REAL_SKATE.phase === "grounded";
+    const isGoofy = REAL_SKATE.stance === "goofy";
+    realSkateStanceButton.disabled = !canSwitchStance;
+    realSkateStanceButton.setAttribute("aria-pressed", String(isGoofy));
+    realSkateStanceButton.setAttribute(
+      "aria-label",
+      isGoofy ? "スタンスをグーフィーからレギュラーへ切り替え" : "スタンスをレギュラーからグーフィーへ切り替え",
+    );
+  }
 }
 
 REAL_SKATE.board = createSkateboard();
@@ -4179,7 +4193,15 @@ function updateRealPlanetSkate(delta) {
   flight.speed = skate.speed;
   flight.onGround = skate.phase === "grounded";
   updateFlightPlayer(flightPlayer, { position: flight.position, forward: flight.forward, up: skate.supportUp, bodyPitch: 0.04, roll: -turnInput * 0.16, descentPivot: 0, turnInput, climbInput: 0, altitude: skate.airHeight, surfaceRadius: landingRadius - skate.clearance, delta });
-  updateProductionSkaterPose(skate.skater, { olliePhase: skate.phase, ollieVerticalSpeed: skate.verticalSpeed, ollieElapsed: skate.phaseElapsed }, delta);
+  updateProductionSkaterPose(skate.skater, {
+    olliePhase: skate.phase,
+    ollieVerticalSpeed: skate.verticalSpeed,
+    ollieElapsed: skate.phaseElapsed,
+    stance: skate.stance,
+  }, delta);
+  if (realSkateStanceButton) {
+    realSkateStanceButton.disabled = skate.phase !== "grounded";
+  }
   updateRealSkateCamera(delta);
   updateFlightEnvironment(skate.nextUp, delta);
 }
@@ -5639,6 +5661,13 @@ function setupFlightInteraction() {
   document.querySelector("#flight-reset").addEventListener("click", resetFlight);
   realSkateToggleButton?.addEventListener("click", () => setRealSkateMode(true));
   realSkateFlyButton?.addEventListener("click", () => setRealSkateMode(false));
+  realSkateStanceButton?.addEventListener("click", () => {
+    // Switching during an ollie would desynchronise the rider and the board.
+    // Keep the control grounded-only; the selected stance persists on FLY.
+    if (!REAL_SKATE.active || REAL_SKATE.phase !== "grounded") return;
+    REAL_SKATE.stance = REAL_SKATE.stance === "regular" ? "goofy" : "regular";
+    syncSkateVisuals();
+  });
   realSkateJumpButton?.addEventListener("pointerdown", (event) => {
     event.preventDefault();
     if (REAL_SKATE.active) flight.keys.add("Space");

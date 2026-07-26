@@ -140,12 +140,20 @@ export function updateProductionSkaterPose(rig, state, delta) {
   const key = phase === "crouch" ? "crouch" : phase === "nose" || (phase === "air" && !falling) ? "rise" : falling ? "fall" : "ride";
   const pose = key === "crouch" ? CROUCH_POSE : key === "rise" ? RISE_POSE : key === "fall" ? FALL_POSE : RIDE_POSE;
   const offset = OFFSETS[key];
+  const stance = state.stance === "goofy" ? "goofy" : "regular";
+  // A stance switch changes which foot leads. Rotate the complete authored
+  // pose around the board centre and mirror its board-local X/Z placement;
+  // this preserves the approved bone pose instead of swapping asymmetric
+  // left/right joint rotations. The board itself is intentionally untouched.
+  const stanceTurn = stance === "goofy" ? -1 : 1;
+  const stanceYaw = stance === "goofy" ? Math.PI * 0.5 : -Math.PI * 0.5;
   rig.root.userData.skatePose = key;
+  rig.root.userData.skateStance = stance;
   rig.root.userData.skatePoseBones = REQUIRED_POSE_BONES.length;
-  rig.visual.rotation.y = THREE.MathUtils.damp(rig.visual.rotation.y, -Math.PI * 0.5, 9, delta);
-  rig.visual.position.x = THREE.MathUtils.damp(rig.visual.position.x, offset.x, 13, delta);
+  rig.visual.rotation.y = THREE.MathUtils.damp(rig.visual.rotation.y, stanceYaw, 9, delta);
+  rig.visual.position.x = THREE.MathUtils.damp(rig.visual.position.x, offset.x * stanceTurn, 13, delta);
   rig.visual.position.y = THREE.MathUtils.damp(rig.visual.position.y, offset.y, 13, delta);
-  rig.visual.position.z = THREE.MathUtils.damp(rig.visual.position.z, offset.z, 13, delta);
+  rig.visual.position.z = THREE.MathUtils.damp(rig.visual.position.z, offset.z * stanceTurn, 13, delta);
   rig.visual.scale.y = THREE.MathUtils.damp(rig.visual.scale.y, 1, 10, delta);
   for (const [name, [x, y, z]] of Object.entries(pose)) {
     const entry = rig.bones.get(name);

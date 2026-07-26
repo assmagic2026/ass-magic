@@ -1221,6 +1221,21 @@ body.devil-guide-navigating .flight-stick {
   touch-action: none;
 }
 
+.real-skate-stance-button {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid rgba(239, 247, 248, 0.62);
+  border-radius: 50%;
+  color: #f7fbfc;
+  background: rgba(7, 18, 23, 0.72);
+  font: 800 11px/1 system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  touch-action: manipulation;
+}
+
 #real-skate-toggle {
   position: fixed;
   z-index: 7;
@@ -1245,6 +1260,19 @@ body.skate-mode #real-skate-jump {
   z-index: 7;
   right: max(18px, env(safe-area-inset-right));
   bottom: max(22px, env(safe-area-inset-bottom));
+}
+body.skate-mode #real-skate-stance {
+  position: fixed;
+  z-index: 7;
+  right: calc(max(18px, env(safe-area-inset-right)) + 98px);
+  bottom: max(22px, env(safe-area-inset-bottom));
+}
+body.skate-mode #real-skate-stance[aria-pressed="true"] {
+  border-color: rgba(131, 224, 255, 0.92);
+  background: rgba(24, 83, 111, 0.86);
+}
+body.skate-mode #real-skate-stance:disabled {
+  opacity: 0.42;
 }
 body.skate-mode .flight-stick {
   right: max(18px, env(safe-area-inset-right));
