@@ -1295,6 +1295,35 @@ body.skate-mode .flight-stick span { width: 42px; height: 42px; }
     );
     right: max(10px, env(safe-area-inset-right));
   }
+
+  /* Keep 180 reachable beside JUMP on every phone.  The plain-pixel values
+     are a fallback for browsers that do not resolve env()/max() inside a
+     fixed-position calculation. */
+  body.skate-mode #real-skate-jump {
+    right: 14px;
+    bottom: 14px;
+  }
+
+  body.skate-mode #real-skate-stance {
+    display: grid;
+    place-items: center;
+    right: 112px;
+    bottom: 14px;
+    z-index: 8;
+    pointer-events: auto;
+  }
+
+  @supports (right: env(safe-area-inset-right)) {
+    body.skate-mode #real-skate-jump {
+      right: max(14px, env(safe-area-inset-right));
+      bottom: max(14px, env(safe-area-inset-bottom));
+    }
+
+    body.skate-mode #real-skate-stance {
+      right: calc(env(safe-area-inset-right) + 102px);
+      bottom: max(14px, env(safe-area-inset-bottom));
+    }
+  }
 }
 
 /* Keep the summon button clear of the flight ALT readout on every viewport. */
