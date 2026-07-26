@@ -4039,10 +4039,9 @@ function setRealSkateMode(active) {
     REAL_SKATE.descending = false;
     REAL_SKATE.active = false;
     const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
-    // Reappear just above the flight collision margin in the same
-    // non-material transition, avoiding a second automatic terrain phase.
-    const safeFlightRadius = getSurfaceRadius(up) + PLAYER_CLEARANCE + 3.2;
-    if (flight.position.length() < safeFlightRadius) flight.position.copy(up).multiplyScalar(safeFlightRadius);
+    // Keep the same world position when leaving the board. The phase effect's
+    // collision guard lets normal flight regain clearance smoothly afterward.
+    prepareFlightCameraFromSkate(up);
     flight.radialSpeed = 0;
     applyRealSkateBoardTransform("grounded");
     syncSkateVisuals();
@@ -4053,6 +4052,19 @@ function setRealSkateMode(active) {
   const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
   const altitude = flight.position.length() - getSkateSurfaceRadius(up) - REAL_SKATE.clearance;
   activateSkate({ preserveAirbornePosition: altitude > 0.35 });
+}
+
+function prepareFlightCameraFromSkate(up) {
+  camera.getWorldDirection(flightCameraForward);
+  // The last flight look point may be from before the player started skating.
+  // Seed it from the current skate view so FLY does not snap across the world.
+  flightCameraLookSmoothed.copy(camera.position).addScaledVector(flightCameraForward, 12);
+  flight.cameraLift = THREE.MathUtils.clamp(flightCameraForward.dot(up), -0.5, 0.5);
+  flight.cameraHighAltitudeLook = THREE.MathUtils.clamp(
+    (flight.position.length() - getSurfaceRadius(up) - PLAYER_CLEARANCE) / 200,
+    0,
+    1,
+  );
 }
 
 function triggerSkateSwitchEffect() {
