@@ -12,6 +12,8 @@ import {
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-170";
+import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js";
+import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -325,6 +327,9 @@ const flightSpeedValue = document.querySelector("#flight-speed-value");
 const flightSpeedPanel = document.querySelector("#flight-speed-panel");
 const flightReadout = document.querySelector("#flight-readout");
 const flightHelp = document.querySelector(".help");
+const realSkateToggleButton = document.querySelector("#real-skate-toggle");
+const realSkateFlyButton = document.querySelector("#real-skate-fly");
+const realSkateJumpButton = document.querySelector("#real-skate-jump");
 const flightStickTarget = new THREE.Vector2();
 const flightKeyTarget = new THREE.Vector2();
 const flightUp = new THREE.Vector3();
@@ -405,6 +410,80 @@ const flight = {
   keys: new Set(),
   readoutElapsed: 0,
 };
+const REAL_SKATE = {
+  active: false,
+  descending: false,
+  speed: 0,
+  clearance: 1.03,
+  airRadius: 0,
+  airHeight: 0,
+  verticalSpeed: 0,
+  jumpHeld: false,
+  phase: "grounded",
+  phaseElapsed: 0,
+  jumpImpulse: 16.8,
+  supportUp: new THREE.Vector3(0, 1, 0),
+  surfaceNormal: new THREE.Vector3(0, 1, 0),
+  forward: new THREE.Vector3(0, 0, 1),
+  right: new THREE.Vector3(1, 0, 0),
+  nextUp: new THREE.Vector3(),
+  nextForward: new THREE.Vector3(),
+  gravityTangent: new THREE.Vector3(),
+  cameraDesired: new THREE.Vector3(),
+  cameraBase: new THREE.Vector3(),
+  cameraAerial: new THREE.Vector3(),
+  cameraRadial: new THREE.Vector3(),
+  cameraTarget: new THREE.Vector3(),
+  cameraUp: new THREE.Vector3(0, 1, 0),
+  cameraAvoidance: 0,
+  board: null,
+  skater: null,
+};
+
+function createSkateboard() {
+  const board = new THREE.Group();
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(0.58, 0.045, 2.05, 5, 1, 18),
+    new THREE.MeshStandardMaterial({ color: 0x090a0a, roughness: 0.96 }),
+  );
+  deck.castShadow = realismShadowsEnabled;
+  board.add(deck);
+  const truckMaterial = new THREE.MeshStandardMaterial({ color: 0x9ba09d, metalness: 0.85, roughness: 0.3 });
+  const wheelMaterial = new THREE.MeshStandardMaterial({ color: 0xe9d798, roughness: 0.6 });
+  for (const z of [-0.58, 0.58]) {
+    const truck = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.065, 0.13), truckMaterial);
+    truck.position.set(0, -0.09, z);
+    board.add(truck);
+    for (const x of [-0.19, 0.19]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.085, 14), wheelMaterial);
+      wheel.rotation.z = Math.PI * 0.5;
+      wheel.position.set(x, -0.14, z);
+      wheel.castShadow = realismShadowsEnabled;
+      board.add(wheel);
+    }
+  }
+  board.position.y = -REAL_SKATE.clearance + 0.295;
+  board.visible = false;
+  flightPlayer.player.add(board);
+  return board;
+}
+
+function syncSkateVisuals() {
+  const skating = REAL_SKATE.active;
+  const skaterReady = REAL_SKATE.skater?.model != null;
+  if (REAL_SKATE.board) REAL_SKATE.board.visible = skating;
+  if (REAL_SKATE.skater) REAL_SKATE.skater.root.visible = skating;
+  if (flightPlayer.proceduralVisual) flightPlayer.proceduralVisual.visible = !skating || !skaterReady;
+  if (flightPlayer.modelVisual) flightPlayer.modelVisual.visible = !skating || !skaterReady;
+  document.body.classList.toggle("skate-mode", skating);
+}
+
+REAL_SKATE.board = createSkateboard();
+REAL_SKATE.skater = createProductionSkater({ castShadow: realismShadowsEnabled });
+REAL_SKATE.skater.root.position.y = -REAL_SKATE.clearance + 0.295;
+REAL_SKATE.skater.root.visible = false;
+flightPlayer.player.add(REAL_SKATE.skater.root);
+REAL_SKATE.skater.ready.then(syncSkateVisuals, syncSkateVisuals);
 let windVentFlightStrength = 0;
 const terrainAssist = {
   scanElapsed: Infinity,
@@ -682,8 +761,11 @@ renderer.setAnimationLoop(() => {
     });
     experience?.update(simulationDelta);
     if (settings.view === "flight") {
-      if (experience?.isGuideNavigating()) updateGuidedFlight(simulationDelta);
-      else if (!experience?.isPaused()) updateFlight(simulationDelta);
+      const skateOwnsMovement = REAL_SKATE.active || REAL_SKATE.descending;
+      if (experience?.isGuideNavigating() && !skateOwnsMovement) updateGuidedFlight(simulationDelta);
+      // A deliberate SKATE request must be able to finish its automatic landing
+      // even while an optional site overlay has paused ordinary flight.
+      else if (skateOwnsMovement || !experience?.isPaused()) updateFlight(simulationDelta);
     } else {
       updateOrbit(simulationDelta);
     }
@@ -1024,6 +1106,13 @@ function getSurfaceRadius(direction) {
   const terrainRadius = getTerrainRadius(direction);
   if (chordDistance(direction, WIND_VENT_DIRECTION) < 0.04) return terrainRadius;
   return settings.mode === "realism" ? Math.max(terrainRadius, WATER_RADIUS) : terrainRadius;
+}
+
+function getSkateSurfaceRadius(direction) {
+  const terrainRadius = getTerrainRadius(direction);
+  return chordDistance(direction, CRATER_DIRECTION) < 0.165
+    ? terrainRadius
+    : Math.max(terrainRadius, WATER_RADIUS);
 }
 
 function getFlightAltitude(position) {
@@ -3814,7 +3903,152 @@ function applyPolarWindForce(delta, direction, altitude) {
   return windVentFlightStrength;
 }
 
+function activateSkate() {
+  const skate = REAL_SKATE;
+  const up = skate.nextUp.copy(flight.position).normalize();
+  const surfaceRadius = getSkateSurfaceRadius(up);
+  skate.descending = false;
+  skate.active = true;
+  skate.speed = flight.speedSelection;
+  skate.airRadius = 0;
+  skate.airHeight = 0;
+  skate.verticalSpeed = 0;
+  skate.phase = "grounded";
+  skate.phaseElapsed = 0;
+  skate.supportUp.copy(up);
+  flight.forward.addScaledVector(up, -flight.forward.dot(up));
+  if (flight.forward.lengthSq() < 0.0001) flight.forward.crossVectors(WORLD_UP, up);
+  flight.forward.normalize();
+  skate.forward.copy(flight.forward);
+  flight.position.copy(up).multiplyScalar(surfaceRadius + skate.clearance);
+  flight.speed = skate.speed;
+  syncSkateVisuals();
+}
+
+function setRealSkateMode(active) {
+  if (!active) {
+    REAL_SKATE.descending = false;
+    REAL_SKATE.active = false;
+    flight.position.addScaledVector(REAL_SKATE.supportUp, 6);
+    flight.radialSpeed = 0;
+    syncSkateVisuals();
+    return;
+  }
+  const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
+  const altitude = flight.position.length() - getSkateSurfaceRadius(up) - REAL_SKATE.clearance;
+  if (altitude > 0.35) {
+    REAL_SKATE.descending = true;
+    flightReadout.textContent = "SKATE: AUTO LANDING";
+    return;
+  }
+  activateSkate();
+}
+
+function updateSkateApproach(delta) {
+  const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
+  const targetRadius = getSkateSurfaceRadius(up) + REAL_SKATE.clearance;
+  const radius = THREE.MathUtils.damp(flight.position.length(), targetRadius, 1.8, delta);
+  flight.position.copy(up).multiplyScalar(Math.max(targetRadius, radius));
+  flight.forward.addScaledVector(up, -flight.forward.dot(up)).normalize();
+  updateFlightPlayer(flightPlayer, { position: flight.position, forward: flight.forward, up, bodyPitch: 0, roll: 0, descentPivot: 0, turnInput: 0, climbInput: -1, altitude: Math.max(0, radius - targetRadius), surfaceRadius: targetRadius - REAL_SKATE.clearance, delta });
+  updateFlightCamera(delta);
+  updateFlightEnvironment(up, delta);
+  if (flight.position.length() - targetRadius <= 0.36) activateSkate();
+}
+
+function updateRealSkateCamera(delta, snap = false) {
+  const skate = REAL_SKATE;
+  skate.cameraRadial.copy(flight.position).normalize();
+  skate.cameraTarget.copy(flight.position)
+    .addScaledVector(skate.supportUp, 1.4)
+    .addScaledVector(flight.forward, 2.8);
+  skate.cameraBase.copy(flight.position)
+    .addScaledVector(flight.forward, -8.8)
+    .addScaledVector(skate.cameraRadial, 3.25);
+  skate.cameraRadial.copy(skate.cameraBase).normalize();
+  const baseClearance = skate.cameraBase.length() - getSkateSurfaceRadius(skate.cameraRadial);
+  const avoidanceTarget = 1 - THREE.MathUtils.smoothstep(baseClearance, 1.8, 5.2);
+  skate.cameraAvoidance = THREE.MathUtils.damp(
+    skate.cameraAvoidance,
+    avoidanceTarget,
+    avoidanceTarget > skate.cameraAvoidance ? 6.5 : 1.8,
+    delta,
+  );
+  skate.cameraAerial.copy(flight.position)
+    .addScaledVector(flight.forward, -11.5)
+    .addScaledVector(skate.cameraRadial.copy(flight.position).normalize(), 10.5);
+  skate.cameraDesired.lerpVectors(skate.cameraBase, skate.cameraAerial, skate.cameraAvoidance);
+  skate.cameraRadial.copy(skate.cameraDesired).normalize();
+  const desiredMinimumRadius = getSkateSurfaceRadius(skate.cameraRadial) + 2.4;
+  if (skate.cameraDesired.length() < desiredMinimumRadius) {
+    skate.cameraDesired.copy(skate.cameraRadial).multiplyScalar(desiredMinimumRadius);
+  }
+  const cameraBlend = snap ? 1 : 1 - Math.exp(-4.2 * delta);
+  camera.position.lerp(skate.cameraDesired, cameraBlend);
+  skate.cameraRadial.copy(camera.position).normalize();
+  const cameraMinimumRadius = getSkateSurfaceRadius(skate.cameraRadial) + 2.15;
+  if (camera.position.length() < cameraMinimumRadius) {
+    camera.position.copy(skate.cameraRadial).multiplyScalar(cameraMinimumRadius);
+  }
+  skate.cameraUp.copy(camera.up).lerp(skate.supportUp, snap ? 1 : cameraBlend).normalize();
+  camera.up.copy(skate.cameraUp);
+  camera.lookAt(skate.cameraTarget);
+  camera.fov = snap ? 68 : THREE.MathUtils.damp(camera.fov, 68 + skate.speed * 0.12, 3.2, delta);
+  camera.updateProjectionMatrix();
+}
+
+function updateRealPlanetSkate(delta) {
+  const skate = REAL_SKATE;
+  const up = skate.nextUp.copy(flight.position).normalize();
+  getTerrainSurfaceNormal(up, skate.surfaceNormal);
+  skate.supportUp.lerp(up, 1 - Math.exp(-5.6 * delta)).lerp(skate.surfaceNormal, 1 - Math.exp(-3.4 * delta)).normalize();
+  flight.forward.addScaledVector(up, -flight.forward.dot(up));
+  if (flight.forward.lengthSq() < 0.0001) flight.forward.copy(skate.forward);
+  flight.forward.normalize();
+  const stickTurn = -applyDeadzone(flight.stickOffset.x / FLIGHT_STICK_LIMIT);
+  const keyTurn = Number(flight.keys.has("KeyA") || flight.keys.has("ArrowLeft")) - Number(flight.keys.has("KeyD") || flight.keys.has("ArrowRight"));
+  const turnInput = skate.phase === "grounded" ? THREE.MathUtils.clamp(stickTurn + keyTurn, -1, 1) : 0;
+  skate.right.crossVectors(up, flight.forward).normalize();
+  flight.forward.applyAxisAngle(up, turnInput * 0.82 * delta).addScaledVector(up, -flight.forward.dot(up)).normalize();
+  skate.gravityTangent.copy(up).multiplyScalar(-1).addScaledVector(skate.surfaceNormal, up.dot(skate.surfaceNormal));
+  const slopeAcceleration = THREE.MathUtils.clamp(skate.gravityTangent.dot(flight.forward) * 32, -32, 32);
+  skate.speed = updateSkateGroundSpeed({ speed: skate.speed, leverSpeed: flight.speedSelection, slopeAcceleration, braking: flight.keys.has("KeyS") || flight.keys.has("ArrowDown"), delta });
+  const jumpPressed = flight.keys.has("Space");
+  if (jumpPressed && !skate.jumpHeld && skate.phase === "grounded") {
+    skate.jumpImpulse = getUphillOllieImpulse({ normalImpulse: 16.8, speed: skate.speed, slopeAcceleration });
+    skate.phase = "crouch";
+    skate.phaseElapsed = 0;
+  }
+  skate.jumpHeld = jumpPressed;
+  skate.phaseElapsed += delta;
+  if (skate.phase === "crouch" && skate.phaseElapsed >= 0.12) { skate.phase = "nose"; skate.phaseElapsed = 0; }
+  else if (skate.phase === "nose" && skate.phaseElapsed >= 0.09) { skate.phase = "air"; skate.phaseElapsed = 0; skate.verticalSpeed = skate.jumpImpulse; skate.airRadius = getSkateSurfaceRadius(up) + skate.clearance; }
+  if (skate.phase === "air") { skate.verticalSpeed -= 21 * delta; skate.airRadius += skate.verticalSpeed * delta; }
+  const currentRadius = skate.phase === "air" ? skate.airRadius : getSkateSurfaceRadius(up) + skate.clearance;
+  const moveAngle = skate.speed * delta / Math.max(currentRadius, 1);
+  skate.right.crossVectors(up, flight.forward).normalize();
+  skate.nextUp.copy(up).applyAxisAngle(skate.right, moveAngle).normalize();
+  skate.nextForward.copy(flight.forward).applyAxisAngle(skate.right, moveAngle).addScaledVector(skate.nextUp, -flight.forward.dot(skate.nextUp)).normalize();
+  flight.forward.copy(skate.nextForward);
+  const landingRadius = getSkateSurfaceRadius(skate.nextUp) + skate.clearance;
+  let radius = landingRadius;
+  if (skate.phase === "air") {
+    if (skate.airRadius <= landingRadius) { skate.airRadius = landingRadius; if (skate.verticalSpeed <= 0) { skate.phase = "grounded"; skate.phaseElapsed = 0; skate.verticalSpeed = 0; } }
+    radius = skate.airRadius;
+    skate.airHeight = Math.max(0, radius - landingRadius);
+  } else skate.airHeight = 0;
+  flight.position.copy(skate.nextUp).multiplyScalar(radius);
+  flight.speed = skate.speed;
+  flight.onGround = skate.phase === "grounded";
+  updateFlightPlayer(flightPlayer, { position: flight.position, forward: flight.forward, up: skate.supportUp, bodyPitch: 0.04, roll: -turnInput * 0.16, descentPivot: 0, turnInput, climbInput: 0, altitude: skate.airHeight, surfaceRadius: landingRadius - skate.clearance, delta });
+  updateProductionSkaterPose(skate.skater, { olliePhase: skate.phase, ollieVerticalSpeed: skate.verticalSpeed, ollieElapsed: skate.phaseElapsed }, delta);
+  updateRealSkateCamera(delta);
+  updateFlightEnvironment(skate.nextUp, delta);
+}
+
 function updateFlight(delta) {
+  if (REAL_SKATE.descending) { updateSkateApproach(delta); return; }
+  if (REAL_SKATE.active) { updateRealPlanetSkate(delta); return; }
   flightPreviousForward.copy(flight.forward);
   flightStickTarget.set(
     -applyDeadzone(flight.stickOffset.x / FLIGHT_STICK_LIMIT) * FLIGHT_STICK_SCALE,
@@ -5209,6 +5443,13 @@ function setupFlightInteraction() {
       const rect = flightStick.getBoundingClientRect();
       const dx = event.clientX - (rect.left + rect.width / 2);
       const dy = event.clientY - (rect.top + rect.height / 2);
+      if (REAL_SKATE.active) {
+        const travel = Math.max(1, rect.width * 0.5 - 22);
+        const nx = THREE.MathUtils.clamp(dx / travel, -1, 1);
+        flight.stickOffset.set(nx * FLIGHT_STICK_LIMIT, 0);
+        flightStickKnob.style.transform = `translate(calc(-50% + ${nx * travel}px), -50%)`;
+        return;
+      }
       const length = Math.hypot(dx, dy);
       const limit = Math.min(length, FLIGHT_STICK_LIMIT);
       const nx = length > 0 ? dx / length : 0;
@@ -5236,6 +5477,11 @@ function setupFlightInteraction() {
   window.addEventListener("pointerup", releasePointer);
   window.addEventListener("pointercancel", releasePointer);
   window.addEventListener("keydown", (event) => {
+    if (event.code === "KeyE" && !event.repeat) {
+      event.preventDefault();
+      setRealSkateMode(!REAL_SKATE.active);
+      return;
+    }
     if (["Space", "KeyW", "KeyA", "KeyS", "KeyD", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.code)) {
       event.preventDefault();
       flight.keys.add(event.code);
@@ -5253,6 +5499,15 @@ function setupFlightInteraction() {
   flightSpeedSlider.addEventListener("keydown", (event) => event.stopPropagation());
   flightSpeedSlider.addEventListener("keyup", (event) => event.stopPropagation());
   document.querySelector("#flight-reset").addEventListener("click", resetFlight);
+  realSkateToggleButton?.addEventListener("click", () => setRealSkateMode(true));
+  realSkateFlyButton?.addEventListener("click", () => setRealSkateMode(false));
+  realSkateJumpButton?.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    if (REAL_SKATE.active) flight.keys.add("Space");
+  });
+  const releaseSkateJump = () => flight.keys.delete("Space");
+  realSkateJumpButton?.addEventListener("pointerup", releaseSkateJump);
+  realSkateJumpButton?.addEventListener("pointercancel", releaseSkateJump);
 }
 
 function createSeededRandom(initialSeed) {

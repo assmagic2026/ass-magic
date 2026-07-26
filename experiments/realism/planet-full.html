@@ -12,7 +12,7 @@
     <link rel="preload" href="./assets/audio/phase-punch.mp3" as="audio" type="audio/mpeg">
     <link rel="preload" href="../../list/animalrobot/cover-17.jpg" as="image">
     <link rel="stylesheet" href="../../style.css?v=realism-136">
-    <link rel="stylesheet" href="./style.css?v=realism-154">
+    <link rel="stylesheet" href="./style.css?v=realism-skate-local-2">
     <script src="./phase-audio-engine.js?v=realism-4"></script>
   </head>
   <body class="flight-mode is-booting">
@@ -124,6 +124,11 @@
         <input id="flight-speed-slider" type="range" min="12" max="120" step="1" value="40" orient="vertical" aria-label="Flight speed">
       </label>
       <div id="flight-readout" class="flight-readout" aria-live="polite"></div>
+      <button id="real-skate-toggle" class="real-skate-button" type="button">SKATE</button>
+      <div id="real-skate-controls" aria-label="スケート操作">
+        <button id="real-skate-fly" class="real-skate-button" type="button">FLY</button>
+        <button id="real-skate-jump" class="real-skate-button" type="button">JUMP</button>
+      </div>
       <div id="experience-challenge-timer" class="experience-challenge-timer" aria-live="polite"></div>
       <div id="experience-theme-flash" class="experience-theme-flash" aria-hidden="true"><span></span></div>
 
@@ -249,6 +254,6 @@
       </div>
     </div>
 
-    <script type="module" src="./planet-full.js?v=realism-246"></script>
+    <script type="module" src="./planet-full.js?v=realism-skate-local-2"></script>
   </body>
 </html>

@@ -1208,6 +1208,48 @@ body.devil-guide-navigating .flight-stick {
   opacity: 0.42;
 }
 
+/* Local-only skateboard integration controls. */
+.real-skate-button {
+  min-width: 90px;
+  min-height: 44px;
+  border: 1px solid rgba(239, 247, 248, 0.62);
+  border-radius: 999px;
+  color: #f7fbfc;
+  background: rgba(7, 18, 23, 0.72);
+  font: 700 12px/1 system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  touch-action: none;
+}
+
+#real-skate-toggle {
+  position: fixed;
+  z-index: 7;
+  right: max(22px, env(safe-area-inset-right));
+  bottom: max(166px, calc(env(safe-area-inset-bottom) + 142px));
+}
+
+#real-skate-controls {
+  position: fixed;
+  z-index: 7;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(92px, calc(env(safe-area-inset-bottom) + 72px));
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+body.skate-mode #real-skate-toggle { display: none; }
+body.skate-mode #real-skate-controls { display: flex; }
+body.skate-mode .flight-stick {
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(22px, env(safe-area-inset-bottom));
+  width: 142px;
+  height: 52px;
+  border-radius: 999px;
+}
+
+body.skate-mode .flight-stick span { width: 42px; height: 42px; }
+
 /* Keep the summon button clear of the flight ALT readout on every viewport. */
 body.flight-mode #devil-guide-summon {
   left: max(18px, env(safe-area-inset-left));
