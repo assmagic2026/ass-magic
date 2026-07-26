@@ -12,7 +12,7 @@ import {
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
-import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-3";
+import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-4";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
@@ -573,6 +573,9 @@ function syncSkateVisuals() {
   // found. This prevents a partially loaded or incompatible rig from showing
   // an unposed body for a frame.
   const skaterReady = REAL_SKATE.skater?.model != null && REAL_SKATE.skater?.poseVerified === true;
+  canvas.dataset.skatePoseRig = skaterReady
+    ? "ready"
+    : REAL_SKATE.skater?.failed ? "failed" : "loading";
   if (REAL_SKATE.board) REAL_SKATE.board.visible = skating;
   if (REAL_SKATE.skater) REAL_SKATE.skater.root.visible = skating && skaterReady;
   if (flightPlayer.proceduralVisual) flightPlayer.proceduralVisual.visible = !skating || !skaterReady;
@@ -583,7 +586,7 @@ function syncSkateVisuals() {
 REAL_SKATE.board = createSkateboard();
 applyRealSkateBoardTransform("grounded");
 REAL_SKATE.skater = createProductionSkater({
-  modelUrl: "./assets/models/cesium-man.glb",
+  modelUrl: resolveRealismAsset("./assets/models/cesium-man.glb"),
   castShadow: realismShadowsEnabled,
   bodyProfile: "cesium-type-c",
 });

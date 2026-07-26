@@ -2,7 +2,10 @@ import * as THREE from "../../three.module.js";
 import { GLTFLoader } from "./vendor/GLTFLoader.js";
 import { applyCesiumManTypeCBody } from "./whole-planet-player.js?v=realism-48";
 
-const MODEL_URL = "./assets/models/cesium-man.glb";
+// Resolve from this module rather than from document.baseURI. The official
+// entry runs at https://assmagic2026.github.io/ while this module lives below
+// /ass-magic/experiments/realism/, so page-relative asset URLs would 404.
+const MODEL_URL = new URL("./assets/models/cesium-man.glb", import.meta.url).href;
 const poseQuaternion = new THREE.Quaternion();
 const poseEuler = new THREE.Euler();
 
