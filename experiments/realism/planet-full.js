@@ -12,7 +12,7 @@ import {
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
-import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-5";
+import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-6";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
@@ -440,6 +440,7 @@ const REAL_SKATE = {
   cameraAvoidance: 0,
   board: null,
   skater: null,
+  skaterMirror: null,
 };
 // The wheel bottom was only 0.06 units over the mathematical terrain.  On the
 // full planet's high-detail surface shading that reads as a sunk board, so keep
@@ -579,6 +580,8 @@ function syncSkateVisuals() {
     ? "ready"
     : REAL_SKATE.skater?.failed ? "failed" : "loading";
   canvas.dataset.skateStance = REAL_SKATE.stance;
+  canvas.dataset.skateStanceMode = "exact-mirror";
+  syncSkateStanceMirror();
   if (REAL_SKATE.board) REAL_SKATE.board.visible = skating;
   if (REAL_SKATE.skater) REAL_SKATE.skater.root.visible = skating && skaterReady;
   if (flightPlayer.proceduralVisual) flightPlayer.proceduralVisual.visible = !skating || !skaterReady;
@@ -586,9 +589,8 @@ function syncSkateVisuals() {
   document.body.classList.toggle("skate-mode", skating);
   document.body.classList.toggle("skate-goofy", skating && REAL_SKATE.stance === "goofy");
   if (realSkateStanceButton) {
-    const canSwitchStance = skating && REAL_SKATE.phase === "grounded";
     const isGoofy = REAL_SKATE.stance === "goofy";
-    realSkateStanceButton.disabled = !canSwitchStance;
+    realSkateStanceButton.disabled = !skating;
     realSkateStanceButton.setAttribute("aria-pressed", String(isGoofy));
     realSkateStanceButton.setAttribute(
       "aria-label",
@@ -597,8 +599,21 @@ function syncSkateVisuals() {
   }
 }
 
+function syncSkateStanceMirror() {
+  const skater = REAL_SKATE.skater;
+  const mirror = REAL_SKATE.skaterMirror;
+  if (!skater?.root || !mirror) return;
+  // The mirror parent reflects the complete skinned rider at board-local
+  // X=0. The deck remains a sibling, so its nose and travel stay unchanged.
+  const parent = REAL_SKATE.stance === "goofy" ? mirror : flightPlayer.player;
+  if (skater.root.parent !== parent) parent.add(skater.root);
+}
+
 REAL_SKATE.board = createSkateboard();
 applyRealSkateBoardTransform("grounded");
+REAL_SKATE.skaterMirror = new THREE.Group();
+REAL_SKATE.skaterMirror.scale.x = -1;
+flightPlayer.player.add(REAL_SKATE.skaterMirror);
 REAL_SKATE.skater = createProductionSkater({
   modelUrl: resolveRealismAsset("./assets/models/cesium-man.glb"),
   castShadow: realismShadowsEnabled,
@@ -607,7 +622,14 @@ REAL_SKATE.skater = createProductionSkater({
 REAL_SKATE.skater.root.position.y = -REAL_SKATE.clearance + SKATE_BOARD_SURFACE_CLEARANCE;
 REAL_SKATE.skater.root.visible = false;
 flightPlayer.player.add(REAL_SKATE.skater.root);
-REAL_SKATE.skater.ready.then(syncSkateVisuals, syncSkateVisuals);
+REAL_SKATE.skater.ready.then(() => {
+  REAL_SKATE.skater.model?.traverse((object) => {
+    if (!object.isMesh || !object.material) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => { material.side = THREE.DoubleSide; });
+  });
+  syncSkateVisuals();
+}, syncSkateVisuals);
 let windVentFlightStrength = 0;
 const terrainAssist = {
   scanElapsed: Infinity,
@@ -4197,11 +4219,7 @@ function updateRealPlanetSkate(delta) {
     olliePhase: skate.phase,
     ollieVerticalSpeed: skate.verticalSpeed,
     ollieElapsed: skate.phaseElapsed,
-    stance: skate.stance,
   }, delta);
-  if (realSkateStanceButton) {
-    realSkateStanceButton.disabled = skate.phase !== "grounded";
-  }
   updateRealSkateCamera(delta);
   updateFlightEnvironment(skate.nextUp, delta);
 }
@@ -5662,9 +5680,7 @@ function setupFlightInteraction() {
   realSkateToggleButton?.addEventListener("click", () => setRealSkateMode(true));
   realSkateFlyButton?.addEventListener("click", () => setRealSkateMode(false));
   realSkateStanceButton?.addEventListener("click", () => {
-    // Switching during an ollie would desynchronise the rider and the board.
-    // Keep the control grounded-only; the selected stance persists on FLY.
-    if (!REAL_SKATE.active || REAL_SKATE.phase !== "grounded") return;
+    if (!REAL_SKATE.active) return;
     REAL_SKATE.stance = REAL_SKATE.stance === "regular" ? "goofy" : "regular";
     syncSkateVisuals();
   });
