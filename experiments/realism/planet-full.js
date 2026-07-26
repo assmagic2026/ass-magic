@@ -5,7 +5,7 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-4";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-26";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-skate-switch-local-2";
 import {
   createFlightPlayer,
   updateFlightPlayer,
@@ -330,7 +330,6 @@ const flightHelp = document.querySelector(".help");
 const realSkateToggleButton = document.querySelector("#real-skate-toggle");
 const realSkateFlyButton = document.querySelector("#real-skate-fly");
 const realSkateJumpButton = document.querySelector("#real-skate-jump");
-const skateSwitchFx = document.querySelector("#skate-switch-fx");
 const flightStickTarget = new THREE.Vector2();
 const flightKeyTarget = new THREE.Vector2();
 const flightUp = new THREE.Vector3();
@@ -4008,26 +4007,29 @@ function applyPolarWindForce(delta, direction, altitude) {
   return windVentFlightStrength;
 }
 
-function activateSkate() {
+function activateSkate({ preserveAirbornePosition = false } = {}) {
   const skate = REAL_SKATE;
   const up = skate.nextUp.copy(flight.position).normalize();
   const surfaceRadius = getSkateSurfaceRadius(up);
+  const currentRadius = flight.position.length();
   skate.descending = false;
   skate.active = true;
   skate.speed = flight.speedSelection;
-  skate.airRadius = 0;
-  skate.airHeight = 0;
-  skate.verticalSpeed = 0;
-  skate.phase = "grounded";
-  skate.phaseElapsed = 0;
+  const airborne = preserveAirbornePosition && currentRadius > surfaceRadius + skate.clearance + 0.35;
+  skate.airRadius = airborne ? currentRadius : 0;
+  skate.airHeight = airborne ? Math.max(0, currentRadius - surfaceRadius - skate.clearance) : 0;
+  // An aerial FLY→SKATE transfer behaves like the descent half of an ollie.
+  skate.verticalSpeed = airborne ? Math.min(-1.5, flight.radialSpeed) : 0;
+  skate.phase = airborne ? "air" : "grounded";
+  skate.phaseElapsed = airborne ? 0.2 : 0;
   skate.supportUp.copy(up);
   flight.forward.addScaledVector(up, -flight.forward.dot(up));
   if (flight.forward.lengthSq() < 0.0001) flight.forward.crossVectors(WORLD_UP, up);
   flight.forward.normalize();
   skate.forward.copy(flight.forward);
-  flight.position.copy(up).multiplyScalar(surfaceRadius + skate.clearance);
+  if (!airborne) flight.position.copy(up).multiplyScalar(surfaceRadius + skate.clearance);
   flight.speed = skate.speed;
-  applyRealSkateBoardTransform("grounded");
+  applyRealSkateBoardTransform(skate.phase, skate.verticalSpeed, skate.phaseElapsed);
   syncSkateVisuals();
 }
 
@@ -4036,29 +4038,25 @@ function setRealSkateMode(active) {
   if (!active) {
     REAL_SKATE.descending = false;
     REAL_SKATE.active = false;
+    const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
+    // Reappear just above the flight collision margin in the same
+    // non-material transition, avoiding a second automatic terrain phase.
+    const safeFlightRadius = getSurfaceRadius(up) + PLAYER_CLEARANCE + 3.2;
+    if (flight.position.length() < safeFlightRadius) flight.position.copy(up).multiplyScalar(safeFlightRadius);
     flight.radialSpeed = 0;
     applyRealSkateBoardTransform("grounded");
     syncSkateVisuals();
     return;
   }
-  // The effect masks an immediate mode transfer.  Do not fly through an
-  // automatic descent: even an airborne request becomes a ground skate state
-  // in the same switch moment.
-  activateSkate();
+  // Preserve altitude when switching in the sky, then let skateboard gravity
+  // take over exactly like the descending half of a jump.
+  const up = REAL_SKATE.nextUp.copy(flight.position).normalize();
+  const altitude = flight.position.length() - getSkateSurfaceRadius(up) - REAL_SKATE.clearance;
+  activateSkate({ preserveAirbornePosition: altitude > 0.35 });
 }
 
-let skateSwitchEffectTimer = 0;
 function triggerSkateSwitchEffect() {
-  document.body.classList.remove("skate-switching");
-  // Restart the CSS animation on repeated, rapid SKATE/FLY changes.
-  void skateSwitchFx?.offsetWidth;
-  document.body.classList.add("skate-switching");
-  environmentPhasing?.debugPlayAudio("dematerialize");
-  window.clearTimeout(skateSwitchEffectTimer);
-  window.setTimeout(() => environmentPhasing?.debugPlayAudio("rematerialize"), 155);
-  skateSwitchEffectTimer = window.setTimeout(() => {
-    document.body.classList.remove("skate-switching");
-  }, 430);
+  environmentPhasing?.playCosmeticTransition();
 }
 
 function updateSkateApproach(delta) {

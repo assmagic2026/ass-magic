@@ -405,11 +405,23 @@ export function createEnvironmentPhasing({
     state.phase = nextPhase;
     state.phaseElapsed = 0;
     canvas.dataset.environmentPhase = nextPhase;
-    if (nextPhase === "dematerializing" && previousPhase !== nextPhase) {
+    if ((nextPhase === "dematerializing" || nextPhase === "skate-dematerializing") && previousPhase !== nextPhase) {
       playPhaseAudio("dematerialize");
-    } else if (nextPhase === "rematerializing" && previousPhase !== nextPhase) {
+    } else if ((nextPhase === "rematerializing" || nextPhase === "skate-rematerializing") && previousPhase !== nextPhase) {
       playPhaseAudio("rematerialize");
     }
+  }
+
+  function isCosmeticPhase() {
+    return state.phase === "skate-dematerializing" || state.phase === "skate-rematerializing";
+  }
+
+  function isVanishPhase() {
+    return state.phase === "dematerializing" || state.phase === "skate-dematerializing";
+  }
+
+  function isMaterializePhase() {
+    return state.phase === "rematerializing" || state.phase === "skate-rematerializing";
   }
 
   function isMovementControlled() {
@@ -494,8 +506,8 @@ export function createEnvironmentPhasing({
     const mix = THREE.MathUtils.clamp(state.visualMix, 0, 1);
     applyPlayerMaterials(mix);
     document.body.classList.toggle("is-environment-phasing", mix > 0.01);
-    const isVanish = state.phase === "dematerializing";
-    const isMaterialize = state.phase === "rematerializing";
+    const isVanish = isVanishPhase();
+    const isMaterialize = isMaterializePhase();
     const isBurst = isVanish || isMaterialize;
     const duration = isVanish
       ? PHASE_CONFIG.dematerializeSeconds
@@ -514,8 +526,8 @@ export function createEnvironmentPhasing({
   }
 
   function renderWarpedFrame() {
-    const isVanish = state.phase === "dematerializing";
-    const isMaterialize = state.phase === "rematerializing";
+    const isVanish = isVanishPhase();
+    const isMaterialize = isMaterializePhase();
     if (!isVanish && !isMaterialize) return false;
     const duration = isVanish
       ? PHASE_CONFIG.dematerializeSeconds
@@ -648,7 +660,7 @@ export function createEnvironmentPhasing({
     turnInput = 0,
     terrainAssistStrength = 0,
   }) {
-    if (isMovementControlled() || state.phase === "recovering") return isMovementControlled();
+    if (isMovementControlled() || isCosmeticPhase() || state.phase === "recovering") return isMovementControlled();
     if (state.guardRemaining > 0) {
       canvas.dataset.environmentPhase = "normal";
       return false;
@@ -901,6 +913,19 @@ export function createEnvironmentPhasing({
     }
   }
 
+  // Reuse the actual scene warp, player fade, and phase audio without handing
+  // over any flight movement. This is used for an intentional game-mode swap.
+  function playCosmeticTransition() {
+    if (isMovementControlled() || state.phase === "recovering" || isCosmeticPhase()) return false;
+    state.playerVisibleBeforePhase = playerObject.visible;
+    state.visualMix = 0;
+    state.safeElapsed = 0;
+    collectPlayerMaterials();
+    document.body.classList.add("is-environment-phasing");
+    setPhase("skate-dematerializing");
+    return true;
+  }
+
   function beginFrame(delta, { paused = false } = {}) {
     state.guardRemaining = Math.max(0, state.guardRemaining - delta);
     canvas.dataset.environmentPhaseGuard = state.guardRemaining.toFixed(2);
@@ -910,7 +935,22 @@ export function createEnvironmentPhasing({
       restoreNormalState();
       return;
     }
-    if (state.phase === "recovering") {
+    if (isCosmeticPhase()) {
+      state.phaseElapsed += delta;
+      if (state.phase === "skate-dematerializing") {
+        state.visualMix = smoothstep01(state.phaseElapsed / PHASE_CONFIG.dematerializeSeconds);
+        if (state.phaseElapsed >= PHASE_CONFIG.dematerializeSeconds) setPhase("skate-rematerializing");
+      } else {
+        state.visualMix = 1 - smoothstep01(state.phaseElapsed / PHASE_CONFIG.rematerializeSeconds);
+        if (state.phaseElapsed >= PHASE_CONFIG.rematerializeSeconds) {
+          state.guardRemaining = Math.max(state.guardRemaining, 0.8);
+          canvas.dataset.environmentPhaseGuard = state.guardRemaining.toFixed(2);
+          restoreNormalState();
+          return;
+        }
+      }
+      updateVisual();
+    } else if (state.phase === "recovering") {
       state.recoveryElapsed += delta;
       state.visualMix = 0;
       updateVisual();
@@ -970,6 +1010,7 @@ export function createEnvironmentPhasing({
     updateControlled,
     observeSafePosition,
     beginFrame,
+    playCosmeticTransition,
     renderWarpedFrame,
     reset,
     dispose,

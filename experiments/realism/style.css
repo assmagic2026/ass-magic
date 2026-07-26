@@ -1256,27 +1256,6 @@ body.skate-mode .flight-stick {
 
 body.skate-mode .flight-stick span { width: 42px; height: 42px; }
 
-#skate-switch-fx {
-  position: fixed;
-  z-index: 20;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(232, 252, 255, 0.6) 0 2%, rgba(122, 214, 239, 0.26) 8%, rgba(16, 32, 52, 0.08) 30%, transparent 64%),
-    repeating-radial-gradient(circle at 50% 50%, rgba(196, 246, 255, 0.25) 0 1px, transparent 2px 12px);
-  mix-blend-mode: screen;
-}
-
-body.skate-switching #skate-switch-fx { animation: skate-switch-phase 0.42s cubic-bezier(0.2, 0.75, 0.2, 1) both; }
-
-@keyframes skate-switch-phase {
-  0% { opacity: 0; transform: scale(0.5); filter: blur(0); }
-  26% { opacity: 0.95; transform: scale(1.12); filter: blur(2px); }
-  58% { opacity: 0.52; transform: scale(1.8); filter: blur(6px); }
-  100% { opacity: 0; transform: scale(2.3); filter: blur(10px); }
-}
-
 @media (max-width: 700px) {
   #real-skate-toggle,
   body.skate-mode #real-skate-fly {
