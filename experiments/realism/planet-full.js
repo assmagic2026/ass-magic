@@ -18,6 +18,7 @@ import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.j
 import {
   createExperienceModeController,
 } from "./experience-mode.js?v=chill-mode-1";
+import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-mode-1";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -436,6 +437,7 @@ const flight = {
   cameraHighAltitudeLook: 0,
   onGround: false,
   stickId: null,
+  chillDirectionActive: false,
   stickOffset: new THREE.Vector2(),
   stickSmooth: new THREE.Vector2(),
   keySmooth: new THREE.Vector2(),
@@ -4378,14 +4380,18 @@ function updateFlight(delta) {
 
   const keyboardActive = flightKeyTarget.lengthSq() > 0.0001;
   const stickBlend = 1 - Math.exp(
-    -(flight.stickId !== null ? FLIGHT_STICK_RESPONSE : FLIGHT_STICK_RETURN) * delta,
+    -(
+      flight.stickId !== null || flight.chillDirectionActive
+        ? FLIGHT_STICK_RESPONSE
+        : FLIGHT_STICK_RETURN
+    ) * delta,
   );
   const keyBlend = 1 - Math.exp(
     -((keyboardActive ? FLIGHT_STICK_RESPONSE : FLIGHT_STICK_RETURN) * 0.8) * delta,
   );
   flight.stickSmooth.lerp(flightStickTarget, stickBlend);
   flight.keySmooth.lerp(flightKeyTarget, keyBlend);
-  if (flight.stickId === null) {
+  if (flight.stickId === null && !flight.chillDirectionActive) {
     flight.stickSmooth.y = THREE.MathUtils.damp(
       flight.stickSmooth.y,
       0,
@@ -5492,6 +5498,7 @@ function resetFlight() {
   flight.stickOffset.set(0, 0);
   flight.stickSmooth.set(0, 0);
   flight.keySmooth.set(0, 0);
+  flight.chillDirectionActive = false;
   flight.directTurnX = 0;
   flight.directTurnY = 0;
   flight.descendHeld = false;
@@ -5680,6 +5687,19 @@ function setupOrbitInteraction() {
 }
 
 function setupFlightInteraction() {
+  createChillFlightControls({
+    canvas,
+    flight,
+    speedInput: flightSpeedSlider,
+    stickLimit: FLIGHT_STICK_LIMIT,
+    isActive: () => (
+      experienceMode.isChill()
+      && openingPhase === "running"
+      && !REAL_SKATE.active
+      && !REAL_SKATE.descending
+    ),
+    onSpeedChange: syncFlightSpeedUi,
+  });
   let speedPointerId = null;
   const setFlightSpeedFromPointer = (event) => {
     const rail = flightSpeedPanel?.querySelector(".flight-speed-rail");
@@ -5710,6 +5730,7 @@ function setupFlightInteraction() {
     return true;
   };
   flightSpeedPanel?.addEventListener("pointerdown", (event) => {
+    if (experienceMode.isChill()) return;
     if (!setFlightSpeedFromPointer(event)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -5727,6 +5748,7 @@ function setupFlightInteraction() {
   flightSpeedPanel?.addEventListener("pointerup", releaseSpeedPointer);
   flightSpeedPanel?.addEventListener("pointercancel", releaseSpeedPointer);
   flightStick.addEventListener("pointerdown", (event) => {
+    if (experienceMode.isChill()) return;
     event.preventDefault();
     event.stopPropagation();
     if (flight.stickId !== null) return;
@@ -5735,6 +5757,7 @@ function setupFlightInteraction() {
     flightStick.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener("pointerdown", (event) => {
+    if (experienceMode.isChill()) return;
     event.preventDefault();
     flight.accelPointers.add(event.pointerId);
     if (
@@ -5788,6 +5811,7 @@ function setupFlightInteraction() {
   window.addEventListener("pointerup", releasePointer);
   window.addEventListener("pointercancel", releasePointer);
   window.addEventListener("keydown", (event) => {
+    if (experienceMode.isChill()) return;
     if (event.code === "KeyE" && !event.repeat) {
       event.preventDefault();
       setRealSkateMode(!REAL_SKATE.active);
@@ -5804,14 +5828,19 @@ function setupFlightInteraction() {
     flight.accelPointers.clear();
   });
   flightSpeedSlider.addEventListener("input", () => {
+    if (experienceMode.isChill()) return;
     flight.speedSelection = Number(flightSpeedSlider.value);
     syncFlightSpeedUi();
   });
   flightSpeedSlider.addEventListener("keydown", (event) => event.stopPropagation());
   flightSpeedSlider.addEventListener("keyup", (event) => event.stopPropagation());
   document.querySelector("#flight-reset").addEventListener("click", resetFlight);
-  realSkateToggleButton?.addEventListener("click", () => setRealSkateMode(true));
-  realSkateFlyButton?.addEventListener("click", () => setRealSkateMode(false));
+  realSkateToggleButton?.addEventListener("click", () => {
+    if (!experienceMode.isChill()) setRealSkateMode(true);
+  });
+  realSkateFlyButton?.addEventListener("click", () => {
+    if (!experienceMode.isChill()) setRealSkateMode(false);
+  });
   realSkateStanceButton?.addEventListener("click", () => {
     if (!REAL_SKATE.active || REAL_SKATE.stanceTransitionTarget) return;
     REAL_SKATE.stanceTransitionTarget = REAL_SKATE.stance === "regular" ? "goofy" : "regular";
