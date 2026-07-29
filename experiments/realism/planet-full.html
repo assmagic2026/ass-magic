@@ -12,11 +12,27 @@
     <link rel="preload" href="./assets/audio/phase-punch.mp3" as="audio" type="audio/mpeg">
     <link rel="preload" href="../../list/animalrobot/cover-17.jpg" as="image">
     <link rel="stylesheet" href="../../style.css?v=realism-136">
-    <link rel="stylesheet" href="./style.css?v=realism-skate-local-12">
+    <link rel="stylesheet" href="./style.css?v=chill-mode-1">
     <script src="./phase-audio-engine.js?v=realism-4"></script>
   </head>
-  <body class="flight-mode is-booting">
-    <div id="opening-curtain" aria-hidden="true">
+  <body class="flight-mode is-booting experience-pending">
+    <div id="opening-curtain" aria-hidden="false">
+      <section id="experience-mode-selection" aria-label="体験を選択">
+        <header class="experience-mode-heading">
+          <h1>ASSの惑星</h1>
+          <p>ASS MAGIC official site</p>
+        </header>
+        <div class="experience-mode-options" role="group" aria-label="体験モード">
+          <button class="experience-mode-option" type="button" data-experience-mode="main" aria-pressed="false">
+            <strong>本編</strong>
+            <span>壮大で小さな救いの物語</span>
+          </button>
+          <button class="experience-mode-option" type="button" data-experience-mode="chill" aria-pressed="false">
+            <strong>CHILL MODE</strong>
+            <span>ただただ気持ちよく漂流</span>
+          </button>
+        </div>
+      </section>
       <div id="opening-black-box-scene" aria-hidden="true">
         <div id="opening-black-box">
           <i class="opening-box-face opening-box-front"></i>
@@ -255,6 +271,6 @@
       </div>
     </div>
 
-    <script type="module" src="./planet-full.js?v=realism-mobile-dpr-1"></script>
+    <script type="module" src="./planet-full.js?v=chill-mode-1"></script>
   </body>
 </html>

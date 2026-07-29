@@ -15,6 +15,9 @@ import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-15
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=realism-skate-devil-local-1";
 import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-7";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
+import {
+  createExperienceModeController,
+} from "./experience-mode.js?v=chill-mode-1";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -176,9 +179,11 @@ configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
 const openingCurtain = document.querySelector("#opening-curtain");
+const experienceMode = createExperienceModeController();
 let openingPhase = "loading";
 let openingRunElapsed = 0;
 canvas.dataset.openingPhase = openingPhase;
+canvas.dataset.experienceMode = experienceMode.getMode();
 canvas.dataset.mobilePerformanceProfile = mobileHighProfile ? "optimized-high" : "full";
 const menuToggle = document.querySelector("#menu-toggle");
 const siteMenu = document.querySelector("#site-menu");
@@ -1982,6 +1987,11 @@ async function prepareOpening() {
   renderer.render(scene, camera);
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  experienceMode.markLoadReady();
+  canvas.dataset.experienceLoadReady = "true";
+  await experienceMode.whenSelected;
+  canvas.dataset.experienceMode = experienceMode.getMode();
+  experienceMode.hideSelection();
 
   openingPhase = "revealing";
   canvas.dataset.openingPhase = openingPhase;
@@ -1995,7 +2005,10 @@ async function prepareOpening() {
     openingRunElapsed = 0;
     canvas.dataset.openingPhase = openingPhase;
     document.body.classList.remove("is-booting", "is-opening-revealing");
-    if (openingCurtain) openingCurtain.hidden = true;
+    if (openingCurtain) {
+      openingCurtain.hidden = true;
+      openingCurtain.setAttribute("aria-hidden", "true");
+    }
     canvas.dataset.openingTotalMs = Math.round(performance.now() - startedAt).toString();
     scheduleDeferredOpeningAssets();
     clock.getDelta();
