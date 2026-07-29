@@ -1,7 +1,15 @@
 import * as THREE from "../../three.module.js";
 import { playlist } from "../../playlist.js";
 import { supabaseConfig } from "../../supabase-config.js";
+import {
+  EXPERIENCE_MODE,
+  EXPERIENCE_MODE_SELECTED_EVENT,
+} from "./experience-mode.js?v=chill-mode-1";
 
+// Replace this empty value with "./assets/audio/chill-mode.mp3" when the
+// finished dedicated track is available. Empty means intentional silent mode
+// and performs no request.
+const CHILL_AUDIO_URL = "";
 const BOOK_CACHE_KEY = "ass-magic-book-messages-v1";
 const BOOK_PLAYER_KEY = "ass-magic-book-player-v1";
 const HIDDEN_BOOK_AUTHOR = "__return_history__";
@@ -575,6 +583,7 @@ export function createWholePlanetExperience({
   getSurfaceRadius,
   isEnvironmentPhasing = null,
   isSkating = () => false,
+  getExperienceMode = () => EXPERIENCE_MODE.MAIN,
   quality = "standard",
   onGuideSpeedChange,
   onWorldInversion,
@@ -595,6 +604,8 @@ export function createWholePlanetExperience({
   const toast = document.querySelector("#experience-toast");
   const audio = document.querySelector("#experience-audio");
   const phaseAudioEngine = window.__realismPhaseAudioEngine || null;
+  const isMainExperience = () => getExperienceMode() === EXPERIENCE_MODE.MAIN;
+  const isChillExperience = () => getExperienceMode() === EXPERIENCE_MODE.CHILL;
   const bookOverlay = document.querySelector("#book-overlay");
   const bookBackdrop = document.querySelector("#book-backdrop");
   const bookClose = document.querySelector("#book-close");
@@ -647,6 +658,12 @@ export function createWholePlanetExperience({
   clockAudio.volume = 0.48;
   clockAudio.playsInline = true;
   clockAudio.crossOrigin = "anonymous";
+  const chillAudio = new Audio();
+  chillAudio.loop = true;
+  chillAudio.preload = "auto";
+  chillAudio.volume = 0.82;
+  chillAudio.playsInline = true;
+  chillAudio.crossOrigin = "anonymous";
   const challengeFlash = document.querySelector("#experience-theme-flash");
   const challengeTimer = document.querySelector("#experience-challenge-timer");
 
@@ -887,6 +904,7 @@ export function createWholePlanetExperience({
   }
 
   async function playMusic() {
+    if (!isMainExperience()) return;
     if (!audio.src) loadTrack(currentTrackIndex, false);
     try {
       await audio.play();
@@ -911,7 +929,7 @@ export function createWholePlanetExperience({
   }
 
   function playEffectAudio(effect, restart = false) {
-    if (!effect) return;
+    if (!effect || !isMainExperience()) return;
     if (restart) {
       try {
         effect.currentTime = 0;
@@ -939,7 +957,13 @@ export function createWholePlanetExperience({
   }
 
   function unlockMusic(event) {
-    if (audioUnlocked || musicGesturePending || state.phase === "challenge" || state.modalOpen) return;
+    if (
+      !isMainExperience()
+      || audioUnlocked
+      || musicGesturePending
+      || state.phase === "challenge"
+      || state.modalOpen
+    ) return;
     for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
       try {
         effect.load();
@@ -958,8 +982,63 @@ export function createWholePlanetExperience({
     });
   }
 
+  function stopStoryAudioForChill() {
+    pauseMusic();
+    for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
+      stopEffectAudio(effect, true);
+    }
+    // The main playlist may already have been preloaded while the choice screen
+    // was open. Releasing it keeps CHILL from owning an unnecessary media
+    // request or accidentally resuming main-mode music later.
+    audio.removeAttribute("src");
+    audio.load();
+    audioUnlocked = false;
+  }
+
+  function playChillAudio() {
+    if (!CHILL_AUDIO_URL) {
+      canvas.dataset.chillAudio = "silent-no-source";
+      return;
+    }
+    if (!chillAudio.src) {
+      chillAudio.src = new URL(CHILL_AUDIO_URL, import.meta.url).href;
+      chillAudio.load();
+    }
+    canvas.dataset.chillAudio = "starting";
+    const result = chillAudio.play();
+    result?.then(() => {
+      canvas.dataset.chillAudio = "playing";
+    }).catch((error) => {
+      canvas.dataset.chillAudio = "waiting-for-gesture";
+      if (error?.name !== "AbortError" && error?.name !== "NotAllowedError") {
+        console.warn("CHILL audio playback failed.", error);
+      }
+    });
+  }
+
+  function applyExperienceMode(mode, sourceEvent = null) {
+    canvas.dataset.experienceMode = mode;
+    canvas.dataset.storyEvents = mode === EXPERIENCE_MODE.MAIN ? "enabled" : "disabled";
+
+    if (mode === EXPERIENCE_MODE.CHILL) {
+      stopStoryAudioForChill();
+      void phaseAudioEngine?.unlock?.(`chill-selection-${sourceEvent?.type || "choice"}`);
+      playChillAudio();
+      return;
+    }
+
+    if (mode === EXPERIENCE_MODE.MAIN) {
+      chillAudio.pause();
+      canvas.dataset.chillAudio = "inactive";
+      if (!audio.src) loadTrack(currentTrackIndex, false);
+      const musicAttempt = playMusic();
+      void phaseAudioEngine?.unlock?.(`main-selection-${sourceEvent?.type || "choice"}`);
+      void musicAttempt;
+    }
+  }
+
   function showToast(message, duration = 3200) {
-    if (!toast) return;
+    if (!toast || !isMainExperience()) return;
     window.clearTimeout(toastTimer);
     toast.textContent = message;
     toast.classList.add("is-visible");
@@ -967,7 +1046,7 @@ export function createWholePlanetExperience({
   }
 
   function openModal(nextTitle, render, onClose = null) {
-    if (!overlay || !overlayBody || !overlayTitle) return;
+    if (!isMainExperience() || !overlay || !overlayBody || !overlayTitle) return;
     closeAction = onClose;
     state.modalOpen = true;
     overlayTitle.textContent = nextTitle;
@@ -1004,7 +1083,7 @@ export function createWholePlanetExperience({
   }
 
   function openNativeOverlay(element) {
-    if (!element) return;
+    if (!isMainExperience() || !element) return;
     if (activeNativeOverlay && activeNativeOverlay !== element) closeNativeOverlay();
     activeNativeOverlay = element;
     state.modalOpen = true;
@@ -1583,6 +1662,7 @@ export function createWholePlanetExperience({
   }
 
   function openDevilDialog() {
+    if (!isMainExperience()) return;
     state.devil.phase = "dialog";
     state.modalOpen = true;
     clearFlightInput();
@@ -1834,6 +1914,7 @@ export function createWholePlanetExperience({
   }
 
   function startDevilRoute(destination) {
+    if (!isMainExperience()) return;
     const target = landmarks.objects[destination.id];
     if (!target || !target.parent || !target.visible) return;
     const navigation = state.devil.navigation;
@@ -2004,6 +2085,7 @@ export function createWholePlanetExperience({
   }
 
   function summonDevil(openDialog = false) {
+    if (!isMainExperience()) return;
     devilUi.summon.classList.remove("is-visible");
     devilUi.summon.setAttribute("aria-hidden", "true");
     state.devil.outOfViewTime = 0;
@@ -2217,6 +2299,23 @@ export function createWholePlanetExperience({
 
   function updateDevil(delta) {
     const devil = state.devil;
+    const interactionsEnabled = isMainExperience();
+    if (
+      !interactionsEnabled
+      && ["dialog", "route", "route-wait", "dormant"].includes(devil.phase)
+    ) {
+      devil.phase = "delay";
+      devil.timer = 0;
+      devil.route = null;
+      devil.navigation.destination = null;
+      state.modalOpen = false;
+      devilModel.visible = false;
+      devilUi.overlay.classList.remove("is-open");
+      devilUi.overlay.setAttribute("aria-hidden", "true");
+      devilUi.navigation.classList.remove("is-visible");
+      devilUi.navigation.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("devil-guide-navigating");
+    }
     if (isSkating?.()) {
       // Skate is an intentionally separate play mode: no surprise encounter,
       // no active guide route, and no summon control while riding.
@@ -2284,8 +2383,15 @@ export function createWholePlanetExperience({
       devil.anchorPosition.copy(devilUp).multiplyScalar(devil.flightRadius);
       devil.flightForward.copy(devilEntryInward).lerp(devilDesired, eased * 0.72).normalize();
       if (devil.entryTime <= 0) {
-        devil.phase = "waiting";
+        devil.phase = interactionsEnabled ? "waiting" : "flee";
+        devil.fleeTime = 0;
+        devil.noticeGrace = interactionsEnabled ? 0 : Number.POSITIVE_INFINITY;
       }
+    }
+    if (!interactionsEnabled && devil.phase === "waiting") {
+      devil.phase = "flee";
+      devil.fleeTime = 0;
+      devil.noticeGrace = Number.POSITIVE_INFINITY;
     }
     const distance = devil.anchorPosition.distanceTo(flight.position);
     if (devil.phase === "waiting") {
@@ -2355,6 +2461,8 @@ export function createWholePlanetExperience({
       devilClosestApproach.copy(devilRelativeStart)
         .addScaledVector(devilRelativeDelta, closestTime);
       if (
+        interactionsEnabled
+        &&
         devil.noticeGrace <= 0
         && devilClosestApproach.lengthSq() <= DEVIL_CONTACT_RADIUS * DEVIL_CONTACT_RADIUS
       ) {
@@ -2363,6 +2471,8 @@ export function createWholePlanetExperience({
       }
     }
     if (
+      interactionsEnabled
+      &&
       devil.encounterTime >= DEVIL_ASSIST_CONTACT_DELAY
       && ["entry", "waiting", "flee"].includes(devil.phase)
     ) {
@@ -2392,7 +2502,10 @@ export function createWholePlanetExperience({
       devil.flightForward.copy(devilTarget).sub(devilPreviousAnchor)
         .addScaledVector(devil.anchorUp, -devil.flightForward.dot(devil.anchorUp));
       if (devil.flightForward.lengthSq() > 0.0001) devil.flightForward.normalize();
-      if (devil.anchorPosition.distanceTo(flight.position) <= DEVIL_CONTACT_RADIUS) {
+      if (
+        interactionsEnabled
+        && devil.anchorPosition.distanceTo(flight.position) <= DEVIL_CONTACT_RADIUS
+      ) {
         openDevilDialog();
         return;
       }
@@ -2888,6 +3001,7 @@ export function createWholePlanetExperience({
   }
 
   function handleContact(id) {
+    if (!isMainExperience()) return;
     if (state.phase === "challenge" && id !== "blackSphere" && id !== "whiteSphere" && id !== "compass") {
       endChallenge(false);
     }
@@ -2920,7 +3034,12 @@ export function createWholePlanetExperience({
   function updateContacts() {
     // Environment phasing must not collect, open, start, or complete event
     // objects while the body is intentionally non-solid.
-    if (state.modalOpen || state.ending || isEnvironmentPhasing?.()) return;
+    if (
+      !isMainExperience()
+      || state.modalOpen
+      || state.ending
+      || isEnvironmentPhasing?.()
+    ) return;
     if (state.devil.phase === "route" || state.devil.phase === "route-wait") return;
     for (const contact of CONTACTS) {
       const object = landmarks.objects[contact.id];
@@ -3037,35 +3156,57 @@ export function createWholePlanetExperience({
   window.addEventListener("click", unlockMusic, { capture: true, passive: true });
   canvas.addEventListener("pointerdown", unlockMusic);
   window.addEventListener("keydown", unlockMusic);
+  window.addEventListener(EXPERIENCE_MODE_SELECTED_EVENT, (event) => {
+    applyExperienceMode(event.detail?.mode, event.detail?.sourceEvent);
+  });
 
   loadTrack(currentTrackIndex, false);
+  canvas.dataset.experienceMode = getExperienceMode();
+  canvas.dataset.storyEvents = isMainExperience() ? "enabled" : "disabled";
+  canvas.dataset.chillAudio = "inactive";
   // Begin the first track shortly after the flight appears.  Mobile browsers that
   // reject this attempt will use the existing first-touch retry path.
   window.setTimeout(() => {
-    if (!audioUnlocked && !state.modalOpen && state.phase !== "challenge") void playMusic();
+    if (
+      isMainExperience()
+      && !audioUnlocked
+      && !state.modalOpen
+      && state.phase !== "challenge"
+    ) void playMusic();
   }, 500);
 
   return {
     state,
-    isPaused: () => state.modalOpen
-      || state.ending
-      || state.devil.phase === "route"
-      || state.devil.phase === "route-wait",
-    isGuideNavigating: () => state.devil.phase === "route"
-      || state.devil.phase === "route-wait",
+    isPaused: () => isMainExperience()
+      && (
+        state.modalOpen
+        || state.ending
+        || state.devil.phase === "route"
+        || state.devil.phase === "route-wait"
+      ),
+    isGuideNavigating: () => isMainExperience()
+      && (
+        state.devil.phase === "route"
+        || state.devil.phase === "route-wait"
+      ),
     getReturnState: () => state,
     update(delta) {
-      updateChallenge(delta);
+      const storyEnabled = isMainExperience();
+      if (storyEnabled) updateChallenge(delta);
       updateDevil(delta);
       updateDevilLighting();
       canvas.dataset.devilPhase = state.devil.phase;
       canvas.dataset.devilEncounterTime = state.devil.encounterTime.toFixed(2);
-      updateContacts();
-      updateCompassAssist(delta);
-      updateReturnRoute(delta);
-      updateCatCompanion(delta);
+      canvas.dataset.devilVisible = String(devilModel.visible);
+      if (storyEnabled) {
+        updateContacts();
+        updateCompassAssist(delta);
+        updateReturnRoute(delta);
+        updateCatCompanion(delta);
+      }
       if (
-        state.ending
+        storyEnabled
+        && state.ending
         && endingOverlay?.classList.contains("is-open")
         && endingRollStart > 0
         && performance.now() - endingRollStart >= ENDING_ROLL_DURATION * 1000
