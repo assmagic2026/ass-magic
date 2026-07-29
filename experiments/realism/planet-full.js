@@ -4115,10 +4115,12 @@ function updatePhasedFlightPresentation(delta, turnInput = 0, climbInput = 0) {
   updateWaterPlayerReflection();
   updateFlightCamera(delta);
   updateFlightEnvironment(flightUp, delta);
-  flight.readoutElapsed += delta;
-  if (flight.readoutElapsed >= 0.12) {
-    flightReadout.innerHTML = `SPEED ${Math.round(flight.speed)}<br>ALT ${altitude.toFixed(1)}<br>PHASE`;
-    flight.readoutElapsed = 0;
+  if (!experienceMode.isChill()) {
+    flight.readoutElapsed += delta;
+    if (flight.readoutElapsed >= 0.12) {
+      flightReadout.innerHTML = `SPEED ${Math.round(flight.speed)}<br>ALT ${altitude.toFixed(1)}<br>PHASE`;
+      flight.readoutElapsed = 0;
+    }
   }
 }
 
@@ -4901,14 +4903,16 @@ function updateFlight(delta) {
   updateFlightCamera(delta);
   updateFlightEnvironment(flightNextUp, delta);
 
-  flight.readoutElapsed += delta;
-  if (flight.readoutElapsed >= 0.12) {
-    const nextAltitude = Math.max(0, nextRadius - nextSurface);
-    const assistDebug = terrainAssistDebugEnabled
-      ? `<br>DIVE ${THREE.MathUtils.radToDeg(descentAngleLimit).toFixed(0)}° P${(flight.descentPose * 100).toFixed(0)}%<br>ASSIST ${terrainAssist.phase} ${(terrainAssist.strength * 100).toFixed(0)}% S${terrainAssist.side}<br>CLR ${terrainAssist.minimumClearance.toFixed(1)} T${terrainAssist.timeToRisk.toFixed(1)} V ${flight.radialSpeed.toFixed(1)}>${terrainAssist.verticalSpeed.toFixed(1)}`
-      : "";
-    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}${assistDebug}`;
-    flight.readoutElapsed = 0;
+  if (!experienceMode.isChill()) {
+    flight.readoutElapsed += delta;
+    if (flight.readoutElapsed >= 0.12) {
+      const nextAltitude = Math.max(0, nextRadius - nextSurface);
+      const assistDebug = terrainAssistDebugEnabled
+        ? `<br>DIVE ${THREE.MathUtils.radToDeg(descentAngleLimit).toFixed(0)}° P${(flight.descentPose * 100).toFixed(0)}%<br>ASSIST ${terrainAssist.phase} ${(terrainAssist.strength * 100).toFixed(0)}% S${terrainAssist.side}<br>CLR ${terrainAssist.minimumClearance.toFixed(1)} T${terrainAssist.timeToRisk.toFixed(1)} V ${flight.radialSpeed.toFixed(1)}>${terrainAssist.verticalSpeed.toFixed(1)}`
+        : "";
+      flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>ALT ${nextAltitude.toFixed(1)}<br>RADIUS ${PLANET_RADIUS}${assistDebug}`;
+      flight.readoutElapsed = 0;
+    }
   }
 }
 
@@ -5004,10 +5008,12 @@ function updateSpaceReturnFlight(delta, turnInput, climbInput, returnState) {
   flightNextUp.copy(flight.position).normalize();
   updateFlightEnvironment(flightNextUp, delta);
 
-  flight.readoutElapsed += delta;
-  if (flight.readoutElapsed >= 0.12) {
-    flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>EARTH ${Math.max(0, earthDistance).toFixed(0)}<br>RETURN`;
-    flight.readoutElapsed = 0;
+  if (!experienceMode.isChill()) {
+    flight.readoutElapsed += delta;
+    if (flight.readoutElapsed >= 0.12) {
+      flightReadout.innerHTML = `SPEED ${Math.round(flight.speedSelection)}<br>EARTH ${Math.max(0, earthDistance).toFixed(0)}<br>RETURN`;
+      flight.readoutElapsed = 0;
+    }
   }
 }
 
@@ -5033,10 +5039,12 @@ function updateGuidedFlight(delta) {
   updateWaterPlayerReflection();
   updateFlightCamera(delta);
   updateFlightEnvironment(flightUp, delta);
-  flight.readoutElapsed += delta;
-  if (flight.readoutElapsed >= 0.12) {
-    flightReadout.innerHTML = `SPEED ${Math.round(flight.speed)}<br>ALT ${getFlightAltitude(flight.position).toFixed(1)}<br>GUIDE`;
-    flight.readoutElapsed = 0;
+  if (!experienceMode.isChill()) {
+    flight.readoutElapsed += delta;
+    if (flight.readoutElapsed >= 0.12) {
+      flightReadout.innerHTML = `SPEED ${Math.round(flight.speed)}<br>ALT ${getFlightAltitude(flight.position).toFixed(1)}<br>GUIDE`;
+      flight.readoutElapsed = 0;
+    }
   }
 }
 
