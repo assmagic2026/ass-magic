@@ -10,7 +10,7 @@ import { createEnvironmentPhasing } from "./environment-phasing.js?v=kick-transi
 import {
   createFlightPlayer,
   updateFlightPlayer,
-} from "./whole-planet-player.js?v=realism-48";
+} from "./whole-planet-player.js?v=tap-tricks-3";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
 import { createWholePlanetExperience } from "./whole-planet-experience.js?v=chill-companion-audio-2";
 import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-7";
@@ -26,8 +26,27 @@ function resolveRealismAsset(path) {
   return new URL(path, REALISM_ASSET_BASE).href;
 }
 
+function easeInOutQuint(value) {
+  const t = THREE.MathUtils.clamp(value, 0, 1);
+  return t < 0.5
+    ? 16 * Math.pow(t, 5)
+    : 1 - Math.pow(-2 * t + 2, 5) / 2;
+}
+
 const PLANET_RADIUS = 340;
 const PLAYER_CLEARANCE = 0.9;
+const FLIGHT_TAP_CONFIG = Object.freeze({
+  sequenceWindow: 0.32,
+  sequenceDistance: 74,
+  maximumDuration: 0.3,
+  movementTolerance: 24,
+  screwDuration: 2.24,
+  screwTurns: 3,
+  screwForwardOffset: 3.6,
+  poopGravity: 12,
+  poopLifetime: 14,
+  poopPoolSize: 6,
+});
 const MAX_FLIGHT_ALTITUDE = 300;
 const RETURN_ALTITUDE_CORRIDOR_RADIUS = 220;
 const RETURN_ALTITUDE_CORRIDOR_BELOW_ORIGIN = 42;
@@ -401,6 +420,11 @@ const terrainAssistDirection = new THREE.Vector3();
 const terrainAssistLaneDirection = new THREE.Vector3();
 const terrainAssistLaneRight = new THREE.Vector3();
 const flightAltitudeDirection = new THREE.Vector3();
+const flightPoopUp = new THREE.Vector3();
+const flightPoopForward = new THREE.Vector3();
+const flightPoopRight = new THREE.Vector3();
+const flightPoopSpawnDirection = new THREE.Vector3();
+const flightPoopQuaternion = new THREE.Quaternion();
 const flightFogColor = new THREE.Color();
 const flightSunColor = new THREE.Color();
 const flightHemisphereSkyColor = new THREE.Color();
@@ -433,6 +457,11 @@ const flight = {
   cruiseAltitude: 10,
   bodyPitch: -0.12,
   roll: 0,
+  screwSpinActive: false,
+  screwSpinTime: 0,
+  screwSpinAngle: 0,
+  screwSpinDirection: 1,
+  screwForwardOffset: 0,
   cameraLift: 0,
   cameraHighAltitudeLook: 0,
   onGround: false,
@@ -489,6 +518,272 @@ const REAL_SKATE = {
   skater: null,
   skaterMirror: null,
 };
+const flightTapCandidates = new Map();
+const flightTapSequence = {
+  count: 0,
+  at: -Infinity,
+  x: 0,
+  y: 0,
+};
+const flightPoopDrops = createFlightPoopPool();
+canvas.dataset.flightTapGesture = "ready";
+canvas.dataset.screwSpin = "idle";
+canvas.dataset.poopVisible = "0";
+
+function createFlightPoopPool() {
+  const material = new THREE.MeshLambertMaterial({ color: 0x4b2410 });
+  const baseGeometry = new THREE.SphereGeometry(0.34, 8, 7);
+  const middleGeometry = new THREE.SphereGeometry(0.24, 8, 7);
+  const topGeometry = new THREE.ConeGeometry(0.14, 0.3, 8);
+  return Array.from({ length: FLIGHT_TAP_CONFIG.poopPoolSize }, () => {
+    const poop = new THREE.Group();
+    const base = new THREE.Mesh(baseGeometry, material);
+    base.scale.set(1.18, 0.78, 1.05);
+    base.position.y = 0.18;
+    const middle = new THREE.Mesh(middleGeometry, material);
+    middle.scale.set(1, 0.82, 0.96);
+    middle.position.y = 0.48;
+    const top = new THREE.Mesh(topGeometry, material);
+    top.position.y = 0.77;
+    poop.add(base, middle, top);
+    poop.visible = false;
+    poop.userData.life = 0;
+    poop.userData.velocity = new THREE.Vector3();
+    poop.userData.grounded = false;
+    poop.userData.groundDirection = new THREE.Vector3();
+    scene.add(poop);
+    return poop;
+  });
+}
+
+function getScrewForwardOffset(progress) {
+  const delayed = THREE.MathUtils.clamp((progress - 0.22) / 0.78, 0, 1);
+  return Math.pow(Math.sin(Math.PI * delayed), 1.7);
+}
+
+function triggerScrewSpin() {
+  flight.screwSpinActive = true;
+  flight.screwSpinTime = 0;
+  flight.screwSpinAngle = 0;
+  flight.screwForwardOffset = 0;
+  flight.screwSpinDirection *= -1;
+  canvas.dataset.screwSpin = "active";
+  canvas.dataset.screwSpinProgress = "0.000";
+  canvas.dataset.screwSpinTriggers = String(
+    (Number(canvas.dataset.screwSpinTriggers) || 0) + 1,
+  );
+}
+
+function cancelScrewSpin(status = "idle") {
+  flight.screwSpinActive = false;
+  flight.screwSpinTime = 0;
+  flight.screwSpinAngle = 0;
+  flight.screwForwardOffset = 0;
+  flightPlayer.trickRoll = 0;
+  flightPlayer.trickForwardOffset = 0;
+  canvas.dataset.screwSpin = status;
+  canvas.dataset.screwSpinProgress = status === "complete" ? "1.000" : "0.000";
+}
+
+function resetTapSequence() {
+  flightTapSequence.count = 0;
+  flightTapSequence.at = -Infinity;
+}
+
+function clearFlightPoopDrops() {
+  for (const poop of flightPoopDrops) {
+    poop.visible = false;
+    poop.userData.life = 0;
+    poop.userData.grounded = false;
+    poop.userData.velocity.set(0, 0, 0);
+  }
+  canvas.dataset.poopVisible = "0";
+}
+
+function resetFlightTapTricks({ clearDrops = false } = {}) {
+  cancelScrewSpin();
+  resetTapSequence();
+  flightTapCandidates.clear();
+  if (clearDrops) clearFlightPoopDrops();
+  canvas.dataset.flightTapGesture = "ready";
+}
+
+function spawnPoopDrop() {
+  const poop = flightPoopDrops.find((entry) => entry.userData.life <= 0)
+    || flightPoopDrops[0];
+  flightPoopUp.copy(flight.position).normalize();
+  flightPoopForward.copy(flight.forward)
+    .addScaledVector(flightPoopUp, -flight.forward.dot(flightPoopUp));
+  if (flightPoopForward.lengthSq() < 0.0001) {
+    flightPoopForward.crossVectors(WORLD_UP, flightPoopUp);
+  }
+  flightPoopForward.normalize();
+  flightPoopRight.crossVectors(flightPoopUp, flightPoopForward).normalize();
+  flightPoopSpawnDirection.copy(flight.position)
+    .addScaledVector(flightPoopForward, -1.3)
+    .addScaledVector(flightPoopUp, -0.74)
+    .normalize();
+  poop.visible = true;
+  poop.userData.life = FLIGHT_TAP_CONFIG.poopLifetime;
+  poop.userData.grounded = false;
+  poop.userData.groundDirection.copy(flightPoopSpawnDirection);
+  poop.position.copy(flight.position)
+    .addScaledVector(flightPoopForward, -0.55)
+    .addScaledVector(flightPoopUp, -0.58)
+    .addScaledVector(flightPoopRight, (Math.random() - 0.5) * 0.18);
+  poop.rotation.set(
+    Math.random() * 0.16,
+    Math.random() * Math.PI * 2,
+    Math.random() * 0.12,
+  );
+  poop.scale.setScalar(0.2);
+  poop.userData.velocity.copy(flightPoopForward).multiplyScalar(8.4)
+    .addScaledVector(flightPoopUp, -2.4)
+    .addScaledVector(flightPoopRight, (Math.random() - 0.5) * 0.6);
+  canvas.dataset.poopDrops = String((Number(canvas.dataset.poopDrops) || 0) + 1);
+  canvas.dataset.poopVisible = String(
+    flightPoopDrops.filter((entry) => entry.userData.life > 0).length,
+  );
+}
+
+function updateFlightTapEffects(delta) {
+  if (flight.screwSpinActive) {
+    flight.screwSpinTime += delta;
+    const progress = THREE.MathUtils.clamp(
+      flight.screwSpinTime / FLIGHT_TAP_CONFIG.screwDuration,
+      0,
+      1,
+    );
+    flight.screwSpinAngle = flight.screwSpinDirection
+      * Math.PI
+      * 2
+      * FLIGHT_TAP_CONFIG.screwTurns
+      * easeInOutQuint(progress);
+    flight.screwForwardOffset = getScrewForwardOffset(progress)
+      * FLIGHT_TAP_CONFIG.screwForwardOffset;
+    flightPlayer.trickRoll = flight.screwSpinAngle;
+    flightPlayer.trickForwardOffset = flight.screwForwardOffset;
+    canvas.dataset.screwSpinProgress = progress.toFixed(3);
+    if (progress >= 1) cancelScrewSpin("complete");
+  } else {
+    flightPlayer.trickRoll = 0;
+    flightPlayer.trickForwardOffset = 0;
+  }
+
+  let visiblePoopCount = 0;
+  for (const poop of flightPoopDrops) {
+    if (poop.userData.life <= 0) {
+      poop.visible = false;
+      continue;
+    }
+    poop.userData.life = Math.max(0, poop.userData.life - delta);
+    if (!poop.userData.grounded) {
+      flightPoopUp.copy(poop.position).normalize();
+      poop.userData.velocity.addScaledVector(
+        flightPoopUp,
+        -FLIGHT_TAP_CONFIG.poopGravity * delta,
+      );
+      poop.position.addScaledVector(poop.userData.velocity, delta);
+      flightPoopUp.copy(poop.position).normalize();
+      const surfaceRadius = getSurfaceRadius(flightPoopUp) + 0.12;
+      if (poop.position.length() <= surfaceRadius) {
+        poop.userData.grounded = true;
+        poop.userData.groundDirection.copy(flightPoopUp);
+        poop.position.copy(flightPoopUp).multiplyScalar(surfaceRadius);
+        poop.userData.velocity.set(0, 0, 0);
+        flightPoopQuaternion.setFromUnitVectors(WORLD_UP, flightPoopUp);
+        poop.quaternion.copy(flightPoopQuaternion);
+      }
+    } else {
+      flightPoopUp.copy(poop.userData.groundDirection);
+      poop.position.copy(flightPoopUp)
+        .multiplyScalar(getSurfaceRadius(flightPoopUp) + 0.12);
+      flightPoopQuaternion.setFromUnitVectors(WORLD_UP, flightPoopUp);
+      poop.quaternion.copy(flightPoopQuaternion);
+    }
+    poop.visible = poop.userData.life > 0;
+    if (poop.visible) visiblePoopCount += 1;
+  }
+  if (canvas.dataset.poopVisible !== String(visiblePoopCount)) {
+    canvas.dataset.poopVisible = String(visiblePoopCount);
+  }
+}
+
+function isFlightTapGestureAvailable() {
+  return settings.view === "flight"
+    && openingPhase === "running"
+    && !REAL_SKATE.active
+    && !REAL_SKATE.descending
+    && experience?.isPaused() !== true
+    && environmentPhasing?.isMovementControlled() !== true;
+}
+
+function registerFlightTapCandidate(pointerId, x, y) {
+  flightTapCandidates.set(pointerId, {
+    x,
+    y,
+    at: performance.now() / 1000,
+    eligible: true,
+  });
+}
+
+function invalidateFlightTapCandidate(pointerId, x, y) {
+  const candidate = flightTapCandidates.get(pointerId);
+  if (!candidate?.eligible) return;
+  if (Math.hypot(x - candidate.x, y - candidate.y) > FLIGHT_TAP_CONFIG.movementTolerance) {
+    candidate.eligible = false;
+  }
+}
+
+function resolveFlightTapCandidate(pointerId, x, y) {
+  const candidate = flightTapCandidates.get(pointerId);
+  flightTapCandidates.delete(pointerId);
+  if (!candidate?.eligible || !isFlightTapGestureAvailable()) return false;
+  const now = performance.now() / 1000;
+  if (now - candidate.at > FLIGHT_TAP_CONFIG.maximumDuration) return false;
+  const continuesSequence = flightTapSequence.count > 0
+    && now - flightTapSequence.at <= FLIGHT_TAP_CONFIG.sequenceWindow
+    && Math.hypot(x - flightTapSequence.x, y - flightTapSequence.y)
+      <= FLIGHT_TAP_CONFIG.sequenceDistance;
+  flightTapSequence.count = continuesSequence ? flightTapSequence.count + 1 : 1;
+  flightTapSequence.at = now;
+  flightTapSequence.x = x;
+  flightTapSequence.y = y;
+  canvas.dataset.flightTapCount = String(flightTapSequence.count);
+
+  if (flightTapSequence.count === 2) {
+    triggerScrewSpin();
+    canvas.dataset.flightTapGesture = "double-screw";
+    return true;
+  }
+  if (flightTapSequence.count >= 3) {
+    cancelScrewSpin();
+    spawnPoopDrop();
+    resetTapSequence();
+    canvas.dataset.flightTapCount = "0";
+    canvas.dataset.flightTapGesture = "triple-poop";
+    return true;
+  }
+  canvas.dataset.flightTapGesture = "single";
+  return false;
+}
+
+function setupFlightTapGestures() {
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary || event.button !== 0 || !isFlightTapGestureAvailable()) return;
+    registerFlightTapCandidate(event.pointerId, event.clientX, event.clientY);
+  }, { capture: true });
+  window.addEventListener("pointermove", (event) => {
+    invalidateFlightTapCandidate(event.pointerId, event.clientX, event.clientY);
+  }, { capture: true, passive: true });
+  window.addEventListener("pointerup", (event) => {
+    resolveFlightTapCandidate(event.pointerId, event.clientX, event.clientY);
+  }, { capture: true });
+  window.addEventListener("pointercancel", (event) => {
+    flightTapCandidates.delete(event.pointerId);
+  }, { capture: true });
+}
+
 // The wheel bottom was only 0.06 units over the mathematical terrain.  On the
 // full planet's high-detail surface shading that reads as a sunk board, so keep
 // a small visual margin while moving rider and board together.
@@ -1010,6 +1305,7 @@ renderer.setAnimationLoop(() => {
     });
     experience?.update(simulationDelta);
     if (settings.view === "flight") {
+      if (!experience?.isPaused()) updateFlightTapEffects(simulationDelta);
       const skateAutoLanding = REAL_SKATE.descending;
       const skateOwnsMovement = REAL_SKATE.active || skateAutoLanding;
       if (experience?.isGuideNavigating() && !skateOwnsMovement) updateGuidedFlight(simulationDelta);
@@ -4192,6 +4488,8 @@ function activateSkate({ preserveAirbornePosition = false } = {}) {
 }
 
 function setRealSkateMode(active) {
+  cancelScrewSpin();
+  resetTapSequence();
   triggerSkateSwitchEffect();
   if (!active) {
     REAL_SKATE.descending = false;
@@ -5274,6 +5572,7 @@ function resetFlight() {
   // Let terrain avoidance settle around the spawn point before emergency
   // phasing is allowed.  This prevents a false phase and its sound at startup.
   environmentPhasing?.reset({ guardSeconds: 3.2 });
+  resetFlightTapTricks({ clearDrops: true });
   windVentFlightStrength = 0;
   canvas.dataset.windVentStrength = "0.000";
   experience?.reset();
@@ -5696,6 +5995,7 @@ function setupOrbitInteraction() {
 }
 
 function setupFlightInteraction() {
+  setupFlightTapGestures();
   createChillFlightControls({
     canvas,
     flight,

@@ -125,6 +125,9 @@ export function createFlightPlayer(scene, options = {}) {
     correctedUp: new THREE.Vector3(),
     visualForward: new THREE.Vector3(),
     shadowDirection: new THREE.Vector3(),
+    presentationPosition: new THREE.Vector3(),
+    trickRoll: 0,
+    trickForwardOffset: 0,
     // The procedural figure's pelvis sits slightly behind its local origin.
     waistLocal: new THREE.Vector3(0, 0, -0.22),
     headLocal: new THREE.Vector3(0, -0.015, 1.13),
@@ -374,7 +377,7 @@ export function updateFlightPlayer(rig, state) {
   rig.correctedUp.crossVectors(rig.visualForward, rig.right).normalize();
   rig.basis.makeBasis(rig.right, rig.correctedUp, rig.visualForward);
   rig.quaternion.setFromRotationMatrix(rig.basis);
-  rig.rollQuaternion.setFromAxisAngle(FORWARD_AXIS, roll);
+  rig.rollQuaternion.setFromAxisAngle(FORWARD_AXIS, roll + rig.trickRoll);
   rig.player.quaternion.copy(rig.quaternion)
     .multiply(rig.rollQuaternion);
 
@@ -387,10 +390,14 @@ export function updateFlightPlayer(rig, state) {
   );
   rig.pivotLocal.copy(rig.waistLocal).lerp(rig.headLocal, descentPivotMix);
   rig.pivotOffset.copy(rig.pivotLocal).applyQuaternion(rig.player.quaternion);
-  rig.player.position.copy(position).addScaledVector(up, bob).sub(rig.pivotOffset);
+  rig.presentationPosition.copy(position)
+    .addScaledVector(rig.visualForward, rig.trickForwardOffset);
+  rig.player.position.copy(rig.presentationPosition)
+    .addScaledVector(up, bob)
+    .sub(rig.pivotOffset);
   if (rig.mixer) rig.mixer.update(delta);
 
-  rig.shadowDirection.copy(position).normalize();
+  rig.shadowDirection.copy(rig.presentationPosition).normalize();
   rig.shadow.position.copy(rig.shadowDirection).multiplyScalar(surfaceRadius + 0.06);
   rig.shadow.quaternion.setFromUnitVectors(FORWARD_AXIS, rig.shadowDirection);
   const shadowScale = THREE.MathUtils.clamp(1.1 - altitude * 0.16, 0.34, 1.08);
