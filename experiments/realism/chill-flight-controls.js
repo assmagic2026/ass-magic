@@ -1,4 +1,3 @@
-const DIRECTION_DEAD_ZONE_PX = 10;
 const SPEED_PIXELS_TO_UNITS = 0.45;
 const MAX_SPEED_DELTA_PX = 28;
 
@@ -76,27 +75,18 @@ export function createChillFlightControls({
       const dx = event.clientX - directionStartX;
       const dy = event.clientY - directionStartY;
       const distance = Math.hypot(dx, dy);
-      const maximumTravel = Math.max(
-        70,
-        Math.min(window.innerWidth, window.innerHeight) * 0.24,
-      );
-      if (distance <= DIRECTION_DEAD_ZONE_PX) {
-        flight.stickOffset.set(0, 0);
-      } else {
-        const magnitude = Math.min(
-          1,
-          (distance - DIRECTION_DEAD_ZONE_PX)
-            / Math.max(1, maximumTravel - DIRECTION_DEAD_ZONE_PX),
-        );
-        flight.stickOffset.set(
-          (dx / distance) * magnitude * stickLimit,
-          (dy / distance) * magnitude * stickLimit,
-        );
-      }
+      // Chill has no visible stick, but it must feel exactly like the main
+      // flight stick: the initial touch is its center and `stickLimit` is the
+      // radius of an invisible circular gate.
+      const limit = Math.min(distance, stickLimit);
+      const nx = distance > 0 ? dx / distance : 0;
+      const ny = distance > 0 ? dy / distance : 0;
+      flight.stickOffset.set(nx * limit, ny * limit);
       canvas.dataset.chillDirectionInput = [
         (flight.stickOffset.x / stickLimit).toFixed(3),
         (flight.stickOffset.y / stickLimit).toFixed(3),
       ].join(",");
+      canvas.dataset.chillDirectionGate = `${stickLimit}px-circle`;
       event.preventDefault();
       event.stopImmediatePropagation();
       return;

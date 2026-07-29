@@ -18,7 +18,7 @@ import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.j
 import {
   createExperienceModeController,
 } from "./experience-mode.js?v=chill-mode-1";
-import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-mode-1";
+import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-steering-1";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -6098,6 +6098,11 @@ function setupFlightInteraction() {
       const nx = length > 0 ? dx / length : 0;
       const ny = length > 0 ? dy / length : 0;
       flight.stickOffset.set(nx * limit, ny * limit);
+      canvas.dataset.mainDirectionInput = [
+        (flight.stickOffset.x / FLIGHT_STICK_LIMIT).toFixed(3),
+        (flight.stickOffset.y / FLIGHT_STICK_LIMIT).toFixed(3),
+      ].join(",");
+      canvas.dataset.mainDirectionGate = `${FLIGHT_STICK_LIMIT}px-circle`;
       flightStickKnob.style.transform = `translate(calc(-50% + ${nx * limit}px), calc(-50% + ${ny * limit}px))`;
     }
     if (event.pointerId === flight.directId) {
