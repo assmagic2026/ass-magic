@@ -73,6 +73,11 @@ const DEVIL_FLEE_TURN_RESPONSE = 1.82;
 const DEVIL_FLEE_WEAVE_SPEED = 1.35;
 const DEVIL_FLEE_WEAVE_AMOUNT = 0.1;
 const DEVIL_TERRAIN_RESPONSE = 4.2;
+const CHILL_DEVIL_DELAY_MIN = 35;
+const CHILL_DEVIL_DELAY_MAX = 75;
+const CHILL_DEVIL_ROAM_SPEED = 9;
+const CHILL_DEVIL_ROAM_SPEED_VARIATION = 2.4;
+const CHILL_DEVIL_ROAM_TURN = 0.14;
 // Realistic terrain adds vertical variation, so use a more forgiving encounter radius.
 const DEVIL_CONTACT_RADIUS = 22;
 const DEVIL_ASSIST_CONTACT_DELAY = 5;
@@ -786,6 +791,10 @@ export function createWholePlanetExperience({
       skateSuppressed: false,
       bobTime: 0,
       evadeWave: 0,
+      chillRoamInitialized: false,
+      chillRoamDebug: false,
+      chillRoamTime: 0,
+      chillRoamSeed: 0,
       navigation: {
         destination: null,
         elapsed: 0,
@@ -1022,6 +1031,7 @@ export function createWholePlanetExperience({
 
     if (mode === EXPERIENCE_MODE.CHILL) {
       stopStoryAudioForChill();
+      scheduleChillDevil();
       void phaseAudioEngine?.unlock?.(`chill-selection-${sourceEvent?.type || "choice"}`);
       playChillAudio();
       return;
@@ -2084,6 +2094,109 @@ export function createWholePlanetExperience({
     state.devil.lastPlayerPosition.copy(flight.position);
   }
 
+  function scheduleChillDevil() {
+    const devil = state.devil;
+    const chillDebug = new URLSearchParams(window.location.search).get("chilldevildebug") === "1";
+    devil.chillRoamInitialized = true;
+    devil.chillRoamDebug = chillDebug;
+    devil.chillRoamTime = 0;
+    devil.chillRoamSeed = Math.random() * Math.PI * 2;
+    devil.phase = "chill-delay";
+    devil.timer = chillDebug
+      ? 1.5
+      : THREE.MathUtils.lerp(CHILL_DEVIL_DELAY_MIN, CHILL_DEVIL_DELAY_MAX, Math.random());
+    devil.route = null;
+    devil.navigation.destination = null;
+    devilModel.visible = false;
+    canvas.dataset.devilRoam = "waiting";
+    canvas.dataset.devilRoamDelay = devil.timer.toFixed(1);
+    canvas.dataset.devilRoamFollowing = "false";
+  }
+
+  function spawnChillDevil() {
+    const devil = state.devil;
+    const latitudeY = Math.random() * 2 - 1;
+    const horizontal = Math.sqrt(Math.max(0, 1 - latitudeY * latitudeY));
+    const longitude = Math.random() * Math.PI * 2;
+    devilTarget.set(
+      Math.cos(longitude) * horizontal,
+      latitudeY,
+      Math.sin(longitude) * horizontal,
+    );
+    // Start on a distant part of the globe. This is only an initial placement
+    // check; roaming never steers toward, follows, or flees from the player.
+    playerUp.copy(flight.position).normalize();
+    if (devilTarget.dot(playerUp) > 0.24) devilTarget.multiplyScalar(-1);
+    devil.anchorUp.copy(devilTarget).normalize();
+    devilRight.set(0, 1, 0);
+    if (Math.abs(devilRight.dot(devil.anchorUp)) > 0.92) devilRight.set(1, 0, 0);
+    devil.flightForward.crossVectors(devilRight, devil.anchorUp).normalize();
+    devil.flightForward.applyAxisAngle(devil.anchorUp, Math.random() * Math.PI * 2);
+    devil.flightRadius = getSurfaceRadius(devil.anchorUp) + 0.9 + DEVIL_SPAWN_HEIGHT;
+    devil.anchorPosition.copy(devil.anchorUp).multiplyScalar(devil.flightRadius);
+    devilModel.position.copy(devil.anchorPosition);
+    devilModel.visible = true;
+    devil.phase = "chill-roam";
+    devil.chillRoamTime = 0;
+    devil.bobTime = 0;
+    orientDevil(devil.flightForward);
+    canvas.dataset.devilRoam = "wandering";
+    canvas.dataset.devilRoamDelay = "0.0";
+  }
+
+  function updateChillDevil(delta) {
+    const devil = state.devil;
+    if (!devil.chillRoamInitialized) scheduleChillDevil();
+    if (devil.phase === "chill-delay") {
+      devil.timer = Math.max(0, devil.timer - delta);
+      canvas.dataset.devilRoamDelay = devil.timer.toFixed(1);
+      if (devil.timer <= 0) spawnChillDevil();
+      return;
+    }
+    if (devil.phase !== "chill-roam") {
+      scheduleChillDevil();
+      return;
+    }
+
+    devil.chillRoamTime += delta;
+    devil.bobTime += delta * 1.45;
+    devilUp.copy(devil.anchorUp).normalize();
+    const wanderTurn = (
+      Math.sin(devil.chillRoamTime * 0.17 + devil.chillRoamSeed)
+      + Math.sin(devil.chillRoamTime * 0.071 + devil.chillRoamSeed * 1.73) * 0.46
+    ) * CHILL_DEVIL_ROAM_TURN;
+    devil.flightForward.applyAxisAngle(devilUp, wanderTurn * delta)
+      .addScaledVector(devilUp, -devil.flightForward.dot(devilUp))
+      .normalize();
+    const roamSpeed = CHILL_DEVIL_ROAM_SPEED
+      + Math.sin(devil.chillRoamTime * 0.23 + devil.chillRoamSeed)
+        * CHILL_DEVIL_ROAM_SPEED_VARIATION;
+    devilTravelAxis.crossVectors(devilUp, devil.flightForward).normalize();
+    const moveAngle = roamSpeed * delta / Math.max(devil.flightRadius, 1);
+    devilUp.applyAxisAngle(devilTravelAxis, moveAngle).normalize();
+    devil.flightForward.applyAxisAngle(devilTravelAxis, moveAngle)
+      .addScaledVector(devilUp, -devil.flightForward.dot(devilUp))
+      .normalize();
+    devil.flightRadius = THREE.MathUtils.damp(
+      devil.flightRadius,
+      getSurfaceRadius(devilUp) + 0.9 + DEVIL_SPAWN_HEIGHT,
+      DEVIL_TERRAIN_RESPONSE,
+      delta,
+    );
+    devil.anchorUp.copy(devilUp);
+    devil.anchorPosition.copy(devilUp).multiplyScalar(devil.flightRadius);
+    devilModel.position.copy(devil.anchorPosition)
+      .addScaledVector(devil.anchorUp, Math.sin(devil.bobTime) * 0.28);
+    orientDevil(devil.flightForward);
+    devilModel.rotateZ(Math.sin(devil.bobTime * 0.61) * 0.065);
+    for (const wing of devilModel.userData.wingRoots || []) {
+      wing.root.rotation.y = wing.side * (0.2 + Math.sin(devil.bobTime * 7.2) * 0.48);
+    }
+    if (devil.chillRoamDebug) {
+      canvas.dataset.devilRoamDistance = devil.anchorPosition.distanceTo(flight.position).toFixed(1);
+    }
+  }
+
   function summonDevil(openDialog = false) {
     if (!isMainExperience()) return;
     devilUi.summon.classList.remove("is-visible");
@@ -2300,21 +2413,9 @@ export function createWholePlanetExperience({
   function updateDevil(delta) {
     const devil = state.devil;
     const interactionsEnabled = isMainExperience();
-    if (
-      !interactionsEnabled
-      && ["dialog", "route", "route-wait", "dormant"].includes(devil.phase)
-    ) {
-      devil.phase = "delay";
-      devil.timer = 0;
-      devil.route = null;
-      devil.navigation.destination = null;
-      state.modalOpen = false;
-      devilModel.visible = false;
-      devilUi.overlay.classList.remove("is-open");
-      devilUi.overlay.setAttribute("aria-hidden", "true");
-      devilUi.navigation.classList.remove("is-visible");
-      devilUi.navigation.setAttribute("aria-hidden", "true");
-      document.body.classList.remove("devil-guide-navigating");
+    if (!interactionsEnabled) {
+      updateChillDevil(delta);
+      return;
     }
     if (isSkating?.()) {
       // Skate is an intentionally separate play mode: no surprise encounter,
@@ -2383,15 +2484,8 @@ export function createWholePlanetExperience({
       devil.anchorPosition.copy(devilUp).multiplyScalar(devil.flightRadius);
       devil.flightForward.copy(devilEntryInward).lerp(devilDesired, eased * 0.72).normalize();
       if (devil.entryTime <= 0) {
-        devil.phase = interactionsEnabled ? "waiting" : "flee";
-        devil.fleeTime = 0;
-        devil.noticeGrace = interactionsEnabled ? 0 : Number.POSITIVE_INFINITY;
+        devil.phase = "waiting";
       }
-    }
-    if (!interactionsEnabled && devil.phase === "waiting") {
-      devil.phase = "flee";
-      devil.fleeTime = 0;
-      devil.noticeGrace = Number.POSITIVE_INFINITY;
     }
     const distance = devil.anchorPosition.distanceTo(flight.position);
     if (devil.phase === "waiting") {
