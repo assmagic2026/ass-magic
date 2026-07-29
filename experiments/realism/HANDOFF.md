@@ -20,7 +20,7 @@ Files:
 - `environment-phasing.js`: collision prediction, phase state machine, visuals and exact cue trigger.
 - `planet-full.js`: creates the phasing system; phase audio must not be added to `openingCriticalLoads`.
 - `planet-full.html`: fixed fallback `<audio>` elements and cache versions.
-- Sound asset: `assets/audio/phase-punch.mp3` (about 26 KB / 1.01 seconds).
+- Sound asset: `assets/audio/kick-transition.mp3` (about 26 KB / 1.01 seconds).
 
 Required behavior and invariants:
 

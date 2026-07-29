@@ -183,7 +183,7 @@ export function createEnvironmentPhasing({
     playerVisibleBeforePhase: playerObject.visible,
     guardRemaining: 0,
   };
-  const phaseAudioUrl = new URL("./assets/audio/phase-punch.mp3", import.meta.url).href;
+  const phaseAudioUrl = new URL("./assets/audio/kick-transition.mp3", import.meta.url).href;
   const phaseAudioEngine = window.__realismPhaseAudioEngine || null;
   // Use two fixed elements in the document so Safari keeps their media
   // authorisation across dematerialisation/rematerialisation. They are only a
@@ -405,6 +405,10 @@ export function createEnvironmentPhasing({
       return;
     }
     const volumeScale = getPhaseVolumeScale();
+    canvas.dataset.environmentPhaseCue = label;
+    canvas.dataset.environmentPhaseCueCount = String(
+      (Number(canvas.dataset.environmentPhaseCueCount) || 0) + 1,
+    );
     canvas.dataset.environmentPhaseVolume = volumeScale.toFixed(2);
     if (phaseAudioEngine?.play?.(label, volumeScale)) {
       canvas.dataset.environmentPhaseSound = `${label}-buffer`;
@@ -419,9 +423,9 @@ export function createEnvironmentPhasing({
     state.phaseElapsed = 0;
     canvas.dataset.environmentPhase = nextPhase;
     if ((nextPhase === "dematerializing" || nextPhase === "skate-dematerializing") && previousPhase !== nextPhase) {
-      playPhaseAudio("dematerialize");
+      playPhaseAudio("dematerialize", nextPhase === "skate-dematerializing");
     } else if ((nextPhase === "rematerializing" || nextPhase === "skate-rematerializing") && previousPhase !== nextPhase) {
-      playPhaseAudio("rematerialize");
+      playPhaseAudio("rematerialize", nextPhase === "skate-rematerializing");
     }
   }
 

@@ -3,7 +3,7 @@
 
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   const scriptUrl = document.currentScript?.src || window.location.href;
-  const audioUrl = new URL("./assets/audio/phase-punch.mp3", scriptUrl).href;
+  const audioUrl = new URL("./assets/audio/kick-transition.mp3", scriptUrl).href;
   let context = null;
   let buffer = null;
   let encodedAudio = null;

@@ -6,7 +6,7 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-5";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=chill-companion-audio-2";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=kick-transition-1";
 import {
   createFlightPlayer,
   updateFlightPlayer,
