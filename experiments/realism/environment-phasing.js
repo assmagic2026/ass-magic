@@ -368,7 +368,18 @@ export function createEnvironmentPhasing({
     return phaseMediaPool[phaseMediaIndex++ % phaseMediaPool.length];
   }
 
-  function playPhaseMedia(label) {
+  function getPhaseVolumeScale() {
+    return document.body.classList.contains("experience-chill") ? 0.5 : 1;
+  }
+
+  function syncPhaseVolumeDiagnostic() {
+    canvas.dataset.environmentPhaseVolume = getPhaseVolumeScale().toFixed(2);
+  }
+
+  window.addEventListener("assmagic:experience-mode-selected", syncPhaseVolumeDiagnostic);
+  syncPhaseVolumeDiagnostic();
+
+  function playPhaseMedia(label, volumeScale) {
     const fallback = getPhaseFallback(label);
     fallback.pause();
     try {
@@ -378,7 +389,7 @@ export function createEnvironmentPhasing({
     }
     fallback.playbackRate = 1;
     fallback.muted = false;
-    fallback.volume = 0.82;
+    fallback.volume = 0.82 * volumeScale;
     canvas.dataset.environmentPhaseSound = `${label}-media-pending`;
     void fallback.play().then(() => {
       canvas.dataset.environmentPhaseSound = `${label}-media`;
@@ -393,11 +404,13 @@ export function createEnvironmentPhasing({
       canvas.dataset.environmentPhaseSound = `${label}-guarded`;
       return;
     }
-    if (phaseAudioEngine?.play?.(label)) {
+    const volumeScale = getPhaseVolumeScale();
+    canvas.dataset.environmentPhaseVolume = volumeScale.toFixed(2);
+    if (phaseAudioEngine?.play?.(label, volumeScale)) {
       canvas.dataset.environmentPhaseSound = `${label}-buffer`;
       return;
     }
-    playPhaseMedia(label);
+    playPhaseMedia(label, volumeScale);
   }
 
   function setPhase(nextPhase) {
@@ -977,6 +990,7 @@ export function createEnvironmentPhasing({
   }
 
   function dispose() {
+    window.removeEventListener("assmagic:experience-mode-selected", syncPhaseVolumeDiagnostic);
     reset();
     window.removeEventListener("pointerdown", unlockPhaseAudio, { capture: true });
     window.removeEventListener("pointerup", unlockPhaseAudio, { capture: true });

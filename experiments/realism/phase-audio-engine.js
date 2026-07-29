@@ -225,12 +225,12 @@
     });
   }
 
-  function startCue(label, route = "buffer") {
+  function startCue(label, route = "buffer", volumeScale = 1) {
     if (!context || !buffer || context.state !== "running") return false;
     const source = context.createBufferSource();
     const gain = context.createGain();
     source.buffer = buffer;
-    gain.gain.value = 0.82;
+    gain.gain.value = 0.82 * Math.max(0, Math.min(1, volumeScale));
     source.connect(gain).connect(context.destination);
     activeSources.add(source);
     source.onended = () => {
@@ -243,8 +243,8 @@
     return true;
   }
 
-  function play(label = "dematerialize") {
-    if (startCue(label)) return true;
+  function play(label = "dematerialize", volumeScale = 1) {
+    if (startCue(label, "buffer", volumeScale)) return true;
     if (!context || !buffer || !hasGesture || context.state === "closed") return false;
 
     // Music may already be audible while iOS has temporarily interrupted the
@@ -258,7 +258,7 @@
       new Promise((resolve) => window.setTimeout(() => resolve(false), 220)),
     ]).then((running) => {
       const onTime = performance.now() - requestedAt <= 240;
-      if (running && onTime && startCue(label, "recovered")) return;
+      if (running && onTime && startCue(label, "recovered", volumeScale)) return;
       document.documentElement.dataset.phaseAudioLast = `${label}-missed-${cueId}`;
     });
     return true;

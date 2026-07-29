@@ -6,10 +6,7 @@ import {
   EXPERIENCE_MODE_SELECTED_EVENT,
 } from "./experience-mode.js?v=chill-mode-1";
 
-// Replace this empty value with "./assets/audio/chill-mode.mp3" when the
-// finished dedicated track is available. Empty means intentional silent mode
-// and performs no request.
-const CHILL_AUDIO_URL = "";
+const CHILL_AUDIO_URL = "./assets/audio/chill-mode.mp3";
 const BOOK_CACHE_KEY = "ass-magic-book-messages-v1";
 const BOOK_PLAYER_KEY = "ass-magic-book-player-v1";
 const HIDDEN_BOOK_AUTHOR = "__return_history__";
@@ -663,12 +660,18 @@ export function createWholePlanetExperience({
   clockAudio.volume = 0.48;
   clockAudio.playsInline = true;
   clockAudio.crossOrigin = "anonymous";
-  const chillAudio = new Audio();
+  const chillAudio = new Audio(new URL(CHILL_AUDIO_URL, import.meta.url).href);
   chillAudio.loop = true;
   chillAudio.preload = "auto";
   chillAudio.volume = 0.82;
   chillAudio.playsInline = true;
   chillAudio.crossOrigin = "anonymous";
+  canvas.dataset.chillAudioLoop = String(chillAudio.loop);
+  chillAudio.addEventListener("loadedmetadata", () => {
+    canvas.dataset.chillAudioDuration = Number.isFinite(chillAudio.duration)
+      ? chillAudio.duration.toFixed(2)
+      : "unknown";
+  });
   const challengeFlash = document.querySelector("#experience-theme-flash");
   const challengeTimer = document.querySelector("#experience-challenge-timer");
 
@@ -966,6 +969,10 @@ export function createWholePlanetExperience({
   }
 
   function unlockMusic(event) {
+    if (isChillExperience()) {
+      playChillAudio();
+      return;
+    }
     if (
       !isMainExperience()
       || audioUnlocked
@@ -1009,9 +1016,9 @@ export function createWholePlanetExperience({
       canvas.dataset.chillAudio = "silent-no-source";
       return;
     }
-    if (!chillAudio.src) {
-      chillAudio.src = new URL(CHILL_AUDIO_URL, import.meta.url).href;
-      chillAudio.load();
+    if (!chillAudio.paused) {
+      canvas.dataset.chillAudio = "playing";
+      return;
     }
     canvas.dataset.chillAudio = "starting";
     const result = chillAudio.play();
@@ -1025,12 +1032,34 @@ export function createWholePlanetExperience({
     });
   }
 
+  function mountChillCat() {
+    state.catFound = true;
+    state.catRouteAvailable = false;
+    state.catJoinPhase = "complete";
+    state.catJoinElapsed = CAT_ROUTE_JOIN_DURATION;
+    state.catFollowing = true;
+    state.catPendingJoin = false;
+    state.catTailTime = 0;
+    if (playerObject) {
+      playerObject.add(catCompanion);
+      catCompanion.position.set(
+        CAT_ROUTE_MOUNT_SIDE,
+        CAT_ROUTE_MOUNT_HEIGHT,
+        CAT_ROUTE_MOUNT_FORWARD,
+      );
+      catCompanion.quaternion.identity();
+    }
+    catCompanion.visible = true;
+    refreshCatRouteAvailability();
+  }
+
   function applyExperienceMode(mode, sourceEvent = null) {
     canvas.dataset.experienceMode = mode;
     canvas.dataset.storyEvents = mode === EXPERIENCE_MODE.MAIN ? "enabled" : "disabled";
 
     if (mode === EXPERIENCE_MODE.CHILL) {
       stopStoryAudioForChill();
+      mountChillCat();
       scheduleChillDevil();
       void phaseAudioEngine?.unlock?.(`chill-selection-${sourceEvent?.type || "choice"}`);
       playChillAudio();
@@ -3296,8 +3325,8 @@ export function createWholePlanetExperience({
         updateContacts();
         updateCompassAssist(delta);
         updateReturnRoute(delta);
-        updateCatCompanion(delta);
       }
+      if (storyEnabled || state.catFollowing) updateCatCompanion(delta);
       if (
         storyEnabled
         && state.ending
@@ -3349,6 +3378,7 @@ export function createWholePlanetExperience({
       const resetParams = new URLSearchParams(window.location.search);
       const routeMode = resetParams.get("route");
       const catDebugFollowing = resetParams.get("catdebug") === "1";
+      const catStartsFollowing = catDebugFollowing || isChillExperience();
       const routeReady = routeMode === "ready" || routeMode === "beam" || routeMode === "space";
       state.phase = routeMode === "beam" || routeMode === "space"
         ? "sanctuary"
@@ -3357,16 +3387,16 @@ export function createWholePlanetExperience({
       state.blackBoxOpened = false;
       state.catFound = false;
       state.catRouteAvailable = false;
-      state.catJoinPhase = catDebugFollowing ? "complete" : "idle";
+      state.catJoinPhase = catStartsFollowing ? "complete" : "idle";
       state.catJoinElapsed = 0;
       state.catTailTime = 0;
-      state.catFollowing = catDebugFollowing;
+      state.catFollowing = catStartsFollowing;
       state.catPendingJoin = false;
       state.reachedEarthWithCat = false;
       state.returnRecorded = false;
       if (catCompanion.parent !== scene) scene.add(catCompanion);
-      catCompanion.visible = catDebugFollowing;
-      if (catDebugFollowing && playerObject) {
+      catCompanion.visible = catStartsFollowing;
+      if (catStartsFollowing && playerObject) {
         playerObject.add(catCompanion);
         catCompanion.position.set(
           CAT_ROUTE_MOUNT_SIDE,

@@ -6,13 +6,13 @@ import {
   getExperimentSettings,
 } from "./quality.js?v=realism-5";
 import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
-import { createEnvironmentPhasing } from "./environment-phasing.js?v=realism-skate-switch-local-2";
+import { createEnvironmentPhasing } from "./environment-phasing.js?v=chill-companion-audio-2";
 import {
   createFlightPlayer,
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=realism-48";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=chill-devil-roam-1";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=chill-companion-audio-2";
 import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-7";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 import {
@@ -5820,7 +5820,15 @@ function setupFlightInteraction() {
   window.addEventListener("pointerup", releasePointer);
   window.addEventListener("pointercancel", releasePointer);
   window.addEventListener("keydown", (event) => {
-    if (experienceMode.isChill()) return;
+    if (experienceMode.isChill()) {
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.code)) {
+        event.preventDefault();
+        flight.keys.add(event.code);
+        canvas.dataset.chillKeyboardLast = event.code;
+        canvas.dataset.chillKeyboardActive = "true";
+      }
+      return;
+    }
     if (event.code === "KeyE" && !event.repeat) {
       event.preventDefault();
       setRealSkateMode(!REAL_SKATE.active);
@@ -5831,7 +5839,12 @@ function setupFlightInteraction() {
       flight.keys.add(event.code);
     }
   });
-  window.addEventListener("keyup", (event) => flight.keys.delete(event.code));
+  window.addEventListener("keyup", (event) => {
+    flight.keys.delete(event.code);
+    if (experienceMode.isChill() && event.code === canvas.dataset.chillKeyboardLast) {
+      canvas.dataset.chillKeyboardActive = "false";
+    }
+  });
   window.addEventListener("blur", () => {
     flight.keys.clear();
     flight.accelPointers.clear();
