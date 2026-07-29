@@ -247,6 +247,23 @@ body.is-opening-revealing #scene {
   opacity: 1;
 }
 
+/*
+ * CHILL owns only the rendered world. Keeping this rule at the page boundary
+ * prevents current or future main-story controls from leaking into the silent
+ * drift experience without changing their normal-mode styles.
+ */
+body.experience-chill #stage > :not(#scene),
+body.experience-chill #ending-whiteout,
+body.experience-chill #ending-overlay,
+body.experience-chill #book-overlay,
+body.experience-chill #black-box-overlay,
+body.experience-chill #music-selector-overlay,
+body.experience-chill #devil-guide-overlay,
+body.experience-chill #devil-guide-summon,
+body.experience-chill #devil-guide-navigation {
+  display: none !important;
+}
+
 body.is-monochrome #scene {
   filter: grayscale(1) contrast(1.78) brightness(1.42);
 }
