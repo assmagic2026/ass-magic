@@ -1068,34 +1068,234 @@ body.flight-mode .experience-music {
 }
 
 .experience-overlay.is-music-service .experience-modal {
-  width: min(440px, 100%);
+  width: min(620px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(93, 184, 255, 0.14), transparent 35%),
+    linear-gradient(145deg, rgba(24, 30, 36, 0.98), rgba(8, 11, 15, 0.98));
+  box-shadow:
+    0 32px 110px rgba(0, 0, 0, 0.68),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.experience-overlay.is-music-service .experience-modal header {
+  padding: 22px 24px 8px;
+  border-bottom: 0;
 }
 
 .experience-overlay.is-music-service .experience-modal h2 {
-  font-size: clamp(18px, 2vw, 22px);
+  color: rgba(237, 246, 252, 0.7);
+  font-family: "Futura", "Century Gothic", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.experience-overlay.is-music-service .experience-modal header button {
+  min-width: 42px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-color: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .experience-overlay.is-music-service .experience-modal-body {
-  padding: 18px;
+  padding: 14px 24px 26px;
+}
+
+.music-service-release {
+  display: grid;
+  grid-template-columns: minmax(0, 210px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+}
+
+.music-service-artwork-frame {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1;
+  border-radius: 18px;
+  background: #07090c;
+  box-shadow:
+    0 22px 52px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.music-service-artwork-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.music-service-artwork {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.music-service-release-copy {
+  min-width: 0;
+}
+
+.music-service-kicker {
+  margin-bottom: 9px;
+  color: #7be4ff;
+  font: 600 10px/1.2 "Futura", "Century Gothic", sans-serif;
+  letter-spacing: 0.2em;
+}
+
+.music-service-track-title {
+  overflow-wrap: anywhere;
+  color: #f7fbff;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(24px, 4vw, 36px);
+  line-height: 1.08;
+}
+
+.music-service-artist {
+  margin-top: 9px;
+  color: rgba(237, 246, 252, 0.72);
+  font: 500 13px/1.3 "Futura", "Century Gothic", sans-serif;
+  letter-spacing: 0.15em;
+}
+
+.music-service-prompt {
+  margin: 22px 0 12px;
+  color: rgba(237, 246, 252, 0.58);
+  font-size: 12px;
 }
 
 .music-service-actions {
   display: grid;
-  gap: 10px;
+  gap: 9px;
 }
 
 .music-service-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   width: 100%;
-  min-height: 48px;
-  padding: 12px 16px;
+  min-height: 52px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 14px;
   cursor: pointer;
+  transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
+}
+
+.music-service-button.is-appleMusic {
+  background: #f5f5f7;
+  color: #111114;
+}
+
+.music-service-button.is-spotify {
+  background: #1ed760;
+  color: #06140b;
+}
+
+.music-service-button-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.music-service-button-action {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.64;
 }
 
 .music-service-button:hover,
 .music-service-button:focus-visible {
-  border-color: rgba(224, 246, 255, 0.64);
-  background: rgba(224, 246, 255, 0.12);
-  outline: none;
+  filter: brightness(1.05);
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 3px;
+  transform: translateY(-1px);
+}
+
+.music-service-button:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 560px) {
+  .experience-overlay.is-music-service .experience-modal {
+    border-radius: 24px;
+  }
+
+  .experience-overlay.is-music-service .experience-modal header {
+    padding: 17px 18px 4px;
+  }
+
+  .experience-overlay.is-music-service .experience-modal-body {
+    padding: 10px 18px 20px;
+  }
+
+  .music-service-release {
+    grid-template-columns: minmax(0, 142px) minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .music-service-artwork-frame {
+    border-radius: 15px;
+  }
+
+  .music-service-kicker {
+    margin-bottom: 6px;
+    font-size: 8px;
+  }
+
+  .music-service-track-title {
+    font-size: clamp(20px, 6vw, 28px);
+  }
+
+  .music-service-artist {
+    margin-top: 6px;
+    font-size: 10px;
+  }
+
+  .music-service-prompt {
+    margin: 15px 0 9px;
+    font-size: 10px;
+  }
+
+  .music-service-button {
+    min-height: 48px;
+    padding: 11px 13px;
+  }
+
+  .music-service-button-name {
+    font-size: 12px;
+  }
+
+  .music-service-button-action {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 390px) {
+  .music-service-release {
+    grid-template-columns: 1fr;
+    gap: 17px;
+  }
+
+  .music-service-artwork-frame {
+    width: min(58vw, 190px);
+    margin: 0 auto;
+  }
+
+  .music-service-release-copy {
+    text-align: center;
+  }
+
+  .music-service-track-title {
+    font-size: 24px;
+  }
 }
 
 .experience-modal-copy {

@@ -1,5 +1,5 @@
 import * as THREE from "../../three.module.js";
-import { playlist } from "../../playlist.js?v=music-services-4";
+import { playlist } from "../../playlist.js?v=music-services-5";
 import { supabaseConfig } from "../../supabase-config.js";
 import {
   EXPERIENCE_MODE,
@@ -857,6 +857,7 @@ export function createWholePlanetExperience({
       label: "Spotifyで聴く",
     },
   ];
+  const MUSIC_ARTIST_NAME = "ASS MAGIC";
 
   function getAvailableMusicServices(track = getTrack()) {
     return musicServices.filter((service) => (
@@ -891,7 +892,16 @@ export function createWholePlanetExperience({
       closeModal();
       return;
     }
-    if (overlayTitle) overlayTitle.textContent = track.title;
+    const modalArt = overlayBody?.querySelector("[data-music-service-art]");
+    const modalTrackTitle = overlayBody?.querySelector("[data-music-service-title]");
+    const modalArtist = overlayBody?.querySelector("[data-music-service-artist]");
+    if (overlayTitle) overlayTitle.textContent = "配信先を選ぶ";
+    if (modalArt instanceof HTMLImageElement) {
+      modalArt.src = resolveRootAsset(track.art);
+      modalArt.alt = `${track.title}のジャケット`;
+    }
+    if (modalTrackTitle) modalTrackTitle.textContent = track.title;
+    if (modalArtist) modalArtist.textContent = MUSIC_ARTIST_NAME;
     for (const button of overlayBody?.querySelectorAll("[data-music-service]") || []) {
       const service = musicServices.find((entry) => entry.id === button.dataset.musicService);
       const visible = Boolean(service && track[service.urlKey]);
@@ -904,12 +914,50 @@ export function createWholePlanetExperience({
     const track = getTrack();
     if (!isMainExperience() || !track || !getAvailableMusicServices(track).length) return;
     overlay?.classList.add("is-music-service");
-    openModal(track.title, (container) => {
+    openModal("配信先を選ぶ", (container) => {
+      const release = document.createElement("div");
+      release.className = "music-service-release";
+
+      const artworkFrame = document.createElement("div");
+      artworkFrame.className = "music-service-artwork-frame";
+      const artwork = document.createElement("img");
+      artwork.className = "music-service-artwork";
+      artwork.dataset.musicServiceArt = "";
+      artwork.src = resolveRootAsset(track.art);
+      artwork.alt = `${track.title}のジャケット`;
+      artwork.decoding = "async";
+      artworkFrame.append(artwork);
+
+      const releaseCopy = document.createElement("div");
+      releaseCopy.className = "music-service-release-copy";
+      const nowPlaying = document.createElement("div");
+      nowPlaying.className = "music-service-kicker";
+      nowPlaying.textContent = "NOW PLAYING";
+      const trackTitle = document.createElement("div");
+      trackTitle.className = "music-service-track-title";
+      trackTitle.dataset.musicServiceTitle = "";
+      trackTitle.textContent = track.title;
+      const artist = document.createElement("div");
+      artist.className = "music-service-artist";
+      artist.dataset.musicServiceArtist = "";
+      artist.textContent = MUSIC_ARTIST_NAME;
+      const prompt = document.createElement("p");
+      prompt.className = "music-service-prompt";
+      prompt.textContent = "好きなサービスで続きを聴く";
+      releaseCopy.append(nowPlaying, trackTitle, artist, prompt);
+
       const actions = document.createElement("div");
       actions.className = "music-service-actions";
       for (const service of musicServices) {
-        const button = createButton(service.label, "music-service-button");
+        const button = createButton("", `music-service-button is-${service.id}`);
         button.dataset.musicService = service.id;
+        const serviceName = document.createElement("span");
+        serviceName.className = "music-service-button-name";
+        serviceName.textContent = service.label.replace("で聴く", "");
+        const serviceAction = document.createElement("span");
+        serviceAction.className = "music-service-button-action";
+        serviceAction.textContent = "開く ↗";
+        button.append(serviceName, serviceAction);
         button.addEventListener("click", () => {
           const currentTrack = getTrack();
           const currentUrl = currentTrack?.[service.urlKey];
@@ -918,7 +966,9 @@ export function createWholePlanetExperience({
         });
         actions.append(button);
       }
-      container.append(actions);
+      releaseCopy.append(actions);
+      release.append(artworkFrame, releaseCopy);
+      container.append(release);
       syncMusicServiceUi(track);
       actions.querySelector("button:not([hidden])")?.focus({ preventScroll: true });
     }, () => {
