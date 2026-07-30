@@ -90,8 +90,9 @@ body {
 
 .experience-mode-options {
   display: grid;
-  width: min(560px, 100%);
-  gap: 14px;
+  width: min(508px, 100%);
+  gap: 12px;
+  transform: translateY(-16px);
 }
 
 .experience-mode-option {
@@ -99,10 +100,10 @@ body {
   isolation: isolate;
   display: grid;
   width: 100%;
-  min-height: 100px;
+  min-height: 88px;
   place-content: center;
   gap: 8px;
-  padding: 20px 24px;
+  padding: 16px 22px;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, .24);
   border-radius: 28px;
@@ -133,14 +134,14 @@ body {
 
 .experience-mode-option strong {
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(22px, 4.4vmin, 32px);
+  font-size: clamp(21px, 4vmin, 30px);
   font-weight: 400;
   letter-spacing: .055em;
 }
 
 .experience-mode-option span {
   color: rgba(255, 255, 255, .66);
-  font-size: clamp(12px, 2.1vmin, 15px);
+  font-size: clamp(11px, 1.95vmin, 14px);
   letter-spacing: .08em;
 }
 
@@ -265,6 +266,7 @@ body.is-booting .experience-music {
   .experience-mode-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
+    transform: none;
   }
 
   .experience-mode-option {
