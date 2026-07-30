@@ -593,7 +593,6 @@ export function createWholePlanetExperience({
   const musicRoot = document.querySelector("#experience-music");
   const artLink = document.querySelector("#experience-art-link");
   const art = document.querySelector("#experience-art");
-  const artServiceMark = document.querySelector(".experience-music-service-mark");
   const title = document.querySelector("#experience-track-title");
   const playButton = document.querySelector("#experience-play");
   const nextButton = document.querySelector("#experience-next");
@@ -883,7 +882,6 @@ export function createWholePlanetExperience({
       artLink.setAttribute("aria-label", `配信サービスで聴く：${track.title}`);
       artLink.classList.toggle("is-service-enabled", enabled);
     }
-    if (artServiceMark) artServiceMark.hidden = !enabled;
     canvas.dataset.musicServiceTrack = track.title;
     canvas.dataset.musicServiceAvailable = available.map((service) => service.id).join(",") || "none";
 
@@ -1816,10 +1814,18 @@ export function createWholePlanetExperience({
 
   function renderDevilQuestion(view = "question") {
     devilUi.actions.replaceChildren();
-    if (view === "escape") {
+    if (view === "hint") {
       devilUi.message.textContent = DEVIL_ESCAPE_COPY;
       devilUi.actions.append(
         makeDevilButton("わかった", closeDevilDialog),
+        makeDevilButton("戻る", () => renderDevilQuestion(), "secondary"),
+      );
+      return;
+    }
+    if (view === "creator") {
+      devilUi.message.textContent = "創造主は、ASS MAGICという謎の音楽ユニットだ。\nそれ以上のことはわからない。\n\n本人たちさえ、一体何を作っているのかよくわかっていない。";
+      devilUi.actions.append(
+        makeDevilButton("へぇ", closeDevilDialog),
         makeDevilButton("戻る", () => renderDevilQuestion(), "secondary"),
       );
       return;
@@ -1837,9 +1843,10 @@ export function createWholePlanetExperience({
     }
     devilUi.message.textContent = "何が望みだ？";
     devilUi.actions.append(
-      makeDevilButton("自由に空を飛んで探索したい", closeDevilDialog),
-      makeDevilButton("惑星を脱出したい", () => renderDevilQuestion("escape")),
+      makeDevilButton("自由に探索したい", closeDevilDialog),
+      makeDevilButton("ヒントがほしい", () => renderDevilQuestion("hint")),
       makeDevilButton("案内してほしい", () => renderDevilQuestion("destinations")),
+      makeDevilButton("創造主について", () => renderDevilQuestion("creator")),
     );
   }
 

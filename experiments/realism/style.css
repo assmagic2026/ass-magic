@@ -91,24 +91,44 @@ body {
 .experience-mode-options {
   display: grid;
   width: min(560px, 100%);
-  gap: 18px;
+  gap: 14px;
 }
 
 .experience-mode-option {
+  position: relative;
+  isolation: isolate;
   display: grid;
   width: 100%;
-  min-height: 96px;
+  min-height: 100px;
   place-content: center;
   gap: 8px;
   padding: 20px 24px;
-  border: 1px solid rgba(255, 255, 255, .28);
-  border-radius: 8px;
-  background: rgba(10, 10, 10, .62);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .24);
+  border-radius: 28px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, .13), rgba(255, 255, 255, .035) 44%, rgba(8, 10, 14, .54)),
+    rgba(9, 11, 15, .7);
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, .26),
+    inset 0 1px 0 rgba(255, 255, 255, .18);
   color: #fff;
   font: inherit;
   text-align: center;
   cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
   -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(14px);
+}
+
+.experience-mode-option::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 1px;
+  border-radius: inherit;
+  background: linear-gradient(120deg, rgba(255, 255, 255, .08), transparent 42%);
+  pointer-events: none;
 }
 
 .experience-mode-option strong {
@@ -129,9 +149,27 @@ body {
   outline-offset: 4px;
 }
 
+@media (hover: hover) {
+  .experience-mode-option:hover {
+    border-color: rgba(255, 255, 255, .54);
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, .06) 44%, rgba(8, 10, 14, .5)),
+      rgba(9, 11, 15, .76);
+    box-shadow:
+      0 20px 42px rgba(0, 0, 0, .34),
+      inset 0 1px 0 rgba(255, 255, 255, .22);
+    transform: translateY(-2px);
+  }
+}
+
 .experience-mode-option.is-selected {
   border-color: rgba(255, 255, 255, .82);
-  background: rgba(28, 28, 28, .86);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .08) 44%, rgba(8, 10, 14, .46)),
+    rgba(20, 23, 29, .9);
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, .42),
+    inset 0 1px 0 rgba(255, 255, 255, .28);
 }
 
 .experience-mode-option:disabled {
@@ -140,7 +178,9 @@ body {
 }
 
 #experience-mode-selection[data-load-ready="true"] .experience-mode-option:not(.is-selected) {
-  background: rgba(10, 10, 10, .72);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .025) 44%, rgba(8, 10, 14, .58)),
+    rgba(9, 11, 15, .74);
 }
 
 #opening-black-box-scene {
