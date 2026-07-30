@@ -1176,7 +1176,7 @@ body.flight-mode .experience-music {
   gap: 9px;
 }
 
-.music-service-button {
+.experience-modal .music-service-button {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1184,20 +1184,21 @@ body.flight-mode .experience-music {
   width: 100%;
   min-height: 52px;
   padding: 13px 16px;
-  border: 0;
-  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  background: rgba(239, 246, 250, 0.94);
+  color: #0c1218;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.86);
   cursor: pointer;
   transition: transform 150ms ease, filter 150ms ease, box-shadow 150ms ease;
 }
 
-.music-service-button.is-appleMusic {
-  background: #f5f5f7;
-  color: #111114;
-}
-
+.music-service-button.is-appleMusic,
 .music-service-button.is-spotify {
-  background: #1ed760;
-  color: #06140b;
+  background: rgba(239, 246, 250, 0.94);
+  color: #0c1218;
 }
 
 .music-service-button-name {
@@ -1213,10 +1214,13 @@ body.flight-mode .experience-music {
 
 .music-service-button:hover,
 .music-service-button:focus-visible {
-  filter: brightness(1.05);
+  filter: brightness(1.06);
   outline: 2px solid rgba(255, 255, 255, 0.9);
   outline-offset: 3px;
   transform: translateY(-1px);
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 #fff;
 }
 
 .music-service-button:active {
