@@ -1,5 +1,5 @@
 import * as THREE from "../../three.module.js";
-import { playlist } from "../../playlist.js";
+import { playlist } from "../../playlist.js?v=music-services-4";
 import { supabaseConfig } from "../../supabase-config.js";
 import {
   EXPERIENCE_MODE,
@@ -591,7 +591,9 @@ export function createWholePlanetExperience({
   onWorldInversion,
 }) {
   const musicRoot = document.querySelector("#experience-music");
+  const artLink = document.querySelector("#experience-art-link");
   const art = document.querySelector("#experience-art");
+  const artServiceMark = document.querySelector(".experience-music-service-mark");
   const title = document.querySelector("#experience-track-title");
   const playButton = document.querySelector("#experience-play");
   const nextButton = document.querySelector("#experience-next");
@@ -843,11 +845,96 @@ export function createWholePlanetExperience({
     return tracks[currentTrackIndex] || tracks[0];
   }
 
+  const musicServices = [
+    {
+      id: "appleMusic",
+      urlKey: "appleMusicUrl",
+      label: "Apple Musicで聴く",
+    },
+    {
+      id: "spotify",
+      urlKey: "spotifyUrl",
+      label: "Spotifyで聴く",
+    },
+  ];
+
+  function getAvailableMusicServices(track = getTrack()) {
+    return musicServices.filter((service) => (
+      typeof track?.[service.urlKey] === "string"
+      && track[service.urlKey].trim().length > 0
+    ));
+  }
+
+  function openMusicService(url, service) {
+    if (!isMainExperience() || typeof url !== "string" || !url.trim()) return false;
+    window.open(url, "_blank", "noopener,noreferrer");
+    canvas.dataset.musicServiceLastOpen = service;
+    canvas.dataset.musicServiceLastUrl = url;
+    return true;
+  }
+
+  function syncMusicServiceUi(track = getTrack()) {
+    if (!track) return;
+    const available = getAvailableMusicServices(track);
+    const enabled = isMainExperience() && available.length > 0;
+    if (artLink) {
+      artLink.disabled = !enabled;
+      artLink.setAttribute("aria-label", `配信サービスで聴く：${track.title}`);
+      artLink.classList.toggle("is-service-enabled", enabled);
+    }
+    if (artServiceMark) artServiceMark.hidden = !enabled;
+    canvas.dataset.musicServiceTrack = track.title;
+    canvas.dataset.musicServiceAvailable = available.map((service) => service.id).join(",") || "none";
+
+    if (!overlay?.classList.contains("is-music-service")) return;
+    if (!enabled) {
+      closeModal();
+      return;
+    }
+    if (overlayTitle) overlayTitle.textContent = track.title;
+    for (const button of overlayBody?.querySelectorAll("[data-music-service]") || []) {
+      const service = musicServices.find((entry) => entry.id === button.dataset.musicService);
+      const visible = Boolean(service && track[service.urlKey]);
+      button.hidden = !visible;
+      button.disabled = !visible;
+    }
+  }
+
+  function openMusicServiceModal() {
+    const track = getTrack();
+    if (!isMainExperience() || !track || !getAvailableMusicServices(track).length) return;
+    overlay?.classList.add("is-music-service");
+    openModal(track.title, (container) => {
+      const actions = document.createElement("div");
+      actions.className = "music-service-actions";
+      for (const service of musicServices) {
+        const button = createButton(service.label, "music-service-button");
+        button.dataset.musicService = service.id;
+        button.addEventListener("click", () => {
+          const currentTrack = getTrack();
+          const currentUrl = currentTrack?.[service.urlKey];
+          if (!openMusicService(currentUrl, service.id)) return;
+          closeModal();
+        });
+        actions.append(button);
+      }
+      container.append(actions);
+      syncMusicServiceUi(track);
+      actions.querySelector("button:not([hidden])")?.focus({ preventScroll: true });
+    }, () => {
+      overlay?.classList.remove("is-music-service");
+      if (isMainExperience() && !artLink?.disabled) {
+        artLink?.focus({ preventScroll: true });
+      }
+    });
+  }
+
   function syncMusicUi() {
     const track = getTrack();
     if (!track) return;
     if (art) art.src = resolveRootAsset(track.art);
     if (title) title.textContent = track.title;
+    syncMusicServiceUi(track);
     if (playButton) {
       playButton.classList.toggle("is-playing", !audio.paused);
       playButton.setAttribute("aria-label", audio.paused ? "再生" : "停止");
@@ -969,6 +1056,11 @@ export function createWholePlanetExperience({
   }
 
   function unlockMusic(event) {
+    if (event?.defaultPrevented) return;
+    if (
+      event?.target instanceof Element
+      && event.target.closest("#experience-art-link, .experience-overlay.is-music-service")
+    ) return;
     if (isChillExperience()) {
       playChillAudio();
       return;
@@ -1056,6 +1148,7 @@ export function createWholePlanetExperience({
   function applyExperienceMode(mode, sourceEvent = null) {
     canvas.dataset.experienceMode = mode;
     canvas.dataset.storyEvents = mode === EXPERIENCE_MODE.MAIN ? "enabled" : "disabled";
+    syncMusicUi();
 
     if (mode === EXPERIENCE_MODE.CHILL) {
       stopStoryAudioForChill();
@@ -3198,6 +3291,13 @@ export function createWholePlanetExperience({
     if (audio.paused) void playMusic();
     else pauseMusic();
   });
+  artLink?.addEventListener("click", openMusicServiceModal);
+  artLink?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") return;
+    event.preventDefault();
+    event.stopPropagation();
+    openMusicServiceModal();
+  });
   nextButton?.addEventListener("click", () => loadTrack(getNextRandomTrackIndex(), true));
   lyricsButton?.addEventListener("click", () => {
     const isOpen = lyricsPanel?.classList.toggle("is-open") === true;
@@ -3211,6 +3311,12 @@ export function createWholePlanetExperience({
   });
   overlayClose?.addEventListener("click", closeModal);
   overlay?.querySelector(".experience-overlay-backdrop")?.addEventListener("click", closeModal);
+  window.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !overlay?.classList.contains("is-music-service")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeModal();
+  });
   bookClose?.addEventListener("click", closeNativeOverlay);
   bookBackdrop?.addEventListener("click", closeNativeOverlay);
   for (const button of bookViewButtons) {
