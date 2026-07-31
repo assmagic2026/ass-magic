@@ -9,6 +9,8 @@ import {
 const CHILL_AUDIO_URL = "./assets/audio/chill-mode.mp3";
 const BOOK_CACHE_KEY = "ass-magic-book-messages-v1";
 const BOOK_PLAYER_KEY = "ass-magic-book-player-v1";
+const BOOK_FETCH_PAGE_SIZE = 200;
+const BOOK_FETCH_MAX_ROWS = 5000;
 const HIDDEN_BOOK_AUTHOR = "__return_history__";
 const EXCLUDED_BOOK_NAMES = new Set([
   "サーモンユッケ伯爵",
@@ -2894,16 +2896,18 @@ export function createWholePlanetExperience({
   }
 
   async function fetchBookMessages() {
-    const response = await fetch(
-      getBookUrl(`?select=id,name,message,created_at&name=not.eq.${encodeURIComponent(HIDDEN_BOOK_AUTHOR)}&order=created_at.desc&limit=24`),
-      { headers: getBookHeaders(), cache: "no-store" },
-    );
-    if (!response.ok) throw new Error(`book-load-${response.status}`);
-    const payload = await response.json();
-    const entries = (Array.isArray(payload) ? payload : [])
-      .map(normalizeBookEntry)
-      .filter(Boolean)
-      .slice(0, 12);
+    const entries = [];
+    for (let offset = 0; offset < BOOK_FETCH_MAX_ROWS; offset += BOOK_FETCH_PAGE_SIZE) {
+      const response = await fetch(
+        getBookUrl(`?select=id,name,message,created_at&name=not.eq.${encodeURIComponent(HIDDEN_BOOK_AUTHOR)}&order=created_at.desc&limit=${BOOK_FETCH_PAGE_SIZE}&offset=${offset}`),
+        { headers: getBookHeaders(), cache: "no-store" },
+      );
+      if (!response.ok) throw new Error(`book-load-${response.status}`);
+      const payload = await response.json();
+      const rows = Array.isArray(payload) ? payload : [];
+      entries.push(...rows.map(normalizeBookEntry).filter(Boolean));
+      if (rows.length < BOOK_FETCH_PAGE_SIZE) break;
+    }
     cacheBookMessages(entries);
     return entries;
   }
