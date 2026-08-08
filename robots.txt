@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /experiments/realism/index.html
+Disallow: /experiments/realism/cesium-c-reference.html
+Disallow: /experiments/realism/player-body-preview.html
+
+Sitemap: https://assmagic2026.github.io/sitemap.xml

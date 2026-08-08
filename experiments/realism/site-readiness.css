@@ -1,0 +1,53 @@
+/* Standalone production-readiness layer: no canvas, layout, or game controls. */
+html:not([data-ass-debug="1"]) .masthead,
+html:not([data-ass-debug="1"]) #perf-hud,
+html:not([data-ass-debug="1"]) .controls,
+html:not([data-ass-debug="1"]) .help {
+  display: none;
+}
+
+.ass-language-switch {
+  position: fixed;
+  z-index: 101;
+  top: max(14px, calc(env(safe-area-inset-top) + 8px));
+  right: max(72px, calc(env(safe-area-inset-right) + 58px));
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .32);
+  border-radius: 999px;
+  background: rgba(5, 5, 5, .48);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .2);
+  pointer-events: auto;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.ass-language-switch button {
+  min-width: 34px;
+  min-height: 30px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .68);
+  font: 700 10px/1 "Helvetica Neue", Arial, sans-serif;
+  letter-spacing: .08em;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.ass-language-switch button.is-active {
+  background: rgba(255, 255, 255, .18);
+  color: #fff;
+}
+
+.ass-language-switch button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+@media (max-width: 700px) {
+  .ass-language-switch {
+    top: max(10px, calc(env(safe-area-inset-top) + 5px));
+    right: max(64px, calc(env(safe-area-inset-right) + 52px));
+  }
+}
