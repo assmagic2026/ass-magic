@@ -106,10 +106,10 @@
               </section>
               <section class="menu-page" data-page="game">
                 <h2>GAME</h2>
-                <a class="menu-link-card ui-control" data-menu-route href="../../mendako/" aria-label="メンダコを開く">
-                  <span class="menu-link-label">メンダコ</span><span class="menu-link-value">Play</span>
+                <a class="menu-link-card ui-control" data-menu-route href="../../mendako/" aria-label="メンダコを開く" data-ass-i18n-aria-label="a11y.openMendako">
+                  <span class="menu-link-label" data-ass-i18n="menu.mendako">メンダコ</span><span class="menu-link-value">Play</span>
                 </a>
-                <a class="menu-link-card ui-control" data-menu-route href="../../?legacy=1" aria-label="旧・ASSの惑星を開く">
+                <a class="menu-link-card ui-control" data-menu-route href="../../?legacy=1" aria-label="旧・ASSの惑星を開く" data-ass-i18n-aria-label="a11y.openLegacyPlanet">
                   <span class="menu-link-label">Legacy</span><span class="menu-link-value" data-ass-i18n="menu.legacyPlanet">旧・ASSの惑星</span>
                 </a>
               </section>
@@ -170,7 +170,7 @@
       <button id="real-skate-toggle" class="real-skate-button" type="button">SKATE</button>
       <div id="real-skate-controls" aria-label="スケート操作" data-ass-i18n-aria-label="a11y.skateControls">
         <button id="real-skate-fly" class="real-skate-button" type="button">FLY</button>
-        <button id="real-skate-stance" class="real-skate-stance-button" type="button" aria-label="スタンスをレギュラーからグーフィーへ切り替え" aria-pressed="false">180</button>
+        <button id="real-skate-stance" class="real-skate-stance-button" type="button" aria-label="スタンスをレギュラーからグーフィーへ切り替え" data-ass-i18n-aria-label="a11y.stanceToggle" aria-pressed="false">180</button>
         <button id="real-skate-jump" class="real-skate-button" type="button">JUMP</button>
       </div>
       <div id="experience-challenge-timer" class="experience-challenge-timer" aria-live="polite"></div>
@@ -194,7 +194,7 @@
         </div>
       </section>
 
-      <aside id="experience-lyrics" class="experience-lyrics" aria-label="歌詞">
+      <aside id="experience-lyrics" class="experience-lyrics" aria-label="歌詞" data-ass-i18n-aria-label="a11y.lyrics">
         <button id="experience-lyrics-close" type="button">Close</button>
         <pre id="experience-lyrics-text"></pre>
       </aside>
@@ -219,7 +219,7 @@
     </main>
 
     <div id="ending-whiteout" aria-hidden="true">
-      <div id="ending-true-message">ありがとうニャー</div>
+      <div id="ending-true-message" data-ass-i18n="ending.trueMessage">ありがとうニャー</div>
     </div>
     <div id="ending-overlay" aria-hidden="true">
       <div id="ending-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="Ending">
@@ -237,8 +237,8 @@
             <div class="ending-roll-credit ending-roll-credit-last"></div>
           </div>
         </div>
-        <button id="ending-restart-trigger" class="ui-control" type="button" aria-label="最初の飛行画面に戻る">END</button>
-        <button id="ending-close" class="ui-control" type="button">閉じる</button>
+        <button id="ending-restart-trigger" class="ui-control" type="button" aria-label="最初の飛行画面に戻る" data-ass-i18n-aria-label="a11y.restartFlight">END</button>
+        <button id="ending-close" class="ui-control" type="button" data-ass-i18n="ending.close">閉じる</button>
       </div>
     </div>
 
@@ -254,7 +254,7 @@
           <section class="book-view book-page is-active" data-book-view="read">
             <div class="book-page-label">READ</div>
             <div id="book-message-page" class="ui-control" aria-live="polite"></div>
-            <button id="book-next-page" class="ui-control" type="button">ページをめくる</button>
+            <button id="book-next-page" class="ui-control" type="button" data-ass-i18n="book.nextPage">ページをめくる</button>
           </section>
           <section class="book-view book-page" data-book-view="write">
             <div class="book-page-label">WRITE</div>
@@ -271,30 +271,30 @@
 
     <div id="black-box-overlay" aria-hidden="true">
       <div id="black-box-backdrop" class="ui-control"></div>
-      <div id="black-box-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="黒い箱">
+      <div id="black-box-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="黒い箱" data-ass-i18n-aria-label="blackBox.dialog">
         <div id="black-box-head">
-          <div id="black-box-title"><span class="black-box-kicker">高速移動する</span><span class="black-box-main-title">黒い箱を捕獲</span></div>
+          <div id="black-box-title"><span class="black-box-kicker" data-ass-i18n="blackBox.moving">高速移動する</span><span class="black-box-main-title" data-ass-i18n="blackBox.captured">黒い箱を捕獲</span></div>
           <button id="black-box-close" class="ui-control" type="button" aria-label="Close black box">Close</button>
         </div>
         <div id="black-box-view-intro" class="black-box-view is-active">
-          <div id="black-box-actions"><button id="black-box-open" class="ui-control" type="button">開けてみる</button><button id="black-box-ignore" class="ui-control" type="button">ほっとく</button></div>
+          <div id="black-box-actions"><button id="black-box-open" class="ui-control" type="button" data-ass-i18n="blackBox.open">開けてみる</button><button id="black-box-ignore" class="ui-control" type="button" data-ass-i18n="blackBox.ignore">ほっとく</button></div>
         </div>
         <div id="black-box-view-reveal" class="black-box-view">
-          <img id="black-box-cat-image" src="../../blackbox-cat.jpg" alt="箱の中にいた猫">
-          <div id="black-box-caption">かわいいのがいた。</div>
-          <div id="black-box-reveal-actions"><a id="black-box-download" class="ui-control" href="../../blackbox-cat.jpg" download="blackbox-cat.jpg">保存する</a></div>
+          <img id="black-box-cat-image" src="../../blackbox-cat.jpg" alt="箱の中にいた猫" data-ass-i18n-alt="blackBox.catAlt">
+          <div id="black-box-caption" data-ass-i18n="blackBox.caption">かわいいのがいた。</div>
+          <div id="black-box-reveal-actions"><a id="black-box-download" class="ui-control" href="../../blackbox-cat.jpg" download="blackbox-cat.jpg" data-ass-i18n="blackBox.download">保存する</a></div>
         </div>
         <div id="black-box-view-cat-route" class="black-box-view">
-          <div id="black-box-cat-route-copy"><p class="black-box-dialog-line">あなた「お前も帰りたいか？」</p><p class="black-box-dialog-line">猫「にゃー」</p></div>
+          <div id="black-box-cat-route-copy"><p class="black-box-dialog-line" data-ass-i18n="blackBox.playerLine">あなた「お前も帰りたいか？」</p><p class="black-box-dialog-line" data-ass-i18n="blackBox.catLine">猫「にゃー」</p></div>
         </div>
       </div>
     </div>
 
     <div id="music-selector-overlay" aria-hidden="true">
       <div id="music-selector-backdrop" class="ui-control"></div>
-      <div id="music-selector-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="曲を選ぶ">
+      <div id="music-selector-panel" class="ui-control" role="dialog" aria-modal="true" aria-label="曲を選ぶ" data-ass-i18n-aria-label="a11y.trackPicker">
         <div id="music-selector-head"><button id="music-selector-close" class="ui-control" type="button" aria-label="Close music selector">Close</button></div>
-        <div id="music-selector-browser"><div id="music-selector-now-playing"></div><div id="music-selector-list" class="ui-control" aria-label="楽曲リスト"></div></div>
+        <div id="music-selector-browser"><div id="music-selector-now-playing"></div><div id="music-selector-list" class="ui-control" aria-label="楽曲リスト" data-ass-i18n-aria-label="a11y.trackList"></div></div>
       </div>
     </div>
 

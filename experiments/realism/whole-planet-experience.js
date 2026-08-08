@@ -108,6 +108,15 @@ const DEVIL_DESTINATIONS = [
   { id: "blackBox", label: "高速移動する黒い箱", stopDistance: 15, endAltitude: DEVIL_BLACK_BOX_ALTITUDE, focusHeight: 2, special: "blackBox" },
 ];
 const DEVIL_ESCAPE_COPY = "昼のエリアに黒い球、夜のエリアに白い球がある。\n\nどちらかの球に触れた後、30秒以内にもう片方の球に触れることで昼夜が逆転する。\n\nその後、白い球の近くの巨大な装置を起動させれば脱出の道標が現れる。";
+const DEVIL_DESTINATION_TRANSLATION_KEYS = Object.freeze({
+  recordPlayer: "runtime.destination.recordPlayer",
+  book: "runtime.destination.book",
+  whiteSphere: "runtime.destination.whiteSphere",
+  blackSphere: "runtime.destination.blackSphere",
+  compass: "runtime.destination.compass",
+  sanctuary: "runtime.destination.sanctuary",
+  blackBox: "runtime.destination.blackBox",
+});
 
 function createDevilModel() {
   const devil = new THREE.Group();
@@ -297,6 +306,35 @@ function resolveRootAsset(path) {
   return new URL(path, new URL("../../", import.meta.url)).href;
 }
 
+// Dynamic experience UI must resolve copy while it is created. The helper is
+// deliberately display-only: it never changes routes, state, or event flow.
+function t(key, fallback) {
+  try {
+    return window.assI18n?.text?.(key, fallback) ?? fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function setLocalizedText(element, key, fallback) {
+  if (!element) return;
+  element.dataset.assI18n = key;
+  element.textContent = t(key, fallback);
+}
+
+function setLocalizedAriaLabel(element, key, fallback) {
+  if (!element) return;
+  element.dataset.assI18nAriaLabel = key;
+  element.setAttribute("aria-label", t(key, fallback));
+}
+
+function getDevilDestinationLabel(destination, blackBoxOpened = false) {
+  if (destination?.id === "blackBox" && blackBoxOpened) {
+    return t("runtime.destination.blackBoxOpened", "黒い箱");
+  }
+  return t(DEVIL_DESTINATION_TRANSLATION_KEYS[destination?.id], destination?.label || "");
+}
+
 function createButton(label, className = "") {
   const button = document.createElement("button");
   button.type = "button";
@@ -322,7 +360,8 @@ function normalizeBookEntry(entry) {
 function formatBookDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("ja-JP", {
+  const locale = window.assI18n?.getLanguage?.() === "en" ? "en-US" : "ja-JP";
+  return date.toLocaleDateString(locale, {
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
@@ -881,7 +920,7 @@ export function createWholePlanetExperience({
     const enabled = isMainExperience() && available.length > 0;
     if (artLink) {
       artLink.disabled = !enabled;
-      artLink.setAttribute("aria-label", `配信サービスで聴く：${track.title}`);
+      artLink.setAttribute("aria-label", `${t("runtime.continueListening", "好きなサービスで続きを聴く")}: ${track.title}`);
       artLink.classList.toggle("is-service-enabled", enabled);
     }
     canvas.dataset.musicServiceTrack = track.title;
@@ -895,10 +934,10 @@ export function createWholePlanetExperience({
     const modalArt = overlayBody?.querySelector("[data-music-service-art]");
     const modalTrackTitle = overlayBody?.querySelector("[data-music-service-title]");
     const modalArtist = overlayBody?.querySelector("[data-music-service-artist]");
-    if (overlayTitle) overlayTitle.textContent = "配信先を選ぶ";
+    if (overlayTitle) setLocalizedText(overlayTitle, "runtime.servicePicker", "配信先を選ぶ");
     if (modalArt instanceof HTMLImageElement) {
       modalArt.src = resolveRootAsset(track.art);
-      modalArt.alt = `${track.title}のジャケット`;
+      modalArt.alt = t("music.artAlt", "再生中のジャケット");
     }
     if (modalTrackTitle) modalTrackTitle.textContent = track.title;
     if (modalArtist) modalArtist.textContent = MUSIC_ARTIST_NAME;
@@ -914,7 +953,7 @@ export function createWholePlanetExperience({
     const track = getTrack();
     if (!isMainExperience() || !track || !getAvailableMusicServices(track).length) return;
     overlay?.classList.add("is-music-service");
-    openModal("配信先を選ぶ", (container) => {
+    openModal(t("runtime.servicePicker", "配信先を選ぶ"), (container) => {
       const release = document.createElement("div");
       release.className = "music-service-release";
 
@@ -924,7 +963,7 @@ export function createWholePlanetExperience({
       artwork.className = "music-service-artwork";
       artwork.dataset.musicServiceArt = "";
       artwork.src = resolveRootAsset(track.art);
-      artwork.alt = `${track.title}のジャケット`;
+      artwork.alt = t("music.artAlt", "再生中のジャケット");
       artwork.decoding = "async";
       artworkFrame.append(artwork);
 
@@ -943,7 +982,7 @@ export function createWholePlanetExperience({
       artist.textContent = MUSIC_ARTIST_NAME;
       const prompt = document.createElement("p");
       prompt.className = "music-service-prompt";
-      prompt.textContent = "好きなサービスで続きを聴く";
+      setLocalizedText(prompt, "runtime.continueListening", "好きなサービスで続きを聴く");
       releaseCopy.append(nowPlaying, trackTitle, artist, prompt);
 
       const actions = document.createElement("div");
@@ -956,7 +995,7 @@ export function createWholePlanetExperience({
         serviceName.textContent = service.label.replace("で聴く", "");
         const serviceAction = document.createElement("span");
         serviceAction.className = "music-service-button-action";
-        serviceAction.textContent = "開く ↗";
+        setLocalizedText(serviceAction, "runtime.open", "開く ↗");
         button.append(serviceName, serviceAction);
         button.addEventListener("click", () => {
           const currentTrack = getTrack();
@@ -987,7 +1026,7 @@ export function createWholePlanetExperience({
     syncMusicServiceUi(track);
     if (playButton) {
       playButton.classList.toggle("is-playing", !audio.paused);
-      playButton.setAttribute("aria-label", audio.paused ? "再生" : "停止");
+      setLocalizedAriaLabel(playButton, audio.paused ? "music.play" : "music.pause", audio.paused ? "再生" : "停止");
     }
     musicRoot?.classList.toggle("is-playing", !audio.paused);
     if (landmarks.objects.recordPlayer) {
@@ -999,23 +1038,27 @@ export function createWholePlanetExperience({
   async function loadLyrics(track) {
     const requestId = ++lyricsRequest;
     if (!lyricsText) return;
-    lyricsText.textContent = "歌詞を読み込んでいます。";
+    setLocalizedText(lyricsText, "runtime.lyricsLoading", "歌詞を読み込んでいます。");
     if (Array.isArray(track?.lyrics)) {
+      lyricsText.removeAttribute("data-ass-i18n");
       lyricsText.textContent = track.lyrics.map((line) => line.text).join("\n");
       return;
     }
     if (!track?.lyricsPath) {
-      lyricsText.textContent = "この曲の歌詞はまだありません。";
+      setLocalizedText(lyricsText, "runtime.lyricsMissing", "この曲の歌詞はまだありません。");
       return;
     }
     try {
       const response = await fetch(resolveRootAsset(track.lyricsPath), { cache: "force-cache" });
       if (!response.ok) throw new Error(`lyrics-${response.status}`);
       const text = await response.text();
-      if (requestId === lyricsRequest) lyricsText.textContent = text.trim();
+      if (requestId === lyricsRequest) {
+        lyricsText.removeAttribute("data-ass-i18n");
+        lyricsText.textContent = text.trim();
+      }
     } catch (error) {
       console.warn("Lyrics could not be loaded.", error);
-      if (requestId === lyricsRequest) lyricsText.textContent = "歌詞を読み込めませんでした。";
+      if (requestId === lyricsRequest) setLocalizedText(lyricsText, "runtime.lyricsUnavailable", "歌詞を読み込めませんでした。");
     }
   }
 
@@ -1385,7 +1428,7 @@ export function createWholePlanetExperience({
           catCompanion.quaternion.identity();
         }
         refreshCatRouteAvailability();
-        showToast("猫が肩に飛び乗った。", 3000);
+        showToast(t("toast.catMounted", "猫が肩に飛び乗った。"), 3000);
       }
       return;
     }
@@ -1406,7 +1449,7 @@ export function createWholePlanetExperience({
       copy.className = "music-selector-now-playing-copy";
       const label = document.createElement("div");
       label.className = "music-selector-now-playing-label";
-      label.textContent = "再生中";
+      setLocalizedText(label, "music.nowPlaying", "再生中");
       const trackTitle = document.createElement("div");
       trackTitle.className = "music-selector-now-playing-title";
       trackTitle.textContent = track.title;
@@ -1420,7 +1463,11 @@ export function createWholePlanetExperience({
       const active = Number(item.dataset.trackIndex) === currentTrackIndex;
       item.classList.toggle("is-current", active);
       const itemState = item.querySelector(".music-selector-item-state");
-      if (itemState) itemState.textContent = active ? (audio.paused ? "READY" : "NOW PLAYING") : "PLAY";
+      if (itemState) setLocalizedText(
+        itemState,
+        active ? (audio.paused ? "music.ready" : "music.nowPlaying") : "music.playTrack",
+        active ? (audio.paused ? "READY" : "NOW PLAYING") : "PLAY",
+      );
     }
   }
 
@@ -1444,7 +1491,7 @@ export function createWholePlanetExperience({
       meta.textContent = `TRACK ${String(index + 1).padStart(2, "0")}`;
       const itemState = document.createElement("div");
       itemState.className = "music-selector-item-state";
-      itemState.textContent = "PLAY";
+      setLocalizedText(itemState, "music.playTrack", "PLAY");
       main.append(itemTitle, meta);
       button.append(itemArt, main, itemState);
       button.addEventListener("click", () => {
@@ -1521,7 +1568,11 @@ export function createWholePlanetExperience({
     if (!bookPages.length) {
       const card = document.createElement("div");
       card.className = "book-message-card";
-      card.textContent = stopped ? "停止中" : "まだ何も書かれていません。最初のひとことを残せます。";
+      setLocalizedText(
+        card,
+        stopped ? "book.stopped" : "book.empty",
+        stopped ? "停止中" : "まだ何も書かれていません。最初のひとことを残せます。",
+      );
       bookMessagePage.append(card);
       if (bookNextPage) bookNextPage.disabled = true;
       return;
@@ -1547,16 +1598,16 @@ export function createWholePlanetExperience({
   async function openProductionBook() {
     bookPageIndex = 0;
     setBookView("write");
-    if (bookStatus) bookStatus.textContent = "本の記録を読み込んでいます。";
+    if (bookStatus) setLocalizedText(bookStatus, "book.loading", "本の記録を読み込んでいます。");
     openNativeOverlay(bookOverlay);
     bookMessageInput?.focus({ preventScroll: true });
     try {
       const entries = await fetchBookMessages();
-      if (bookStatus) bookStatus.textContent = "この本に書いたことばは、ほかの人にも共有されます。";
+      if (bookStatus) setLocalizedText(bookStatus, "book.shared", "この本に書いたことばは、ほかの人にも共有されます。");
       renderProductionBook(entries);
     } catch (error) {
       console.warn("Supabase book is unavailable.", error);
-      if (bookStatus) bookStatus.textContent = "停止中";
+      if (bookStatus) setLocalizedText(bookStatus, "book.stopped", "停止中");
       renderProductionBook(readBookCache(), true);
     }
   }
@@ -1575,7 +1626,11 @@ export function createWholePlanetExperience({
     if (view === "cat-route") state.catJoinPhase = "dialogue";
     setBlackBoxView(view);
     if (blackBoxTitle) blackBoxTitle.style.visibility = state.blackBoxOpened || view === "cat-route" ? "hidden" : "visible";
-    if (blackBoxOpen) blackBoxOpen.textContent = state.blackBoxOpened ? "また開けちゃう" : "開けてみる";
+    if (blackBoxOpen) setLocalizedText(
+      blackBoxOpen,
+      state.blackBoxOpened ? "blackBox.openAgain" : "blackBox.open",
+      state.blackBoxOpened ? "また開けちゃう" : "開けてみる",
+    );
     openNativeOverlay(blackBoxOverlay);
   }
 
@@ -1643,8 +1698,18 @@ export function createWholePlanetExperience({
     const isAllowed = (name) => name && !EXCLUDED_BOOK_NAMES.has(name);
     const normal = histories.filter((entry) => !entry.isTrue && isAllowed(entry.name)).map((entry) => entry.name);
     const truth = histories.filter((entry) => entry.isTrue && isAllowed(entry.name)).map((entry) => entry.name);
-    if (endingReturnees) endingReturnees.textContent = normal.length ? normal.join("\n") : "未確認";
-    if (endingTrueReturnees) endingTrueReturnees.textContent = truth.length ? truth.join("\n") : "未確認";
+    if (endingReturnees) {
+      if (normal.length) {
+        endingReturnees.removeAttribute("data-ass-i18n");
+        endingReturnees.textContent = normal.join("\n");
+      } else setLocalizedText(endingReturnees, "ending.unconfirmed", "未確認");
+    }
+    if (endingTrueReturnees) {
+      if (truth.length) {
+        endingTrueReturnees.removeAttribute("data-ass-i18n");
+        endingTrueReturnees.textContent = truth.join("\n");
+      } else setLocalizedText(endingTrueReturnees, "ending.unconfirmed", "未確認");
+    }
   }
 
   function readLocalReturnHistories() {
@@ -1758,14 +1823,15 @@ export function createWholePlanetExperience({
     panel.setAttribute("aria-modal", "true");
     const kicker = document.createElement("div");
     kicker.className = "devil-guide-kicker";
-    kicker.textContent = "悪魔に遭遇";
+    setLocalizedText(kicker, "runtime.devilEncounter", "悪魔に遭遇");
     const message = document.createElement("div");
     message.id = "devil-guide-message";
     const actions = document.createElement("div");
     actions.id = "devil-guide-actions";
     panel.append(kicker, message, actions);
     devilOverlay.append(backdrop, panel);
-    const summon = createButton("悪魔を呼ぶ", "ui-control");
+    const summon = createButton(t("runtime.summonDevil", "悪魔を呼ぶ"), "ui-control");
+    summon.dataset.assI18n = "runtime.summonDevil";
     summon.id = "devil-guide-summon";
     summon.setAttribute("aria-hidden", "true");
     const navigation = document.createElement("div");
@@ -1775,10 +1841,11 @@ export function createWholePlanetExperience({
     const navigationText = document.createElement("div");
     navigationText.className = "devil-guide-navigation-text";
     const navigationKicker = document.createElement("span");
-    navigationKicker.textContent = "悪魔の案内";
+    setLocalizedText(navigationKicker, "runtime.devilGuide", "悪魔の案内");
     const navigationDestination = document.createElement("strong");
     navigationText.append(navigationKicker, navigationDestination);
-    const navigationCancel = createButton("中止");
+    const navigationCancel = createButton(t("runtime.cancel", "中止"));
+    navigationCancel.dataset.assI18n = "runtime.cancel";
     navigation.append(navigationText, navigationCancel);
     document.body.append(devilOverlay, summon, navigation);
     for (const element of [devilOverlay, summon, navigation]) {
@@ -1787,10 +1854,12 @@ export function createWholePlanetExperience({
     }
     return {
       overlay: devilOverlay,
+      kicker,
       message,
       actions,
       summon,
       navigation,
+      navigationKicker,
       navigationDestination,
       navigationCancel,
     };
@@ -1815,41 +1884,57 @@ export function createWholePlanetExperience({
   }
 
   function renderDevilQuestion(view = "question") {
+    devilUi.view = view;
     devilUi.actions.replaceChildren();
     if (view === "hint") {
-      devilUi.message.textContent = DEVIL_ESCAPE_COPY;
+      setLocalizedText(devilUi.message, "runtime.escapeHint", DEVIL_ESCAPE_COPY);
       devilUi.actions.append(
-        makeDevilButton("わかった", closeDevilDialog),
-        makeDevilButton("戻る", () => renderDevilQuestion(), "secondary"),
+        makeDevilButton(t("runtime.gotIt", "わかった"), closeDevilDialog),
+        makeDevilButton(t("runtime.back", "戻る"), () => renderDevilQuestion(), "secondary"),
       );
       return;
     }
     if (view === "creator") {
-      devilUi.message.textContent = "創造主は、ASS MAGICという謎の音楽ユニットだ。\nそれ以上のことはわからない。\n\n本人たちさえ、一体何を作っているのかよくわかっていない。";
+      setLocalizedText(
+        devilUi.message,
+        "runtime.creatorCopy",
+        "創造主は、ASS MAGICという謎の音楽ユニットだ。\nそれ以上のことはわからない。\n\n本人たちさえ、一体何を作っているのかよくわかっていない。",
+      );
       devilUi.actions.append(
-        makeDevilButton("へぇ", closeDevilDialog),
-        makeDevilButton("戻る", () => renderDevilQuestion(), "secondary"),
+        makeDevilButton(t("runtime.oh", "へぇ"), closeDevilDialog),
+        makeDevilButton(t("runtime.back", "戻る"), () => renderDevilQuestion(), "secondary"),
       );
       return;
     }
     if (view === "destinations") {
-      devilUi.message.textContent = "どこへ行きたい？";
+      setLocalizedText(devilUi.message, "runtime.whereTo", "どこへ行きたい？");
       for (const destination of DEVIL_DESTINATIONS) {
-        const label = destination.id === "blackBox" && state.blackBoxOpened
-          ? "黒い箱"
-          : destination.label;
+        const label = getDevilDestinationLabel(destination, state.blackBoxOpened);
         devilUi.actions.append(makeDevilButton(label, () => startDevilRoute(destination)));
       }
-      devilUi.actions.append(makeDevilButton("戻る", () => renderDevilQuestion(), "secondary"));
+      devilUi.actions.append(makeDevilButton(t("runtime.back", "戻る"), () => renderDevilQuestion(), "secondary"));
       return;
     }
-    devilUi.message.textContent = "何が望みだ？";
+    setLocalizedText(devilUi.message, "runtime.whatDoYouWant", "何が望みだ？");
     devilUi.actions.append(
-      makeDevilButton("自由に探索したい", closeDevilDialog),
-      makeDevilButton("ヒントがほしい", () => renderDevilQuestion("hint")),
-      makeDevilButton("案内してほしい", () => renderDevilQuestion("destinations")),
-      makeDevilButton("創造主について", () => renderDevilQuestion("creator")),
+      makeDevilButton(t("runtime.explore", "自由に探索したい"), closeDevilDialog),
+      makeDevilButton(t("runtime.needHint", "ヒントがほしい"), () => renderDevilQuestion("hint")),
+      makeDevilButton(t("runtime.needGuide", "案内してほしい"), () => renderDevilQuestion("destinations")),
+      makeDevilButton(t("runtime.aboutCreator", "創造主について"), () => renderDevilQuestion("creator")),
     );
+  }
+
+  function refreshDevilLocalization() {
+    setLocalizedText(devilUi.kicker, "runtime.devilEncounter", "悪魔に遭遇");
+    setLocalizedText(devilUi.summon, "runtime.summonDevil", "悪魔を呼ぶ");
+    setLocalizedText(devilUi.navigationKicker, "runtime.devilGuide", "悪魔の案内");
+    setLocalizedText(devilUi.navigationCancel, "runtime.cancel", "中止");
+    if (devilUi.overlay.classList.contains("is-open")) {
+      renderDevilQuestion(devilUi.view || "question");
+    }
+    if (state.devil.route) {
+      devilUi.navigationDestination.textContent = getDevilDestinationLabel(state.devil.route, state.blackBoxOpened);
+    }
   }
 
   function openDevilDialog() {
@@ -2221,9 +2306,7 @@ export function createWholePlanetExperience({
     state.modalOpen = false;
     state.devil.route = destination;
     state.devil.phase = "route";
-    devilUi.navigationDestination.textContent = destination.id === "blackBox" && state.blackBoxOpened
-      ? "黒い箱"
-      : destination.label;
+    devilUi.navigationDestination.textContent = getDevilDestinationLabel(destination, state.blackBoxOpened);
     devilUi.navigation.classList.add("is-visible");
     devilUi.navigation.setAttribute("aria-hidden", "false");
     devilUi.summon.classList.remove("is-visible");
@@ -2839,7 +2922,7 @@ export function createWholePlanetExperience({
   function renderTrackSelector(container) {
     const intro = document.createElement("p");
     intro.className = "experience-modal-copy";
-    intro.textContent = "この惑星で流す曲を選ぶ。";
+    setLocalizedText(intro, "music.chooseTrack", "この惑星で流す曲を選ぶ。");
     const list = document.createElement("div");
     list.className = "experience-track-list";
     tracks.forEach((track, index) => {
@@ -2917,14 +3000,14 @@ export function createWholePlanetExperience({
     if (stopped) {
       const stoppedMessage = document.createElement("p");
       stoppedMessage.className = "experience-book-status is-stopped";
-      stoppedMessage.textContent = "停止中";
+      setLocalizedText(stoppedMessage, "book.stopped", "停止中");
       container.append(stoppedMessage);
     }
     if (!entries.length) {
       if (!stopped) {
         const empty = document.createElement("p");
         empty.className = "experience-book-status";
-        empty.textContent = "まだ何も書かれていません。";
+        setLocalizedText(empty, "book.empty", "まだ何も書かれていません。");
         container.append(empty);
       }
       return;
@@ -2973,7 +3056,7 @@ export function createWholePlanetExperience({
   function renderBook(container) {
     const status = document.createElement("p");
     status.className = "experience-book-status";
-    status.textContent = "本の記録を読み込んでいます。";
+    setLocalizedText(status, "book.loading", "本の記録を読み込んでいます。");
     const entries = document.createElement("div");
     entries.className = "experience-book-entries";
     const form = document.createElement("form");
@@ -2981,22 +3064,23 @@ export function createWholePlanetExperience({
     const name = document.createElement("input");
     name.type = "text";
     name.maxLength = 24;
-    name.placeholder = "名前（任意）";
+    name.placeholder = t("book.namePlaceholder", "名前（任意）");
     const message = document.createElement("textarea");
     message.rows = 4;
     message.maxLength = 280;
-    message.placeholder = "何を書く？";
-    const submit = createButton("記す");
+    message.placeholder = t("book.messagePlaceholder", "何を書く？");
+    const submit = createButton(t("book.submit", "記す"));
+    submit.dataset.assI18n = "book.submit";
     submit.type = "submit";
     form.append(name, message, submit);
     container.append(status, entries, form);
 
     fetchBookMessages().then((loaded) => {
-      status.textContent = "この本のことばは、ほかの人にも共有されます。";
+      setLocalizedText(status, "book.sharedProduction", "この本のことばは、ほかの人にも共有されます。");
       renderBookEntries(entries, loaded);
     }).catch((error) => {
       console.warn("Supabase book is unavailable.", error);
-      status.textContent = "停止中";
+      setLocalizedText(status, "book.stopped", "停止中");
       renderBookEntries(entries, readBookCache(), true);
       submit.disabled = true;
     });
@@ -3005,18 +3089,18 @@ export function createWholePlanetExperience({
       event.preventDefault();
       if (!message.value.trim()) return;
       submit.disabled = true;
-      status.textContent = "記しています。";
+      setLocalizedText(status, "book.writing", "記しています。");
       try {
         await saveBookMessage(name.value, message.value);
         message.value = "";
         const loaded = await fetchBookMessages();
-        status.textContent = "記しました。";
+        setLocalizedText(status, "book.saved", "記しました。");
         renderBookEntries(entries, loaded);
       } catch (error) {
         console.warn("Book message could not be saved.", error);
-        status.textContent = "停止中";
+        setLocalizedText(status, "book.stopped", "停止中");
       } finally {
-        submit.disabled = status.textContent === "停止中";
+        submit.disabled = status.dataset.assI18n === "book.stopped";
       }
     });
   }
@@ -3024,24 +3108,33 @@ export function createWholePlanetExperience({
   function openBlackBox() {
     const blackBox = landmarks.objects.blackBox;
     blackBox.userData.grounded = true;
-    openModal(state.blackBoxOpened ? "黒い箱" : "高速移動する黒い箱", (container) => {
-      const action = createButton(state.blackBoxOpened ? "また開けちゃう" : "開けてみる");
+    const titleKey = state.blackBoxOpened ? "runtime.destination.blackBoxOpened" : "runtime.destination.blackBox";
+    const titleFallback = state.blackBoxOpened ? "黒い箱" : "高速移動する黒い箱";
+    const actionKey = state.blackBoxOpened ? "blackBox.openAgain" : "blackBox.open";
+    const actionFallback = state.blackBoxOpened ? "また開けちゃう" : "開けてみる";
+    openModal(
+      t(titleKey, titleFallback),
+      (container) => {
+      setLocalizedText(overlayTitle, titleKey, titleFallback);
+      const action = createButton(t(actionKey, actionFallback));
+      action.dataset.assI18n = actionKey;
       const reveal = () => {
         container.textContent = "";
         const image = document.createElement("img");
         image.className = "experience-cat-image";
         image.src = resolveRootAsset("./blackbox-cat.jpg");
-        image.alt = "箱の中にいた猫";
+        image.alt = t("blackBox.catAlt", "箱の中にいた猫");
         const caption = document.createElement("p");
         caption.className = "experience-modal-copy";
-        caption.textContent = "かわいいのがいた。";
+        setLocalizedText(caption, "blackBox.caption", "かわいいのがいた。");
         container.append(image, caption);
         state.blackBoxOpened = true;
         blackBox.userData.opened = true;
       };
       action.addEventListener("click", reveal);
       container.append(action);
-    });
+      },
+    );
   }
 
   function endChallenge(success) {
@@ -3274,7 +3367,7 @@ export function createWholePlanetExperience({
     if (!target) return;
     compassAssistTarget = target.clone();
     compassAssist = 1.1;
-    showToast("羅針盤が進行方向を整えている。", 2200);
+    showToast(t("toast.compassAssist", "羅針盤が進行方向を整えている。"), 2200);
   }
 
   function handleContact(id) {
@@ -3348,6 +3441,26 @@ export function createWholePlanetExperience({
     flight.forward.addScaledVector(playerUp, -flight.forward.dot(playerUp)).normalize();
   }
 
+  function refreshLocalizedExperienceUi() {
+    // The locale event only redraws already-open copy. It deliberately does
+    // not close overlays, restart events, or alter any navigation state.
+    refreshDevilLocalization();
+    syncMusicUi();
+    refreshMusicSelector();
+    if (bookOverlay?.classList.contains("is-open") && bookPages.length) {
+      renderProductionBook(bookPages.flat());
+    }
+    if (blackBoxOverlay?.classList.contains("is-open") && blackBoxOpen) {
+      setLocalizedText(
+        blackBoxOpen,
+        state.blackBoxOpened ? "blackBox.openAgain" : "blackBox.open",
+        state.blackBoxOpened ? "また開けちゃう" : "開けてみる",
+      );
+    }
+  }
+
+  window.addEventListener("assmagic:locale-changed", refreshLocalizedExperienceUi);
+
   playButton?.addEventListener("click", () => {
     if (audio.paused) void playMusic();
     else pauseMusic();
@@ -3392,19 +3505,19 @@ export function createWholePlanetExperience({
     event.preventDefault();
     if (!bookMessageInput?.value.trim()) return;
     if (bookSubmit) bookSubmit.disabled = true;
-    if (bookStatus) bookStatus.textContent = "記しています。";
+    if (bookStatus) setLocalizedText(bookStatus, "book.writing", "記しています。");
     try {
       await saveBookMessage(bookName?.value || "", bookMessageInput.value);
       bookMessageInput.value = "";
       const entries = await fetchBookMessages();
       renderProductionBook(entries);
       setBookView("read");
-      if (bookStatus) bookStatus.textContent = "記しました。";
+      if (bookStatus) setLocalizedText(bookStatus, "book.saved", "記しました。");
     } catch (error) {
       console.warn("Book message could not be saved.", error);
-      if (bookStatus) bookStatus.textContent = "停止中";
+      if (bookStatus) setLocalizedText(bookStatus, "book.stopped", "停止中");
     } finally {
-      if (bookSubmit) bookSubmit.disabled = bookStatus?.textContent === "停止中";
+      if (bookSubmit) bookSubmit.disabled = bookStatus?.dataset.assI18n === "book.stopped";
     }
   });
   blackBoxClose?.addEventListener("click", closeNativeOverlay);

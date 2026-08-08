@@ -26,6 +26,14 @@ function resolveRealismAsset(path) {
   return new URL(path, REALISM_ASSET_BASE).href;
 }
 
+function t(key, fallback) {
+  try {
+    return window.assI18n?.text?.(key, fallback) ?? fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
 function easeInOutQuint(value) {
   const t = THREE.MathUtils.clamp(value, 0, 1);
   return t < 0.5
@@ -921,6 +929,23 @@ function createCurvedDeckGeometry() {
   return geometry;
 }
 
+function refreshSkateStanceAria() {
+  if (!realSkateStanceButton) return;
+  const isGoofy = REAL_SKATE.stance === "goofy";
+  const isTurning = REAL_SKATE.stanceTransitionTarget != null;
+  realSkateStanceButton.setAttribute(
+    "aria-label",
+    t(
+      isTurning
+        ? "skate.stanceSwitching"
+        : isGoofy ? "skate.goofyToRegular" : "skate.regularToGoofy",
+      isTurning
+        ? "スタンスを切り替え中"
+        : isGoofy ? "スタンスをグーフィーからレギュラーへ切り替え" : "スタンスをレギュラーからグーフィーへ切り替え",
+    ),
+  );
+}
+
 function syncSkateVisuals() {
   const skating = REAL_SKATE.active;
   // Do not replace the flight figure until every approved pose bone has been
@@ -945,14 +970,11 @@ function syncSkateVisuals() {
     const isTurning = REAL_SKATE.stanceTransitionTarget != null;
     realSkateStanceButton.disabled = !skating || isTurning;
     realSkateStanceButton.setAttribute("aria-pressed", String(isGoofy));
-    realSkateStanceButton.setAttribute(
-      "aria-label",
-      isTurning
-        ? "スタンスを切り替え中"
-        : isGoofy ? "スタンスをグーフィーからレギュラーへ切り替え" : "スタンスをレギュラーからグーフィーへ切り替え",
-    );
+    refreshSkateStanceAria();
   }
 }
+
+window.addEventListener("assmagic:locale-changed", refreshSkateStanceAria);
 
 function syncSkateStanceMirror() {
   const skater = REAL_SKATE.skater;
@@ -1224,7 +1246,7 @@ if (settings.mode === "realism" && settings.view === "flight") {
 
 if (settings.view === "flight") {
   flightReadout.classList.add("is-visible");
-  flightHelp.textContent = "右スティック・WASD・矢印で球面飛行 / 長押し・Spaceで加速";
+  flightHelp.textContent = t("flight.help", "右スティック・WASD・矢印で球面飛行 / 長押し・Spaceで加速");
   resetFlight();
 }
 
