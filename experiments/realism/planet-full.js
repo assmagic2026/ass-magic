@@ -3979,6 +3979,7 @@ function createSky() {
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
+    dithering: true,
     uniforms: {
       cameraPos: { value: new THREE.Vector3() },
       sunDirection: { value: SUN_DIRECTION.clone() },
@@ -4003,6 +4004,8 @@ function createSky() {
       }
     `,
     fragmentShader: `
+      #include <common>
+      #include <dithering_pars_fragment>
       uniform vec3 cameraPos;
       uniform vec3 sunDirection;
       uniform float planetRadius;
@@ -4054,6 +4057,7 @@ function createSky() {
         color = mix(color, vec3(0.91, 0.94, 0.95), cloudMist * 0.82);
         color = mix(color, vec3(0.0), smoothstep(0.0, 1.0, spaceMix));
         gl_FragColor = vec4(color, 1.0);
+        #include <dithering_fragment>
       }
     `,
   });
