@@ -22,7 +22,7 @@ import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-st
 import {
   BenchmarkReporter,
   getBenchmarkOptions,
-} from "./benchmark-utils.js?v=night-swarm-bench-9";
+} from "./benchmark-utils.js?v=green-swarm-production-1";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -594,42 +594,55 @@ if (
   canvas.dataset.swarmHomeClearanceDeg = THREE.MathUtils.radToDeg(
     habitatSelection.minimumAngularDistance,
   ).toFixed(1);
-  canvas.dataset.swarmStatus = "loading";
-  void import("./night-swarm.js?v=night-swarm-bench-10").then(({ createNightSwarm }) => {
-    if (rendererDisposed) return;
-    nightSwarm = createNightSwarm({
-      THREE,
-      scene,
-      config: benchmarkOptions.swarm,
-      centerDirection: habitatDirection,
-      getSurfaceRadius,
-      playerPosition: flight.position,
-      quality: settings.quality,
-      debugEnabled: benchmarkOptions.swarmDebugEnabled,
-      onDiagnostics: benchmarkOptions.swarmDebugEnabled
-        ? (diagnostics) => {
-          window.__ASS_MAGIC_SWARM_DEBUG__ = diagnostics;
-        }
-        : null,
+  let swarmInitializationStarted = false;
+  const initializeNightSwarm = () => {
+    if (swarmInitializationStarted || rendererDisposed) return;
+    swarmInitializationStarted = true;
+    canvas.dataset.swarmStatus = "loading";
+    void import("./night-swarm.js?v=green-swarm-production-1").then(({ createNightSwarm }) => {
+      if (rendererDisposed) return;
+      nightSwarm = createNightSwarm({
+        THREE,
+        scene,
+        config: benchmarkOptions.swarm,
+        centerDirection: habitatDirection,
+        getSurfaceRadius,
+        playerPosition: flight.position,
+        quality: settings.quality,
+        debugEnabled: benchmarkOptions.swarmDebugEnabled,
+        onDiagnostics: benchmarkOptions.swarmDebugEnabled
+          ? (diagnostics) => {
+            window.__ASS_MAGIC_SWARM_DEBUG__ = diagnostics;
+          }
+          : null,
+      });
+      canvas.dataset.swarmStatus = "active";
+      canvas.dataset.swarmPoints = String(nightSwarm.count);
+      canvas.dataset.swarmSimulated = String(nightSwarm.simulatedCount);
+      canvas.dataset.swarmLights = String(benchmarkOptions.swarm.lightCount);
+      canvas.dataset.swarmWidthScale = nightSwarm.dimensions.widthScale.toFixed(2);
+      canvas.dataset.swarmDepthScale = nightSwarm.dimensions.depthScale.toFixed(2);
+      canvas.dataset.swarmHeightScale = nightSwarm.dimensions.heightScale.toFixed(2);
+      canvas.dataset.swarmHomeAltitude = nightSwarm.dimensions.habitatAltitude.toFixed(2);
+      canvas.dataset.swarmPointSizeMultiplier = String(
+        nightSwarm.dimensions.pointSizeMultiplier,
+      );
+      canvas.dataset.swarmAvoidanceMultiplier = String(
+        nightSwarm.dimensions.avoidanceMultiplier,
+      );
+    }).catch((error) => {
+      canvas.dataset.swarmStatus = "disabled-error";
+      console.warn("[ASS MAGIC] Night swarm disabled; the main experience continues.", error);
     });
-    canvas.dataset.swarmStatus = "active";
-    canvas.dataset.swarmPoints = String(nightSwarm.count);
-    canvas.dataset.swarmSimulated = String(nightSwarm.simulatedCount);
-    canvas.dataset.swarmLights = String(benchmarkOptions.swarm.lightCount);
-    canvas.dataset.swarmWidthScale = nightSwarm.dimensions.widthScale.toFixed(2);
-    canvas.dataset.swarmDepthScale = nightSwarm.dimensions.depthScale.toFixed(2);
-    canvas.dataset.swarmHeightScale = nightSwarm.dimensions.heightScale.toFixed(2);
-    canvas.dataset.swarmHomeAltitude = nightSwarm.dimensions.habitatAltitude.toFixed(2);
-    canvas.dataset.swarmPointSizeMultiplier = String(
-      nightSwarm.dimensions.pointSizeMultiplier,
-    );
-    canvas.dataset.swarmAvoidanceMultiplier = String(
-      nightSwarm.dimensions.avoidanceMultiplier,
-    );
-  }).catch((error) => {
-    canvas.dataset.swarmStatus = "disabled-error";
-    console.warn("[ASS MAGIC BENCH] Night swarm disabled; the main experience continues.", error);
-  });
+  };
+  if (benchmarkOptions.swarmExplicit) {
+    initializeNightSwarm();
+  } else {
+    canvas.dataset.swarmStatus = "waiting-for-experience";
+    void experienceMode.whenSelected.then(() => {
+      window.setTimeout(initializeNightSwarm, 0);
+    });
+  }
 } else {
   canvas.dataset.swarmStatus = "disabled";
 }

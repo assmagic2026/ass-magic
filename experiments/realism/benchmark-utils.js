@@ -2,6 +2,19 @@ const SWARM_PATTERN = /^points(\d+)(?:_(avoid|group|light1|light3))?$/;
 const MAX_SWARM_COUNT = 25000;
 const MIN_DPR = 0.5;
 const MAX_DPR = 3;
+const PRODUCTION_SWARM_COUNT = 25000;
+
+const PRODUCTION_SWARM = Object.freeze({
+  enabled: true,
+  valid: true,
+  production: true,
+  label: "green-night-swarm",
+  count: PRODUCTION_SWARM_COUNT,
+  requestedCount: PRODUCTION_SWARM_COUNT,
+  avoid: true,
+  group: true,
+  lightCount: 0,
+});
 
 function parseDpr(value) {
   if (value === null || value.trim() === "") return null;
@@ -56,7 +69,10 @@ export function getBenchmarkOptions(source = globalThis.location?.search || "") 
     ? source
     : new URLSearchParams(source);
   const requestedDpr = parseDpr(params.get("dpr"));
-  const parsedSwarm = parseSwarmMode(params.get("swarm"));
+  const swarmExplicit = params.has("swarm");
+  const parsedSwarm = swarmExplicit
+    ? parseSwarmMode(params.get("swarm"))
+    : PRODUCTION_SWARM;
   const requestedSwarmCount = Number(params.get("swarmcount"));
   const swarmCount = Number.isInteger(requestedSwarmCount)
     && requestedSwarmCount >= 1
@@ -79,6 +95,7 @@ export function getBenchmarkOptions(source = globalThis.location?.search || "") 
     dprLocked: params.get("dprlock") === "1" || requestedDpr !== null,
     requestedDpr,
     swarm,
+    swarmExplicit,
     swarmDebugEnabled: params.get("swarmdebug") === "1",
     label: swarm.label,
   });
