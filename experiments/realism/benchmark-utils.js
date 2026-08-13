@@ -38,6 +38,10 @@ export function parseSwarmMode(value) {
     label: value,
     count,
     avoid: feature !== "points",
+    // All enabled modes now use MANY NEKO's live SchoolSimulation. The plain
+    // points label is the source-reference layer; suffixed modes add only the
+    // ASS-specific player adapter. Keep this flag for benchmark labels/API
+    // compatibility with the earlier staged prototype.
     group: feature === "group" || feature === "light1" || feature === "light3",
     // The current prototype intentionally measures motion only. Legacy light
     // labels remain parseable so old comparison URLs fail safely without
