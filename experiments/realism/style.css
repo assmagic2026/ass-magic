@@ -1447,6 +1447,28 @@ body.flight-mode.perf-enabled .perf-hud {
   display: block;
 }
 
+.swarm-debug {
+  position: fixed;
+  z-index: 26;
+  left: 18px;
+  bottom: 118px;
+  min-width: 182px;
+  padding: 11px 13px;
+  border: 1px solid rgba(220, 255, 142, 0.32);
+  border-radius: 12px;
+  background: rgba(5, 12, 14, 0.76);
+  color: rgba(235, 255, 194, 0.92);
+  font: 10px/1.55 "SFMono-Regular", Consolas, monospace;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
+.swarm-debug strong {
+  color: #f5ffd9;
+  letter-spacing: 0.16em;
+}
+
 .loading {
   position: fixed;
   z-index: 6;

@@ -32,15 +32,17 @@ export function parseSwarmMode(value) {
   }
 
   const feature = match[2] || "points";
-  const lightCount = feature === "light1" ? 1 : feature === "light3" ? 3 : 0;
   return Object.freeze({
     enabled: true,
     valid: true,
     label: value,
     count,
     avoid: feature !== "points",
-    group: feature === "group" || lightCount > 0,
-    lightCount,
+    group: feature === "group" || feature === "light1" || feature === "light3",
+    // The current prototype intentionally measures motion only. Legacy light
+    // labels remain parseable so old comparison URLs fail safely without
+    // enabling real lights before the boid movement is accepted.
+    lightCount: 0,
   });
 }
 
@@ -56,6 +58,7 @@ export function getBenchmarkOptions(source = globalThis.location?.search || "") 
     dprLocked: params.get("dprlock") === "1" || requestedDpr !== null,
     requestedDpr,
     swarm,
+    swarmDebugEnabled: params.get("swarmdebug") === "1",
     label: swarm.label,
   });
 }

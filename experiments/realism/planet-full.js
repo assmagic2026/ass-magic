@@ -4,8 +4,8 @@ import {
   MOBILE_HIGH_FLIGHT_DPR_POLICY,
   configureLinks,
   getExperimentSettings,
-} from "./quality.js?v=realism-5";
-import { PerformanceHud } from "./perf-hud.js?scope=whole-planet";
+} from "./quality.js?v=night-swarm-bench-2";
+import { PerformanceHud } from "./perf-hud.js?v=night-swarm-bench-2";
 import { createEnvironmentPhasing } from "./environment-phasing.js?v=kick-transition-1";
 import {
   createFlightPlayer,
@@ -22,7 +22,7 @@ import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-st
 import {
   BenchmarkReporter,
   getBenchmarkOptions,
-} from "./benchmark-utils.js?v=night-swarm-bench-1";
+} from "./benchmark-utils.js?v=night-swarm-bench-2";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -518,7 +518,7 @@ if (
   const habitatDirection = nightCrystals?.userData.previewDirection
     || SUN_DIRECTION.clone().multiplyScalar(-1).normalize();
   canvas.dataset.swarmStatus = "loading";
-  void import("./night-swarm.js?v=night-swarm-bench-1").then(({ createNightSwarm }) => {
+  void import("./night-swarm.js?v=night-swarm-bench-2").then(({ createNightSwarm }) => {
     if (rendererDisposed) return;
     nightSwarm = createNightSwarm({
       THREE,
@@ -527,6 +527,12 @@ if (
       centerDirection: habitatDirection,
       getSurfaceRadius,
       playerPosition: flight.position,
+      debugEnabled: benchmarkOptions.swarmDebugEnabled,
+      onDiagnostics: benchmarkOptions.swarmDebugEnabled
+        ? (diagnostics) => {
+          window.__ASS_MAGIC_SWARM_DEBUG__ = diagnostics;
+        }
+        : null,
     });
     canvas.dataset.swarmStatus = "active";
     canvas.dataset.swarmPoints = String(benchmarkOptions.swarm.count);
