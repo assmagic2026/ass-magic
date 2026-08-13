@@ -38,6 +38,7 @@ export class PerformanceHud {
     const markup = [
       `<strong>${scopeLabel}${modeLabel} / ${viewLabel}</strong>`,
       ...(this.settings.loadLabel ? [this.settings.loadLabel] : []),
+      ...(this.settings.benchmarkLabel ? [`BENCH&nbsp;&nbsp;&nbsp;&nbsp;${this.settings.benchmarkLabel}`] : []),
       `FPS AVG&nbsp;&nbsp;${(1000 / averageMs).toFixed(1)}`,
       `1% LOW&nbsp;&nbsp;${(1000 / p99Ms).toFixed(1)}`,
       `FRAME&nbsp;&nbsp;&nbsp;&nbsp;${averageMs.toFixed(1)} ms`,

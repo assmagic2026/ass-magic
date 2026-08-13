@@ -154,6 +154,7 @@ export class AdaptivePixelRatio {
     policy = null,
     storageKey = null,
     onEvaluation = null,
+    lockedRatio = null,
   } = {}) {
     this.renderer = renderer;
     this.preset = preset;
@@ -179,7 +180,10 @@ export class AdaptivePixelRatio {
     const requestedRatio = Number.isFinite(savedStart)
       ? savedStart
       : Number.isFinite(initialRatio) ? initialRatio : this.maximumRatio;
-    this.ratio = clampRatio(requestedRatio, this.minimumRatio, this.maximumRatio);
+    this.locked = Number.isFinite(lockedRatio);
+    this.ratio = this.locked
+      ? Math.round(Math.min(3, Math.max(0.5, lockedRatio)) * 100) / 100
+      : clampRatio(requestedRatio, this.minimumRatio, this.maximumRatio);
     this.settleSeconds = settleSeconds;
     this.elapsed = 0;
     this.samples = [];
@@ -196,7 +200,18 @@ export class AdaptivePixelRatio {
     renderer.setPixelRatio(this.ratio);
   }
 
+  lock(requestedRatio = this.ratio) {
+    if (!Number.isFinite(requestedRatio)) return false;
+    this.locked = true;
+    this.ratio = Math.round(Math.min(3, Math.max(0.5, requestedRatio)) * 100) / 100;
+    this.renderer.setPixelRatio(this.ratio);
+    this.clearWindow();
+    this.lastReason = "locked";
+    return true;
+  }
+
   sample(deltaSeconds) {
+    if (this.locked) return false;
     if (this.policy) return this.samplePolicy(deltaSeconds);
 
     const frameMs = deltaSeconds * 1000;
@@ -375,6 +390,7 @@ export class AdaptivePixelRatio {
   getDiagnostics() {
     return {
       policy: this.policy?.name || "legacy",
+      locked: this.locked,
       ratio: this.ratio,
       average: this.lastMetrics?.average ?? null,
       p95: this.lastMetrics?.p95 ?? null,

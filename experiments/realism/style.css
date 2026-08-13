@@ -1442,6 +1442,11 @@ body.flight-mode .help {
   display: none;
 }
 
+html:not([data-ass-debug="1"]) body.flight-mode.perf-enabled #perf-hud,
+body.flight-mode.perf-enabled .perf-hud {
+  display: block;
+}
+
 .loading {
   position: fixed;
   z-index: 6;

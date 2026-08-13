@@ -19,6 +19,10 @@ import {
   createExperienceModeController,
 } from "./experience-mode.js?v=chill-mode-1";
 import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-steering-1";
+import {
+  BenchmarkReporter,
+  getBenchmarkOptions,
+} from "./benchmark-utils.js?v=night-swarm-bench-1";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -175,6 +179,7 @@ const bootStartedAt = performance.now();
 const baseSettings = getExperimentSettings();
 const loadKey = baseSettings.mode === "current" ? "current" : baseSettings.quality;
 const bootParams = new URLSearchParams(window.location.search);
+const benchmarkOptions = getBenchmarkOptions(bootParams);
 const isMobileFlightProfile = baseSettings.view === "flight"
   && Math.min(window.innerWidth, window.innerHeight) <= 900
   && (
@@ -200,9 +205,13 @@ const settings = {
   preset: runtimePreset,
   scopeLabel: "WHOLE PLANET",
   loadLabel: `R340 ${meshLabel} / LANDMARK 8 / CLOUD ${planetLoad.cloudCount.toLocaleString()}`,
+  benchmarkLabel: benchmarkOptions.perfEnabled || benchmarkOptions.benchEnabled
+    ? benchmarkOptions.label
+    : null,
 };
 const terrainAssistDebugEnabled = new URLSearchParams(window.location.search).get("flightdebug") === "1";
 document.body.classList.toggle("flight-mode", settings.view === "flight");
+document.body.classList.toggle("perf-enabled", benchmarkOptions.perfEnabled);
 configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
@@ -271,6 +280,15 @@ const adaptiveDpr = new AdaptivePixelRatio(renderer, settings.preset, {
     }
     : null,
 });
+if (benchmarkOptions.dprLocked) {
+  adaptiveDpr.lock(benchmarkOptions.requestedDpr ?? adaptiveDpr.ratio);
+  canvas.dataset.dprLocked = "true";
+  canvas.dataset.dprLockRatio = adaptiveDpr.ratio.toFixed(2);
+}
+canvas.dataset.benchmarkLabel = benchmarkOptions.label;
+canvas.dataset.swarmMode = benchmarkOptions.swarm.valid
+  ? benchmarkOptions.swarm.label
+  : "invalid-fallback";
 if (mobileHighProfile) {
   const initialDprState = adaptiveDpr.getDiagnostics();
   canvas.dataset.adaptiveDprPolicy = initialDprState.policy;
@@ -491,6 +509,35 @@ const flight = {
   keys: new Set(),
   readoutElapsed: 0,
 };
+let nightSwarm = null;
+if (
+  benchmarkOptions.swarm.enabled
+  && settings.mode === "realism"
+  && settings.view === "flight"
+) {
+  const habitatDirection = nightCrystals?.userData.previewDirection
+    || SUN_DIRECTION.clone().multiplyScalar(-1).normalize();
+  canvas.dataset.swarmStatus = "loading";
+  void import("./night-swarm.js?v=night-swarm-bench-1").then(({ createNightSwarm }) => {
+    if (rendererDisposed) return;
+    nightSwarm = createNightSwarm({
+      THREE,
+      scene,
+      config: benchmarkOptions.swarm,
+      centerDirection: habitatDirection,
+      getSurfaceRadius,
+      playerPosition: flight.position,
+    });
+    canvas.dataset.swarmStatus = "active";
+    canvas.dataset.swarmPoints = String(benchmarkOptions.swarm.count);
+    canvas.dataset.swarmLights = String(benchmarkOptions.swarm.lightCount);
+  }).catch((error) => {
+    canvas.dataset.swarmStatus = "disabled-error";
+    console.warn("[ASS MAGIC BENCH] Night swarm disabled; the main experience continues.", error);
+  });
+} else {
+  canvas.dataset.swarmStatus = "disabled";
+}
 const REAL_SKATE = {
   active: false,
   descending: false,
@@ -1257,6 +1304,18 @@ const perfHud = new PerformanceHud(
   settings,
   startupMs,
 );
+const benchmarkReporter = new BenchmarkReporter({
+  enabled: benchmarkOptions.benchEnabled && settings.view === "flight",
+  renderer,
+  settings,
+  label: benchmarkOptions.label,
+  startupMs,
+  onReport(summary) {
+    window.__ASS_MAGIC_BENCHMARK__ = summary;
+    canvas.dataset.benchmarkFps = summary.fpsAvg.toFixed(1);
+    canvas.dataset.benchmarkFps1Low = summary.fps1Low.toFixed(1);
+  },
+});
 
 setupSiteMenu();
 setupInteraction();
@@ -1296,7 +1355,8 @@ void prepareOpening();
 const clock = new THREE.Clock();
 let elapsed = 0;
 renderer.setAnimationLoop(() => {
-  const delta = Math.min(clock.getDelta(), 0.1);
+  const rawDelta = clock.getDelta();
+  const delta = Math.min(rawDelta, 0.1);
   elapsed += delta;
   const simulationRunning = openingPhase === "running";
   let simulationDelta = 0;
@@ -1348,6 +1408,16 @@ renderer.setAnimationLoop(() => {
   }
   if (water) updateWaterSurface(water, elapsed, delta);
   if (nightCrystals) updateNightCrystals(nightCrystals, elapsed);
+  if (nightSwarm && simulationRunning) {
+    try {
+      nightSwarm.update(simulationDelta);
+    } catch (error) {
+      nightSwarm.dispose();
+      nightSwarm = null;
+      canvas.dataset.swarmStatus = "disabled-error";
+      console.warn("[ASS MAGIC BENCH] Night swarm update failed and was disabled.", error);
+    }
+  }
   if (atmosphere) atmosphere.material.uniforms.cameraPos.value.copy(camera.position);
   if (sky) {
     sky.position.copy(camera.position);
@@ -1357,6 +1427,9 @@ renderer.setAnimationLoop(() => {
   updateFlightShadow();
   if (!environmentPhasing?.renderWarpedFrame()) renderer.render(scene, camera);
   perfHud.update(delta, adaptiveDpr.ratio);
+  if (simulationRunning) {
+    benchmarkReporter.update(rawDelta, adaptiveDpr.ratio);
+  }
 });
 
 function createPlanet() {
@@ -6238,6 +6311,7 @@ window.addEventListener("pagehide", (event) => {
   rendererDisposed = true;
   renderer.setAnimationLoop(null);
   environmentPhasing?.dispose();
+  nightSwarm?.dispose();
   textureDisposables.forEach((texture) => texture.dispose());
   surfaceGeometryDisposables.forEach((geometry) => geometry.dispose());
   surfaceMaterialDisposables.forEach((material) => material.dispose());
