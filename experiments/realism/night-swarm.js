@@ -8,9 +8,15 @@ const MANY_NEKO_SPEED_MULTIPLIER = 3;
 const BASE_HORIZONTAL_SCALE = 6;
 const BASE_VERTICAL_SCALE = 4;
 const BASE_HABITAT_ALTITUDE = 24;
-const PLAYER_MID_RADIUS = 34;
-const PLAYER_NEAR_RADIUS = 17;
-const PLAYER_PANIC_RADIUS = 7;
+const HABITAT_WIDTH_MULTIPLIER = 2.5;
+const HABITAT_DEPTH_MULTIPLIER = 3;
+const HABITAT_HEIGHT_MULTIPLIER = 4;
+const HABITAT_ALTITUDE_LIFT = 15;
+const POINT_SIZE_MULTIPLIER = 1.8;
+const PLAYER_AVOIDANCE_MULTIPLIER = 1.75;
+const PLAYER_MID_RADIUS = 34 * PLAYER_AVOIDANCE_MULTIPLIER;
+const PLAYER_NEAR_RADIUS = 17 * PLAYER_AVOIDANCE_MULTIPLIER;
+const PLAYER_PANIC_RADIUS = 7 * PLAYER_AVOIDANCE_MULTIPLIER;
 const PLAYER_SCATTER_COOLDOWN = 0.7;
 const EPSILON = 0.000001;
 
@@ -28,11 +34,11 @@ function interpolateProfile(count, entries) {
 }
 
 function createGlowMaterial(THREE, count) {
-  const pointSize = count <= 250 ? 7.1
+  const pointSize = (count <= 250 ? 7.1
     : count <= 2500 ? 5.9
       : count <= 5000 ? 5.3
         : count <= 10000 ? 4.8
-          : 4.2;
+          : 4.2) * POINT_SIZE_MULTIPLIER;
   const haloPower = count <= 2500 ? 2.35
     : count <= 5000 ? 2.65
       : count <= 10000 ? 2.95
@@ -74,8 +80,9 @@ function createGlowMaterial(THREE, count) {
         if (radius >= 1.0) discard;
         float halo = pow(1.0 - radius, haloPower);
         float core = 1.0 - smoothstep(0.0, 0.24, radius);
+        vec3 coreColor = mix(vColor, vec3(0.46, 1.0, 0.50), 0.62);
         gl_FragColor = vec4(
-          vColor * (0.84 + core * 1.42) * vPulse,
+          (vColor * (0.78 + halo * 0.34) + coreColor * core * 1.48) * vPulse,
           (halo * 0.54 + core * 0.22) * vPulse
         );
       }
@@ -164,11 +171,15 @@ export function createNightSwarm({
     [10000, 1.8],
     [25000, 2.65],
   ]);
-  const horizontalScale = BASE_HORIZONTAL_SCALE * spatialFactor;
-  const verticalScale = BASE_VERTICAL_SCALE * (1 + (spatialFactor - 1) * 0.72);
+  const baseHorizontalScale = BASE_HORIZONTAL_SCALE * spatialFactor;
+  const baseVerticalScale = BASE_VERTICAL_SCALE * (1 + (spatialFactor - 1) * 0.72);
+  const widthScale = baseHorizontalScale * HABITAT_WIDTH_MULTIPLIER;
+  const depthScale = baseHorizontalScale * HABITAT_DEPTH_MULTIPLIER;
+  const verticalScale = baseVerticalScale * HABITAT_HEIGHT_MULTIPLIER;
   const habitatAltitude = BASE_HABITAT_ALTITUDE
-    + Math.max(0, verticalScale - BASE_VERTICAL_SCALE) * 5.2
-    + (count > 2500 ? 18 : 0);
+    + Math.max(0, baseVerticalScale - BASE_VERTICAL_SCALE) * 5.2
+    + (count > 2500 ? 18 : 0)
+    + HABITAT_ALTITUDE_LIFT;
   const school = new SchoolSimulation(
     simulatedCount,
     sourceConfig.school,
@@ -203,15 +214,24 @@ export function createNightSwarm({
     glowPhases[index] = sourcePhase + index * 0.754877666;
     const sizeRoll = (index * 0.61803398875 + sourcePhase * 0.031) % 1;
     sizeScales[index] = sizeRoll < 0.7 ? 1
-      : sizeRoll < 0.9 ? 1.3
-        : sizeRoll < 0.98 ? 1.8
-          : 2.5;
+      : sizeRoll < 0.9 ? 1.25
+        : sizeRoll < 0.98 ? 1.6
+          : 2;
     const layer = Math.floor(index / simulatedCount);
     const followerRoll = (index * 0.569840296 + sourcePhase * 0.071) % 1;
     followerRadius[index] = layer === 0 ? 0 : (0.055 + followerRoll * 0.19);
     followerPhase[index] = glowPhases[index] * 1.618033989;
     followerVertical[index] = ((index * 0.438447187) % 1) * 2 - 1;
-    color.setHSL(0.155 + (school.shine[sourceIndex] || 0.5) * 0.055, 0.78, 0.72);
+    const colorRoll = (index * 0.754877666 + sourcePhase * 0.043) % 1;
+    color.setHex(colorRoll < 0.6 ? 0x63e878
+      : colorRoll < 0.85 ? 0x38d96b
+        : colorRoll < 0.95 ? 0x28c986
+          : 0xa8ff91);
+    color.offsetHSL(
+      ((school.shine[sourceIndex] || 0.5) - 0.5) * 0.012,
+      0,
+      ((school.shine[sourceIndex] || 0.5) - 0.5) * 0.035,
+    );
     colors[offset] = color.r;
     colors[offset + 1] = color.g;
     colors[offset + 2] = color.b;
@@ -252,8 +272,8 @@ export function createNightSwarm({
 
   const localToWorld = (x, y, z, out) => {
     mappedDirection.copy(habitatUp)
-      .addScaledVector(tangentA, x * horizontalScale / homeSurfaceRadius)
-      .addScaledVector(tangentB, z * horizontalScale / homeSurfaceRadius)
+      .addScaledVector(tangentA, x * widthScale / homeSurfaceRadius)
+      .addScaledVector(tangentB, z * depthScale / homeSurfaceRadius)
       .normalize();
     // Terrain sampling every point is retained through 2,500. High-count LOD
     // uses the habitat's sampled radius plus added clearance, avoiding tens of
@@ -273,9 +293,9 @@ export function createNightSwarm({
     if (forward <= 0.15) return out.set(1e6, 1e6, 1e6);
     const surfaceRadius = getSurfaceRadius(playerDirection);
     out.set(
-      playerDirection.dot(tangentA) / forward * homeSurfaceRadius / horizontalScale,
+      playerDirection.dot(tangentA) / forward * homeSurfaceRadius / widthScale,
       (radius - surfaceRadius - habitatAltitude) / verticalScale,
-      playerDirection.dot(tangentB) / forward * homeSurfaceRadius / horizontalScale,
+      playerDirection.dot(tangentB) / forward * homeSurfaceRadius / depthScale,
     );
     return out;
   };
@@ -306,9 +326,9 @@ export function createNightSwarm({
     const v = school.velocities;
     for (let index = 0; index < school.count; index += 1) {
       const offset = index * 3;
-      const dx = (p[offset] - localPlayer.x) * horizontalScale;
+      const dx = (p[offset] - localPlayer.x) * widthScale;
       const dy = (p[offset + 1] - localPlayer.y) * verticalScale;
-      const dz = (p[offset + 2] - localPlayer.z) * horizontalScale;
+      const dz = (p[offset + 2] - localPlayer.z) * depthScale;
       const distance = Math.hypot(dx, dy, dz);
       if (distance < PLAYER_MID_RADIUS && distance >= EPSILON) {
         const midPressure = 1 - distance / PLAYER_MID_RADIUS;
@@ -322,18 +342,18 @@ export function createNightSwarm({
           + nearPressure * nearPressure * 4.6
           + panicPressure * panicPressure * 9.5;
         const inverseDistance = 1 / distance;
-        v[offset] += dx * inverseDistance * force * delta / horizontalScale;
+        v[offset] += dx * inverseDistance * force * delta / widthScale;
         v[offset + 1] += dy * inverseDistance * force * delta / verticalScale;
-        v[offset + 2] += dz * inverseDistance * force * delta / horizontalScale;
+        v[offset + 2] += dz * inverseDistance * force * delta / depthScale;
 
         if (panicPressure > 0) {
           // A per-individual sideways/upward component opens a hole around the
           // player instead of translating the school as one rigid block.
           const phase = school.phase[index] + elapsed * (1.1 + school.reaction[index] * 0.25);
           const sideForce = panicPressure * 2.2 * delta;
-          v[offset] += Math.cos(phase) * sideForce / horizontalScale;
+          v[offset] += Math.cos(phase) * sideForce / widthScale;
           v[offset + 1] += Math.sin(phase * 0.73) * sideForce * 0.75 / verticalScale;
-          v[offset + 2] += Math.sin(phase) * sideForce / horizontalScale;
+          v[offset + 2] += Math.sin(phase) * sideForce / depthScale;
         }
       }
 
@@ -387,9 +407,9 @@ export function createNightSwarm({
     for (let index = 0; index < school.count; index += 1) {
       const offset = index * 3;
       const worldSpeed = Math.hypot(
-        v[offset] * horizontalScale,
+        v[offset] * widthScale,
         v[offset + 1] * verticalScale,
-        v[offset + 2] * horizontalScale,
+        v[offset + 2] * depthScale,
       );
       if (worldSpeed >= movingThreshold) simulatedMoving += 1;
       speedTotal += worldSpeed;
@@ -423,6 +443,12 @@ export function createNightSwarm({
       swarmSimulationMs: simulationMsAverage,
       swarmMappingMs: mappingMsAverage,
       spatialFactor,
+      widthScale,
+      depthScale,
+      heightScale: verticalScale,
+      habitatAltitude,
+      pointSizeMultiplier: POINT_SIZE_MULTIPLIER,
+      avoidanceMultiplier: PLAYER_AVOIDANCE_MULTIPLIER,
     });
     if (debugHud) {
       const playerText = Number.isFinite(playerDistance) ? playerDistance.toFixed(1) : "--";
@@ -451,6 +477,14 @@ export function createNightSwarm({
     count,
     simulatedCount,
     population,
+    dimensions: Object.freeze({
+      widthScale,
+      depthScale,
+      heightScale: verticalScale,
+      habitatAltitude,
+      pointSizeMultiplier: POINT_SIZE_MULTIPLIER,
+      avoidanceMultiplier: PLAYER_AVOIDANCE_MULTIPLIER,
+    }),
     points,
     school,
     sourceReferenceOnly,

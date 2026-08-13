@@ -510,15 +510,92 @@ const flight = {
   readoutElapsed: 0,
 };
 let nightSwarm = null;
+
+function selectNightSwarmHomeDirection() {
+  const brightDirections = [];
+  const addObjectDirection = (label, object) => {
+    if (!object?.position || object.position.lengthSq() < 0.000001) return;
+    brightDirections.push({ label, direction: object.position.clone().normalize() });
+  };
+  addObjectDirection("whiteSphere", specialLandmarks.objects.whiteSphere);
+  addObjectDirection("sanctuary", specialLandmarks.objects.sanctuary);
+  for (const [index, direction] of (nightCrystals?.userData.majorClusterDirections || []).entries()) {
+    if (!direction || direction.lengthSq() < 0.000001) continue;
+    brightDirections.push({ label: `crystal-${index}`, direction: direction.clone().normalize() });
+  }
+
+  const candidate = new THREE.Vector3();
+  let bestDirection = null;
+  let bestScore = -Infinity;
+  let bestMinimumDistance = 0;
+  let bestNearestLabel = "none";
+  const candidateCount = 256;
+  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+  for (let index = 0; index < candidateCount; index += 1) {
+    const y = 1 - 2 * (index + 0.5) / candidateCount;
+    const horizontalRadius = Math.sqrt(Math.max(0, 1 - y * y));
+    const angle = index * goldenAngle;
+    candidate.set(
+      Math.cos(angle) * horizontalRadius,
+      y,
+      Math.sin(angle) * horizontalRadius,
+    );
+    const sunDepth = -candidate.dot(SUN_DIRECTION);
+    // Stay unmistakably inside the night region, but avoid the exact night
+    // antipode where the white sphere is the dominant landmark.
+    if (sunDepth < 0.3 || sunDepth > 0.92) continue;
+
+    let minimumDistance = Infinity;
+    let nearestLabel = "none";
+    for (const bright of brightDirections) {
+      const distance = candidate.distanceTo(bright.direction);
+      if (distance < minimumDistance) {
+        minimumDistance = distance;
+        nearestLabel = bright.label;
+      }
+    }
+    // Maximise the nearest spherical landmark gap. A tiny middle-night bias
+    // breaks near-ties without turning the selection into a hard-coded point.
+    const discoveryBias = 1 - Math.abs(sunDepth - 0.58) / 0.62;
+    const score = minimumDistance + Math.max(0, discoveryBias) * 0.025;
+    if (score <= bestScore) continue;
+    bestScore = score;
+    bestMinimumDistance = minimumDistance;
+    bestNearestLabel = nearestLabel;
+    bestDirection = candidate.clone();
+  }
+
+  const direction = bestDirection
+    || SUN_DIRECTION.clone().multiplyScalar(-1).normalize();
+  return {
+    direction,
+    candidateCount,
+    landmarkCount: brightDirections.length,
+    minimumChordDistance: bestMinimumDistance,
+    minimumAngularDistance: 2 * Math.asin(Math.min(1, bestMinimumDistance * 0.5)),
+    nearestLabel: bestNearestLabel,
+  };
+}
+
 if (
   benchmarkOptions.swarm.enabled
   && settings.mode === "realism"
   && settings.view === "flight"
 ) {
-  const habitatDirection = nightCrystals?.userData.previewDirection
-    || SUN_DIRECTION.clone().multiplyScalar(-1).normalize();
+  const habitatSelection = selectNightSwarmHomeDirection();
+  const habitatDirection = habitatSelection.direction;
+  specialLandmarks.directions.swarm = habitatDirection.clone();
+  canvas.dataset.swarmHomeDirection = habitatDirection.toArray()
+    .map((value) => value.toFixed(5))
+    .join(",");
+  canvas.dataset.swarmHomeCandidates = String(habitatSelection.candidateCount);
+  canvas.dataset.swarmHomeLandmarks = String(habitatSelection.landmarkCount);
+  canvas.dataset.swarmHomeNearest = habitatSelection.nearestLabel;
+  canvas.dataset.swarmHomeClearanceDeg = THREE.MathUtils.radToDeg(
+    habitatSelection.minimumAngularDistance,
+  ).toFixed(1);
   canvas.dataset.swarmStatus = "loading";
-  void import("./night-swarm.js?v=night-swarm-bench-9").then(({ createNightSwarm }) => {
+  void import("./night-swarm.js?v=night-swarm-bench-10").then(({ createNightSwarm }) => {
     if (rendererDisposed) return;
     nightSwarm = createNightSwarm({
       THREE,
@@ -539,6 +616,16 @@ if (
     canvas.dataset.swarmPoints = String(nightSwarm.count);
     canvas.dataset.swarmSimulated = String(nightSwarm.simulatedCount);
     canvas.dataset.swarmLights = String(benchmarkOptions.swarm.lightCount);
+    canvas.dataset.swarmWidthScale = nightSwarm.dimensions.widthScale.toFixed(2);
+    canvas.dataset.swarmDepthScale = nightSwarm.dimensions.depthScale.toFixed(2);
+    canvas.dataset.swarmHeightScale = nightSwarm.dimensions.heightScale.toFixed(2);
+    canvas.dataset.swarmHomeAltitude = nightSwarm.dimensions.habitatAltitude.toFixed(2);
+    canvas.dataset.swarmPointSizeMultiplier = String(
+      nightSwarm.dimensions.pointSizeMultiplier,
+    );
+    canvas.dataset.swarmAvoidanceMultiplier = String(
+      nightSwarm.dimensions.avoidanceMultiplier,
+    );
   }).catch((error) => {
     canvas.dataset.swarmStatus = "disabled-error";
     console.warn("[ASS MAGIC BENCH] Night swarm disabled; the main experience continues.", error);
@@ -3662,6 +3749,10 @@ function addRealismNightCrystals(random) {
   group.userData.clusterCount = clustersPlaced;
   group.userData.geometryCount = geometryCount;
   group.userData.previewDirection = previewDirection;
+  group.userData.clusterDirections = placedCenters.map((direction) => direction.clone());
+  group.userData.majorClusterDirections = placedCenters
+    .slice(0, 3)
+    .map((direction) => direction.clone());
   scene.add(group);
   canvas.dataset.crystalCount = String(instanceCount);
   canvas.dataset.crystalClusters = String(clustersPlaced);
@@ -5738,7 +5829,9 @@ function resetFlight() {
     cave: 0.32,
     vent: 0.11,
   };
-  const approachAngle = featureApproachAngles[startPreset] || (isDuskStart ? 0.42 : 0.18);
+  const approachAngle = startPreset === "swarm" && benchmarkOptions.swarm.enabled
+    ? 0.82
+    : featureApproachAngles[startPreset] || (isDuskStart ? 0.42 : 0.18);
   let startDirection = isSunsetStart
     ? targetDirection.clone()
     : targetDirection.clone()
