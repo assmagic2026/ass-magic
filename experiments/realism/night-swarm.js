@@ -5,16 +5,38 @@ import { SchoolSimulation } from "./many-neko-school.js?v=20260803c11";
 // 1,000 reference creatures, 3x fish speed, and maxSteer scaled by 3^2.
 const MANY_NEKO_REFERENCE_COUNT = 1000;
 const MANY_NEKO_SPEED_MULTIPLIER = 3;
-const LOCAL_HORIZONTAL_SCALE = 6;
-const LOCAL_VERTICAL_SCALE = 4;
-const HABITAT_ALTITUDE = 24;
+const BASE_HORIZONTAL_SCALE = 6;
+const BASE_VERTICAL_SCALE = 4;
+const BASE_HABITAT_ALTITUDE = 24;
 const PLAYER_MID_RADIUS = 34;
 const PLAYER_NEAR_RADIUS = 17;
 const PLAYER_PANIC_RADIUS = 7;
 const PLAYER_SCATTER_COOLDOWN = 0.7;
 const EPSILON = 0.000001;
 
-function createGlowMaterial(THREE) {
+function interpolateProfile(count, entries) {
+  if (count <= entries[0][0]) return entries[0][1];
+  for (let index = 1; index < entries.length; index += 1) {
+    const [upperCount, upperValue] = entries[index];
+    const [lowerCount, lowerValue] = entries[index - 1];
+    if (count <= upperCount) {
+      const mix = (count - lowerCount) / (upperCount - lowerCount);
+      return lowerValue + (upperValue - lowerValue) * mix;
+    }
+  }
+  return entries[entries.length - 1][1];
+}
+
+function createGlowMaterial(THREE, count) {
+  const pointSize = count <= 250 ? 7.1
+    : count <= 2500 ? 5.9
+      : count <= 5000 ? 5.3
+        : count <= 10000 ? 4.8
+          : 4.2;
+  const haloPower = count <= 2500 ? 2.35
+    : count <= 5000 ? 2.65
+      : count <= 10000 ? 2.95
+        : 3.3;
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -23,13 +45,15 @@ function createGlowMaterial(THREE) {
     vertexColors: true,
     toneMapped: false,
     uniforms: {
-      pointSize: { value: 4.7 },
+      pointSize: { value: pointSize },
       swarmTime: { value: 0 },
+      haloPower: { value: haloPower },
     },
     vertexShader: `
       uniform float pointSize;
       uniform float swarmTime;
       attribute float glowPhase;
+      attribute float sizeScale;
       varying vec3 vColor;
       varying float vPulse;
       void main() {
@@ -37,21 +61,22 @@ function createGlowMaterial(THREE) {
         vPulse = 0.94 + sin(swarmTime * 0.72 + glowPhase) * 0.06;
         vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
         gl_Position = projectionMatrix * viewPosition;
-        gl_PointSize = pointSize * vPulse
+        gl_PointSize = pointSize * sizeScale * vPulse
           * clamp(250.0 / max(1.0, -viewPosition.z), 0.72, 3.0);
       }
     `,
     fragmentShader: `
       varying vec3 vColor;
       varying float vPulse;
+      uniform float haloPower;
       void main() {
         float radius = length(gl_PointCoord - vec2(0.5)) * 2.0;
         if (radius >= 1.0) discard;
-        float halo = pow(1.0 - radius, 2.35);
+        float halo = pow(1.0 - radius, haloPower);
         float core = 1.0 - smoothstep(0.0, 0.24, radius);
         gl_FragColor = vec4(
-          vColor * (1.08 + core * 1.92) * vPulse,
-          (halo * 0.74 + core * 0.26) * vPulse
+          vColor * (0.84 + core * 1.42) * vPulse,
+          (halo * 0.54 + core * 0.22) * vPulse
         );
       }
     `,
@@ -73,6 +98,7 @@ function createDebugHud(count, adapterEnabled) {
     "max speed: --",
     "distance from home: --",
     "player distance: --",
+    "swarm update: -- ms",
   ].join("<br>");
   document.body.append(element);
   return element;
@@ -95,6 +121,22 @@ function makeSourceConfigs(count) {
   return { fish, school, water, count };
 }
 
+function resolvePopulation(requestedCount, quality) {
+  const coarsePointer = globalThis.matchMedia?.("(pointer: coarse)")?.matches === true;
+  const normalizedQuality = quality === "high" || quality === "standard" || quality === "low"
+    ? quality
+    : "standard";
+  const cap = coarsePointer
+    ? { high: 10000, standard: 5000, low: 2500 }[normalizedQuality]
+    : { high: 25000, standard: 15000, low: 10000 }[normalizedQuality];
+  const count = Math.min(requestedCount, cap);
+  // Above 2,500, extra points are visual LOD followers attached to a source
+  // boid. This preserves the live MANY NEKO solver while keeping its CPU cost
+  // bounded for 10k/25k rendering experiments.
+  const simulatedCount = Math.min(count, 2500);
+  return { requestedCount, count, simulatedCount, cap, coarsePointer };
+}
+
 export function createNightSwarm({
   THREE,
   scene,
@@ -102,6 +144,7 @@ export function createNightSwarm({
   centerDirection,
   getSurfaceRadius,
   playerPosition,
+  quality = "standard",
   debugEnabled = false,
   onDiagnostics = null,
 }) {
@@ -110,9 +153,24 @@ export function createNightSwarm({
     throw new TypeError("Night swarm requires a scene, a habitat direction, and a surface sampler.");
   }
 
-  const sourceConfig = makeSourceConfigs(config.count);
+  const population = resolvePopulation(config.count, quality);
+  const count = population.count;
+  const simulatedCount = population.simulatedCount;
+  const sourceConfig = makeSourceConfigs(simulatedCount);
+  const spatialFactor = interpolateProfile(count, [
+    [250, 1],
+    [2500, 1.15],
+    [5000, 1.35],
+    [10000, 1.8],
+    [25000, 2.65],
+  ]);
+  const horizontalScale = BASE_HORIZONTAL_SCALE * spatialFactor;
+  const verticalScale = BASE_VERTICAL_SCALE * (1 + (spatialFactor - 1) * 0.72);
+  const habitatAltitude = BASE_HABITAT_ALTITUDE
+    + Math.max(0, verticalScale - BASE_VERTICAL_SCALE) * 5.2
+    + (count > 2500 ? 18 : 0);
   const school = new SchoolSimulation(
-    config.count,
+    simulatedCount,
     sourceConfig.school,
     sourceConfig.fish,
     sourceConfig.water,
@@ -126,16 +184,34 @@ export function createNightSwarm({
   const tangentA = new THREE.Vector3().crossVectors(referenceAxis, habitatUp).normalize();
   const tangentB = new THREE.Vector3().crossVectors(habitatUp, tangentA).normalize();
   const homeSurfaceRadius = getSurfaceRadius(habitatUp);
-  const homeCenter = habitatUp.clone().multiplyScalar(homeSurfaceRadius + HABITAT_ALTITUDE);
+  const homeCenter = habitatUp.clone().multiplyScalar(homeSurfaceRadius + habitatAltitude);
 
-  const positions = new Float32Array(config.count * 3);
-  const colors = new Float32Array(config.count * 3);
-  const glowPhases = new Float32Array(config.count);
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const glowPhases = new Float32Array(count);
+  const sizeScales = new Float32Array(count);
+  const sourceIndices = new Uint16Array(count);
+  const followerRadius = new Float32Array(count);
+  const followerPhase = new Float32Array(count);
+  const followerVertical = new Float32Array(count);
   const color = new THREE.Color();
-  for (let index = 0; index < config.count; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     const offset = index * 3;
-    glowPhases[index] = school.phase[index];
-    color.setHSL(0.155 + (school.shine[index] || 0.5) * 0.055, 0.78, 0.72);
+    const sourceIndex = index % simulatedCount;
+    const sourcePhase = school.phase[sourceIndex];
+    sourceIndices[index] = sourceIndex;
+    glowPhases[index] = sourcePhase + index * 0.754877666;
+    const sizeRoll = (index * 0.61803398875 + sourcePhase * 0.031) % 1;
+    sizeScales[index] = sizeRoll < 0.7 ? 1
+      : sizeRoll < 0.9 ? 1.3
+        : sizeRoll < 0.98 ? 1.8
+          : 2.5;
+    const layer = Math.floor(index / simulatedCount);
+    const followerRoll = (index * 0.569840296 + sourcePhase * 0.071) % 1;
+    followerRadius[index] = layer === 0 ? 0 : (0.055 + followerRoll * 0.19);
+    followerPhase[index] = glowPhases[index] * 1.618033989;
+    followerVertical[index] = ((index * 0.438447187) % 1) * 2 - 1;
+    color.setHSL(0.155 + (school.shine[sourceIndex] || 0.5) * 0.055, 0.78, 0.72);
     colors[offset] = color.r;
     colors[offset + 1] = color.g;
     colors[offset + 2] = color.b;
@@ -147,7 +223,8 @@ export function createNightSwarm({
   geometry.setAttribute("position", positionAttribute);
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
   geometry.setAttribute("glowPhase", new THREE.BufferAttribute(glowPhases, 1));
-  const material = createGlowMaterial(THREE);
+  geometry.setAttribute("sizeScale", new THREE.BufferAttribute(sizeScales, 1));
+  const material = createGlowMaterial(THREE, count);
   const points = new THREE.Points(geometry, material);
   points.name = `NightSwarm_ManyNeko_${config.label}`;
   points.frustumCulled = false;
@@ -160,7 +237,7 @@ export function createNightSwarm({
   const mappedCenter = new THREE.Vector3();
   const playerDirection = new THREE.Vector3();
   const playerWorld = new THREE.Vector3();
-  const debugHud = debugEnabled ? createDebugHud(config.count, assAdapterEnabled) : null;
+  const debugHud = debugEnabled ? createDebugHud(count, assAdapterEnabled) : null;
   const diagnosticsCallback = typeof onDiagnostics === "function" ? onDiagnostics : null;
   let elapsed = 0;
   let debugElapsed = 0;
@@ -168,14 +245,23 @@ export function createNightSwarm({
   let wasInsidePanicRadius = false;
   let disposed = false;
   let latestDiagnostics = null;
+  let updateMsAverage = 0;
+  let simulationMsAverage = 0;
+  let mappingMsAverage = 0;
+  let timingSamples = 0;
 
   const localToWorld = (x, y, z, out) => {
     mappedDirection.copy(habitatUp)
-      .addScaledVector(tangentA, x * LOCAL_HORIZONTAL_SCALE / homeSurfaceRadius)
-      .addScaledVector(tangentB, z * LOCAL_HORIZONTAL_SCALE / homeSurfaceRadius)
+      .addScaledVector(tangentA, x * horizontalScale / homeSurfaceRadius)
+      .addScaledVector(tangentB, z * horizontalScale / homeSurfaceRadius)
       .normalize();
-    const surfaceRadius = getSurfaceRadius(mappedDirection);
-    const altitude = HABITAT_ALTITUDE + y * LOCAL_VERTICAL_SCALE;
+    // Terrain sampling every point is retained through 2,500. High-count LOD
+    // uses the habitat's sampled radius plus added clearance, avoiding tens of
+    // thousands of terrain-noise evaluations per frame.
+    const surfaceRadius = count <= 2500
+      ? getSurfaceRadius(mappedDirection)
+      : homeSurfaceRadius;
+    const altitude = habitatAltitude + y * verticalScale;
     return out.copy(mappedDirection).multiplyScalar(surfaceRadius + altitude);
   };
 
@@ -187,9 +273,9 @@ export function createNightSwarm({
     if (forward <= 0.15) return out.set(1e6, 1e6, 1e6);
     const surfaceRadius = getSurfaceRadius(playerDirection);
     out.set(
-      playerDirection.dot(tangentA) / forward * homeSurfaceRadius / LOCAL_HORIZONTAL_SCALE,
-      (radius - surfaceRadius - HABITAT_ALTITUDE) / LOCAL_VERTICAL_SCALE,
-      playerDirection.dot(tangentB) / forward * homeSurfaceRadius / LOCAL_HORIZONTAL_SCALE,
+      playerDirection.dot(tangentA) / forward * homeSurfaceRadius / horizontalScale,
+      (radius - surfaceRadius - habitatAltitude) / verticalScale,
+      playerDirection.dot(tangentB) / forward * homeSurfaceRadius / horizontalScale,
     );
     return out;
   };
@@ -220,9 +306,9 @@ export function createNightSwarm({
     const v = school.velocities;
     for (let index = 0; index < school.count; index += 1) {
       const offset = index * 3;
-      const dx = (p[offset] - localPlayer.x) * LOCAL_HORIZONTAL_SCALE;
-      const dy = (p[offset + 1] - localPlayer.y) * LOCAL_VERTICAL_SCALE;
-      const dz = (p[offset + 2] - localPlayer.z) * LOCAL_HORIZONTAL_SCALE;
+      const dx = (p[offset] - localPlayer.x) * horizontalScale;
+      const dy = (p[offset + 1] - localPlayer.y) * verticalScale;
+      const dz = (p[offset + 2] - localPlayer.z) * horizontalScale;
       const distance = Math.hypot(dx, dy, dz);
       if (distance < PLAYER_MID_RADIUS && distance >= EPSILON) {
         const midPressure = 1 - distance / PLAYER_MID_RADIUS;
@@ -236,18 +322,18 @@ export function createNightSwarm({
           + nearPressure * nearPressure * 4.6
           + panicPressure * panicPressure * 9.5;
         const inverseDistance = 1 / distance;
-        v[offset] += dx * inverseDistance * force * delta / LOCAL_HORIZONTAL_SCALE;
-        v[offset + 1] += dy * inverseDistance * force * delta / LOCAL_VERTICAL_SCALE;
-        v[offset + 2] += dz * inverseDistance * force * delta / LOCAL_HORIZONTAL_SCALE;
+        v[offset] += dx * inverseDistance * force * delta / horizontalScale;
+        v[offset + 1] += dy * inverseDistance * force * delta / verticalScale;
+        v[offset + 2] += dz * inverseDistance * force * delta / horizontalScale;
 
         if (panicPressure > 0) {
           // A per-individual sideways/upward component opens a hole around the
           // player instead of translating the school as one rigid block.
           const phase = school.phase[index] + elapsed * (1.1 + school.reaction[index] * 0.25);
           const sideForce = panicPressure * 2.2 * delta;
-          v[offset] += Math.cos(phase) * sideForce / LOCAL_HORIZONTAL_SCALE;
-          v[offset + 1] += Math.sin(phase * 0.73) * sideForce * 0.75 / LOCAL_VERTICAL_SCALE;
-          v[offset + 2] += Math.sin(phase) * sideForce / LOCAL_HORIZONTAL_SCALE;
+          v[offset] += Math.cos(phase) * sideForce / horizontalScale;
+          v[offset + 1] += Math.sin(phase * 0.73) * sideForce * 0.75 / verticalScale;
+          v[offset + 2] += Math.sin(phase) * sideForce / horizontalScale;
         }
       }
 
@@ -267,9 +353,21 @@ export function createNightSwarm({
 
   const writeWorldPositions = () => {
     const p = school.positions;
-    for (let index = 0; index < school.count; index += 1) {
+    for (let index = 0; index < count; index += 1) {
       const offset = index * 3;
-      localToWorld(p[offset], p[offset + 1], p[offset + 2], mappedPosition);
+      const sourceOffset = sourceIndices[index] * 3;
+      const radius = followerRadius[index];
+      const angle = followerPhase[index] + elapsed * (0.31 + (index % 7) * 0.017);
+      const localX = p[sourceOffset]
+        + Math.cos(angle) * radius
+        + Math.sin(angle * 0.47) * radius * 0.24;
+      const localY = p[sourceOffset + 1]
+        + followerVertical[index] * radius * 0.58
+        + Math.sin(angle * 0.73) * radius * 0.2;
+      const localZ = p[sourceOffset + 2]
+        + Math.sin(angle) * radius
+        + Math.cos(angle * 0.53) * radius * 0.24;
+      localToWorld(localX, localY, localZ, mappedPosition);
       positions[offset] = mappedPosition.x;
       positions[offset + 1] = mappedPosition.y;
       positions[offset + 2] = mappedPosition.z;
@@ -279,7 +377,7 @@ export function createNightSwarm({
 
   const updateDiagnostics = () => {
     const v = school.velocities;
-    let moving = 0;
+    let simulatedMoving = 0;
     let speedTotal = 0;
     let minSpeed = Infinity;
     let maxSpeed = 0;
@@ -289,11 +387,11 @@ export function createNightSwarm({
     for (let index = 0; index < school.count; index += 1) {
       const offset = index * 3;
       const worldSpeed = Math.hypot(
-        v[offset] * LOCAL_HORIZONTAL_SCALE,
-        v[offset + 1] * LOCAL_VERTICAL_SCALE,
-        v[offset + 2] * LOCAL_HORIZONTAL_SCALE,
+        v[offset] * horizontalScale,
+        v[offset + 1] * verticalScale,
+        v[offset + 2] * horizontalScale,
       );
-      if (worldSpeed >= movingThreshold) moving += 1;
+      if (worldSpeed >= movingThreshold) simulatedMoving += 1;
       speedTotal += worldSpeed;
       minSpeed = Math.min(minSpeed, worldSpeed);
       maxSpeed = Math.max(maxSpeed, worldSpeed);
@@ -307,16 +405,24 @@ export function createNightSwarm({
     const playerDistance = playerPosition
       ? mappedCenter.distanceTo(playerPosition)
       : Infinity;
+    const moving = Math.round(simulatedMoving / school.count * count);
     latestDiagnostics = Object.freeze({
       engine: "MANY NEKO school.js?v=20260803c11",
       adapter: assAdapterEnabled ? "ass-night-player" : "source-reference",
-      particles: school.count,
+      particles: count,
+      simulatedParticles: school.count,
+      requestedParticles: population.requestedCount,
+      populationCap: population.cap,
       moving,
       avgSpeed: speedTotal / school.count,
       minSpeed: Number.isFinite(minSpeed) ? minSpeed : 0,
       maxSpeed,
       distanceFromHome: mappedCenter.distanceTo(homeCenter),
       playerDistance,
+      swarmUpdateMs: updateMsAverage,
+      swarmSimulationMs: simulationMsAverage,
+      swarmMappingMs: mappingMsAverage,
+      spatialFactor,
     });
     if (debugHud) {
       const playerText = Number.isFinite(playerDistance) ? playerDistance.toFixed(1) : "--";
@@ -324,13 +430,15 @@ export function createNightSwarm({
         "<strong>SWARM</strong>",
         "engine: MANY NEKO 20260803c11",
         `adapter: ${assAdapterEnabled ? "ASS night + player" : "source reference"}`,
-        `particles: ${school.count}`,
+        `particles: ${count}`,
+        `simulated: ${school.count}`,
         `moving: ${moving}`,
         `avg speed: ${latestDiagnostics.avgSpeed.toFixed(1)}`,
         `min speed: ${latestDiagnostics.minSpeed.toFixed(1)}`,
         `max speed: ${latestDiagnostics.maxSpeed.toFixed(1)}`,
         `distance from home: ${latestDiagnostics.distanceFromHome.toFixed(1)}`,
         `player distance: ${playerText}`,
+        `swarm update: ${latestDiagnostics.swarmUpdateMs.toFixed(2)} ms`,
       ].join("<br>");
     }
     diagnosticsCallback?.(latestDiagnostics);
@@ -340,6 +448,9 @@ export function createNightSwarm({
   updateDiagnostics();
 
   return {
+    count,
+    simulatedCount,
+    population,
     points,
     school,
     sourceReferenceOnly,
@@ -347,10 +458,21 @@ export function createNightSwarm({
       if (disposed) return;
       const safeDelta = Math.min(0.034, Math.max(0, Number(delta) || 0));
       if (safeDelta <= 0) return;
+      const updateStartedAt = performance.now();
       elapsed += safeDelta;
+      const simulationStartedAt = performance.now();
       school.update(safeDelta);
       applyPlayerAvoidance(safeDelta);
+      const mappingStartedAt = performance.now();
       writeWorldPositions();
+      const updateFinishedAt = performance.now();
+      const sampleAlpha = timingSamples < 30 ? 1 / (timingSamples + 1) : 0.06;
+      simulationMsAverage += (
+        mappingStartedAt - simulationStartedAt - simulationMsAverage
+      ) * sampleAlpha;
+      mappingMsAverage += (updateFinishedAt - mappingStartedAt - mappingMsAverage) * sampleAlpha;
+      updateMsAverage += (updateFinishedAt - updateStartedAt - updateMsAverage) * sampleAlpha;
+      timingSamples += 1;
       material.uniforms.swarmTime.value = elapsed;
       debugElapsed += safeDelta;
       if (debugElapsed >= 0.2) {

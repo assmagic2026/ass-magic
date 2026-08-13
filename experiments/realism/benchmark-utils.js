@@ -1,4 +1,5 @@
 const SWARM_PATTERN = /^points(\d+)(?:_(avoid|group|light1|light3))?$/;
+const MAX_SWARM_COUNT = 25000;
 const MIN_DPR = 0.5;
 const MAX_DPR = 3;
 
@@ -55,7 +56,23 @@ export function getBenchmarkOptions(source = globalThis.location?.search || "") 
     ? source
     : new URLSearchParams(source);
   const requestedDpr = parseDpr(params.get("dpr"));
-  const swarm = parseSwarmMode(params.get("swarm"));
+  const parsedSwarm = parseSwarmMode(params.get("swarm"));
+  const requestedSwarmCount = Number(params.get("swarmcount"));
+  const swarmCount = Number.isInteger(requestedSwarmCount)
+    && requestedSwarmCount >= 1
+    && requestedSwarmCount <= MAX_SWARM_COUNT
+    ? requestedSwarmCount
+    : parsedSwarm.count;
+  const swarm = parsedSwarm.enabled
+    ? Object.freeze({
+      ...parsedSwarm,
+      count: swarmCount,
+      requestedCount: swarmCount,
+      label: swarmCount === parsedSwarm.count
+        ? parsedSwarm.label
+        : `${parsedSwarm.label}-count${swarmCount}`,
+    })
+    : parsedSwarm;
   return Object.freeze({
     perfEnabled: params.get("perf") === "1",
     benchEnabled: params.get("bench") === "1",
@@ -83,6 +100,7 @@ export class BenchmarkReporter {
     reportSeconds = 10,
     logger = console,
     onReport = null,
+    getExtraMetrics = null,
   }) {
     this.enabled = enabled === true;
     this.renderer = renderer;
@@ -95,6 +113,7 @@ export class BenchmarkReporter {
     this.samples = [];
     this.logger = logger;
     this.onReport = typeof onReport === "function" ? onReport : null;
+    this.getExtraMetrics = typeof getExtraMetrics === "function" ? getExtraMetrics : null;
     this.latest = null;
   }
 
@@ -122,6 +141,7 @@ export class BenchmarkReporter {
     const p99Index = Math.max(0, Math.ceil(ordered.length * 0.99) - 1);
     const p99Ms = ordered[p99Index];
     const info = this.renderer.info;
+    const extraMetrics = this.getExtraMetrics?.() || null;
     const summary = {
       mode: this.settings.mode,
       quality: this.settings.quality,
@@ -139,6 +159,7 @@ export class BenchmarkReporter {
       sampleCount: ordered.length,
       windowSeconds: round(this.windowElapsed, 2),
       label: this.label,
+      ...(extraMetrics && typeof extraMetrics === "object" ? extraMetrics : {}),
     };
 
     this.latest = Object.freeze(summary);

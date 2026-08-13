@@ -4,8 +4,8 @@ import {
   MOBILE_HIGH_FLIGHT_DPR_POLICY,
   configureLinks,
   getExperimentSettings,
-} from "./quality.js?v=night-swarm-bench-6";
-import { PerformanceHud } from "./perf-hud.js?v=night-swarm-bench-6";
+} from "./quality.js?v=night-swarm-bench-9";
+import { PerformanceHud } from "./perf-hud.js?v=night-swarm-bench-9";
 import { createEnvironmentPhasing } from "./environment-phasing.js?v=kick-transition-1";
 import {
   createFlightPlayer,
@@ -22,7 +22,7 @@ import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-st
 import {
   BenchmarkReporter,
   getBenchmarkOptions,
-} from "./benchmark-utils.js?v=night-swarm-bench-6";
+} from "./benchmark-utils.js?v=night-swarm-bench-9";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -518,7 +518,7 @@ if (
   const habitatDirection = nightCrystals?.userData.previewDirection
     || SUN_DIRECTION.clone().multiplyScalar(-1).normalize();
   canvas.dataset.swarmStatus = "loading";
-  void import("./night-swarm.js?v=night-swarm-bench-6").then(({ createNightSwarm }) => {
+  void import("./night-swarm.js?v=night-swarm-bench-9").then(({ createNightSwarm }) => {
     if (rendererDisposed) return;
     nightSwarm = createNightSwarm({
       THREE,
@@ -527,6 +527,7 @@ if (
       centerDirection: habitatDirection,
       getSurfaceRadius,
       playerPosition: flight.position,
+      quality: settings.quality,
       debugEnabled: benchmarkOptions.swarmDebugEnabled,
       onDiagnostics: benchmarkOptions.swarmDebugEnabled
         ? (diagnostics) => {
@@ -535,7 +536,8 @@ if (
         : null,
     });
     canvas.dataset.swarmStatus = "active";
-    canvas.dataset.swarmPoints = String(benchmarkOptions.swarm.count);
+    canvas.dataset.swarmPoints = String(nightSwarm.count);
+    canvas.dataset.swarmSimulated = String(nightSwarm.simulatedCount);
     canvas.dataset.swarmLights = String(benchmarkOptions.swarm.lightCount);
   }).catch((error) => {
     canvas.dataset.swarmStatus = "disabled-error";
@@ -1316,6 +1318,21 @@ const benchmarkReporter = new BenchmarkReporter({
   settings,
   label: benchmarkOptions.label,
   startupMs,
+  getExtraMetrics() {
+    const diagnostics = nightSwarm?.getDiagnostics?.();
+    if (!diagnostics) {
+      return {
+        particleCount: benchmarkOptions.swarm.count,
+        swarmUpdateMs: 0,
+      };
+    }
+    return {
+      particleCount: diagnostics.particles,
+      swarmUpdateMs: Math.round(diagnostics.swarmUpdateMs * 1000) / 1000,
+      swarmSimulationMs: Math.round(diagnostics.swarmSimulationMs * 1000) / 1000,
+      swarmMappingMs: Math.round(diagnostics.swarmMappingMs * 1000) / 1000,
+    };
+  },
   onReport(summary) {
     window.__ASS_MAGIC_BENCHMARK__ = summary;
     canvas.dataset.benchmarkFps = summary.fpsAvg.toFixed(1);
