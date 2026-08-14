@@ -51,3 +51,6 @@ html:not([data-ass-debug="1"]) .help {
     right: max(64px, calc(env(safe-area-inset-right) + 52px));
   }
 }
+html[data-site-profile="neutral"] [data-neutral-hide] {
+  display: none !important;
+}

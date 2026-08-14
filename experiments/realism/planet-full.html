@@ -17,6 +17,7 @@
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="ASS MAGIC | Official Site">
     <meta name="twitter:description" content="ASS MAGICの音楽と世界を、自由に飛び回って体験できる3D公式サイト。惑星を探索し、音楽を聴き、さまざまな出来事を発見してください。">
+    <script src="../../site-profile.js?v=neutral-host-1"></script>
     <script>
       (() => {
         try {
@@ -34,9 +35,9 @@
     <link rel="preload" href="../../list/animalrobot/cover-17.jpg" as="image">
     <link rel="stylesheet" href="../../style.css?v=realism-136">
     <link rel="stylesheet" href="./style.css?v=night-swarm-bench-9">
-    <link rel="stylesheet" href="./site-readiness.css?v=international-1">
+    <link rel="stylesheet" href="./site-readiness.css?v=neutral-host-1">
     <script src="./phase-audio-engine.js?v=kick-transition-1"></script>
-    <script defer src="./site-readiness.js?v=international-1"></script>
+    <script defer src="./site-readiness.js?v=neutral-host-1"></script>
   </head>
   <body class="flight-mode is-booting experience-pending">
     <div class="ass-language-switch" role="group" aria-label="言語を選択">
@@ -46,8 +47,8 @@
     <div id="opening-curtain" aria-hidden="false">
       <section id="experience-mode-selection" aria-label="体験を選択" data-ass-i18n-aria-label="a11y.experienceSelection">
         <header class="experience-mode-heading">
-          <h1 data-ass-i18n="opening.planet">ASSの惑星</h1>
-          <p>ASS MAGIC official site</p>
+          <h1 data-ass-i18n="opening.planet" data-neutral-text-ja="惑星" data-neutral-text-en="Planet">ASSの惑星</h1>
+          <p data-neutral-hide>ASS MAGIC official site</p>
         </header>
         <div class="experience-mode-options" role="group" aria-label="体験モード" data-ass-i18n-aria-label="a11y.experienceModes">
           <button class="experience-mode-option" type="button" data-experience-mode="main" aria-pressed="false">
@@ -75,7 +76,7 @@
     <main id="stage">
       <canvas id="scene" aria-label="惑星全体のリアル表現負荷試験" data-ass-i18n-aria-label="a11y.planetScene"></canvas>
 
-      <div id="site-title" class="capture-hide">ASS MAGIC</div>
+      <div id="site-title" class="capture-hide" data-neutral-hide>ASS MAGIC</div>
       <button id="menu-toggle" class="ui-control capture-hide" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="site-menu">
         <span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span>
       </button>
@@ -83,21 +84,21 @@
         <div id="site-menu-backdrop" class="ui-control"></div>
         <div id="site-menu-panel" class="ui-control">
           <div id="site-menu-head">
-            <div id="site-menu-kicker">ASS MAGIC</div>
+            <div id="site-menu-kicker" data-neutral-hide>ASS MAGIC</div>
             <div id="site-menu-title">Menu</div>
           </div>
           <div id="site-menu-body">
             <nav id="site-menu-nav" class="ui-control" aria-label="Site sections">
-              <button class="menu-nav-btn ui-control is-active" type="button" data-page="about">ABOUT</button>
+              <button class="menu-nav-btn ui-control is-active" type="button" data-page="about" data-neutral-hide>ABOUT</button>
               <button class="menu-nav-btn ui-control" type="button" data-page="game">GAME</button>
               <button class="menu-nav-btn ui-control" type="button" data-href="https://big-up.style/artists/166607/tune_packages">DISCOGRAPHY</button>
               <button class="menu-nav-btn ui-control" type="button" data-page="interview">INTERVIEW</button>
               <button class="menu-nav-btn ui-control" type="button" data-page="goods">GOODS</button>
               <button class="menu-nav-btn ui-control" type="button" data-page="credits">CREDITS</button>
-              <button class="menu-nav-btn ui-control" type="button" data-href="https://x.com/ASSMAGIC2022">X</button>
+              <button class="menu-nav-btn ui-control" type="button" data-href="https://x.com/ASSMAGIC2022" data-neutral-hide>X</button>
             </nav>
             <div id="site-menu-pages" class="ui-control">
-              <section class="menu-page is-active" data-page="about">
+              <section class="menu-page is-active" data-page="about" data-neutral-hide>
                 <h2 data-ass-i18n="menu.aboutTitle">ASS MAGICとは</h2>
                 <p data-ass-i18n="menu.aboutCopy">夫婦で活動する謎の音楽ユニット</p>
                 <a class="menu-link-card ui-control" href="https://x.com/ASSMAGIC2022" target="_blank" rel="noreferrer noopener" aria-label="ASS MAGIC on X">
@@ -109,7 +110,7 @@
                 <a class="menu-link-card ui-control" data-menu-route href="../../mendako/" aria-label="メンダコを開く" data-ass-i18n-aria-label="a11y.openMendako">
                   <span class="menu-link-label" data-ass-i18n="menu.mendako">メンダコ</span><span class="menu-link-value">Play</span>
                 </a>
-                <a class="menu-link-card ui-control" data-menu-route href="../../?legacy=1" aria-label="旧・ASSの惑星を開く" data-ass-i18n-aria-label="a11y.openLegacyPlanet">
+                <a class="menu-link-card ui-control" data-menu-route href="../../?legacy=1" aria-label="旧・ASSの惑星を開く" data-ass-i18n-aria-label="a11y.openLegacyPlanet" data-neutral-hide>
                   <span class="menu-link-label">Legacy</span><span class="menu-link-value" data-ass-i18n="menu.legacyPlanet">旧・ASSの惑星</span>
                 </a>
               </section>
@@ -128,7 +129,7 @@
 
       <header class="masthead">
         <div>
-          <p class="eyebrow">ASS MAGIC / VISUAL STUDY 02</p>
+          <p class="eyebrow" data-neutral-hide>ASS MAGIC / VISUAL STUDY 02</p>
           <h1>THE WHOLE PLANET</h1>
         </div>
         <a class="isolation-badge" href="./?mode=realism&quality=high&view=flight">局所試作へ戻る</a>
@@ -215,7 +216,7 @@
       <audio id="experience-audio" preload="metadata"></audio>
       <audio id="environment-dematerialize-audio" src="./assets/audio/kick-transition.mp3" preload="auto" playsinline></audio>
       <audio id="environment-rematerialize-audio" src="./assets/audio/kick-transition.mp3" preload="auto" playsinline></audio>
-      <div class="loading is-hidden" id="loading" hidden data-ass-i18n="loading.planet">ASSの惑星</div>
+      <div class="loading is-hidden" id="loading" hidden data-ass-i18n="loading.planet" data-neutral-text-ja="惑星" data-neutral-text-en="Planet">ASSの惑星</div>
     </main>
 
     <div id="ending-whiteout" aria-hidden="true">
@@ -298,6 +299,6 @@
       </div>
     </div>
 
-    <script type="module" src="./planet-full.js?v=green-swarm-production-2"></script>
+    <script type="module" src="./planet-full.js?v=neutral-host-1"></script>
   </body>
 </html>

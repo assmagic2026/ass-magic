@@ -1916,12 +1916,15 @@ export function createWholePlanetExperience({
       return;
     }
     setLocalizedText(devilUi.message, "runtime.whatDoYouWant", "何が望みだ？");
-    devilUi.actions.append(
+    const choices = [
       makeDevilButton(t("runtime.explore", "自由に探索したい"), closeDevilDialog),
       makeDevilButton(t("runtime.needHint", "ヒントがほしい"), () => renderDevilQuestion("hint")),
       makeDevilButton(t("runtime.needGuide", "案内してほしい"), () => renderDevilQuestion("destinations")),
-      makeDevilButton(t("runtime.aboutCreator", "創造主について"), () => renderDevilQuestion("creator")),
-    );
+    ];
+    if (window.assSiteProfile?.showCreatorStory !== false) {
+      choices.push(makeDevilButton(t("runtime.aboutCreator", "創造主について"), () => renderDevilQuestion("creator")));
+    }
+    devilUi.actions.append(...choices);
   }
 
   function refreshDevilLocalization() {

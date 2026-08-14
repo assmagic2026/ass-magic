@@ -271,7 +271,23 @@
   }
 
   function updateDocumentMetadata() {
+    const siteProfile = window.assSiteProfile;
     const isEnglish = language === "en";
+    if (siteProfile?.neutral && siteProfile.metadata) {
+      const metadata = siteProfile.metadata[language] || siteProfile.metadata.ja;
+      document.documentElement.lang = language;
+      document.title = metadata.title;
+      setMeta("description", metadata.description);
+      setMeta("og:site_name", metadata.siteName);
+      setMeta("og:title", metadata.title);
+      setMeta("og:description", metadata.description);
+      setMeta("og:url", siteProfile.neutralUrl);
+      setMeta("og:locale", metadata.locale);
+      setMeta("twitter:title", metadata.title);
+      setMeta("twitter:description", metadata.description);
+      document.head.querySelector('link[rel="canonical"]')?.remove();
+      return;
+    }
     document.documentElement.lang = language;
     document.title = isEnglish
       ? "ASS MAGIC — Explore the Planet | Official Site"

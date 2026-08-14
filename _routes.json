@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "include": [
+    "/",
+    "/index.html",
+    "/experiments/realism/planet-full",
+    "/experiments/realism/planet-full.html"
+  ],
+  "exclude": []
+}
