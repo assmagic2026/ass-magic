@@ -23,7 +23,7 @@ import {
   BenchmarkReporter,
   getBenchmarkOptions,
 } from "./benchmark-utils.js?v=green-swarm-production-1";
-import { createOpeningLoadProgress } from "./opening-load-progress.js?v=opening-progress-1";
+import { createOpeningLoadProgress } from "./opening-load-progress.js?v=opening-progress-2";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 

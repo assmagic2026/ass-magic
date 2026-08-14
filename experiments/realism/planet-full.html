@@ -18,58 +18,6 @@
     <meta name="twitter:title" content="ASS MAGIC | Official Site">
     <meta name="twitter:description" content="ASS MAGICの音楽と世界を、自由に飛び回って体験できる3D公式サイト。惑星を探索し、音楽を聴き、さまざまな出来事を発見してください。">
     <style id="site-profile-first-paint">
-      :root {
-        /* Sky shader source colors (sRGB). createSky() reads these exact values. */
-        --ass-sky-day-zenith: #65b7ff;
-        --ass-sky-day-horizon: #cbe8ff;
-        --ass-sky-dusk-zenith: #382d50;
-        --ass-sky-dusk-mid: #b96670;
-        --ass-sky-dusk-horizon: #f0a06f;
-        --ass-sky-night-zenith: #081321;
-        --ass-sky-night-horizon: #17243a;
-        --ass-sky-sun: #ffbd78;
-        /* The same colors after the production ACES/exposure/sRGB pipeline. */
-        --ass-sky-display-day-zenith: #8ec4e3;
-        --ass-sky-display-day-horizon: #d2dce3;
-        --ass-sky-display-dusk-horizon: #e5b587;
-        --ass-sky-display-dusk-mid: #c9727d;
-        --ass-sky-display-dusk-zenith: #281d47;
-        --ass-sky-display-night-horizon: #06122a;
-        --ass-sky-display-night-zenith: #00040e;
-        --ass-sky-display-sun: #e7ca97;
-      }
-      html,
-      body,
-      html #opening-curtain {
-        background-color: var(--ass-sky-display-night-zenith) !important;
-        background-image:
-          radial-gradient(
-            circle at 50% 18%,
-            rgba(255, 250, 230, .98) 0,
-            rgba(255, 250, 230, .98) clamp(4px, .62vmin, 8px),
-            rgba(231, 202, 151, .78) clamp(8px, 1.5vmin, 17px),
-            rgba(231, 202, 151, .24) clamp(24px, 5vmin, 58px),
-            rgba(231, 202, 151, 0) clamp(70px, 14vmin, 170px)
-          ),
-          radial-gradient(
-            ellipse at 50% 18%,
-            rgba(231, 202, 151, .2) 0,
-            rgba(231, 202, 151, .08) 16%,
-            rgba(231, 202, 151, 0) 43%
-          ),
-          linear-gradient(
-            180deg,
-            var(--ass-sky-display-day-zenith) 0%,
-            var(--ass-sky-display-day-zenith) 12%,
-            var(--ass-sky-display-day-horizon) 31%,
-            var(--ass-sky-display-dusk-horizon) 44%,
-            var(--ass-sky-display-dusk-mid) 56%,
-            var(--ass-sky-display-dusk-zenith) 70%,
-            var(--ass-sky-display-night-horizon) 84%,
-            var(--ass-sky-display-night-zenith) 100%
-          ) !important;
-        background-repeat: no-repeat !important;
-      }
       [data-site-profile-content] { display: none; }
       html[data-site-profile="official"] [data-site-profile-content="official"],
       html[data-site-profile="neutral"] [data-site-profile-content="neutral"] { display: inline; }
@@ -93,7 +41,7 @@
     <link rel="preload" href="./assets/audio/kick-transition.mp3" as="audio" type="audio/mpeg">
     <link rel="preload" href="../../list/animalrobot/cover-17.jpg" as="image">
     <link rel="stylesheet" href="../../style.css?v=realism-136">
-    <link rel="stylesheet" href="./style.css?v=opening-progress-1">
+    <link rel="stylesheet" href="./style.css?v=opening-progress-2">
     <link rel="stylesheet" href="./site-readiness.css?v=neutral-host-2">
     <script src="./phase-audio-engine.js?v=kick-transition-1"></script>
     <script defer src="./site-readiness.js?v=neutral-host-2"></script>
@@ -364,6 +312,6 @@
       </div>
     </div>
 
-    <script type="module" src="./planet-full.js?v=opening-progress-1"></script>
+    <script type="module" src="./planet-full.js?v=opening-progress-2"></script>
   </body>
 </html>
