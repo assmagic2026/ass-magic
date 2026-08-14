@@ -38,7 +38,7 @@ body {
   background-color: var(--ass-sky-display-night-zenith, #00040e);
   background-image:
     radial-gradient(
-      circle at 50% 18%,
+      circle at 50% 22%,
       rgba(255, 250, 230, .98) 0,
       rgba(255, 250, 230, .98) clamp(4px, .62vmin, 8px),
       rgba(231, 202, 151, .78) clamp(8px, 1.5vmin, 17px),
@@ -46,7 +46,7 @@ body {
       rgba(231, 202, 151, 0) clamp(70px, 14vmin, 170px)
     ),
     radial-gradient(
-      ellipse at 50% 18%,
+      ellipse at 50% 22%,
       rgba(231, 202, 151, .2) 0,
       rgba(231, 202, 151, .08) 16%,
       rgba(231, 202, 151, 0) 43%
