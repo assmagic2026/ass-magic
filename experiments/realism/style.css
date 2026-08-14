@@ -49,7 +49,7 @@ body {
   pointer-events: auto;
   opacity: 1;
   visibility: visible;
-  background: #050505;
+  background-color: var(--ass-sky-display-night-zenith, #00040e);
   transition: opacity 540ms cubic-bezier(.22,.68,.24,1), visibility 540ms step-end;
 }
 
@@ -78,6 +78,7 @@ body {
   font-weight: 400;
   line-height: 1;
   letter-spacing: .045em;
+  text-shadow: 0 2px 18px rgba(0, 4, 14, .34);
 }
 
 .experience-mode-heading p {
@@ -224,10 +225,24 @@ body {
   top: auto;
   bottom: max(30px, calc(env(safe-area-inset-bottom) + 20px));
   left: 50%;
-  color: rgba(255, 255, 255, .78);
+  display: grid;
+  grid-template-columns: auto 4ch;
+  align-items: baseline;
+  gap: .7em;
+  color: rgba(255, 255, 255, .82);
   font: 500 clamp(10px, 1.8vmin, 13px)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .24em;
+  letter-spacing: .2em;
+  text-shadow: 0 1px 9px rgba(0, 0, 0, .72);
   transform: translateX(-50%);
+}
+
+#opening-progress-value {
+  min-width: 4ch;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+  text-align: right;
 }
 
 @keyframes opening-black-box-spin {

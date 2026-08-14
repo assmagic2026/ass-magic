@@ -23,6 +23,7 @@ import {
   BenchmarkReporter,
   getBenchmarkOptions,
 } from "./benchmark-utils.js?v=green-swarm-production-1";
+import { createOpeningLoadProgress } from "./opening-load-progress.js?v=opening-progress-1";
 
 const REALISM_ASSET_BASE = new URL("./", import.meta.url);
 
@@ -36,6 +37,13 @@ function t(key, fallback) {
   } catch (error) {
     return fallback;
   }
+}
+
+function getSkyPaletteColor(customProperty, fallback) {
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(customProperty)
+    .trim();
+  return new THREE.Color(value || fallback);
 }
 
 function easeInOutQuint(value) {
@@ -216,6 +224,9 @@ configureLinks(settings);
 
 const canvas = document.querySelector("#scene");
 const openingCurtain = document.querySelector("#opening-curtain");
+const openingProgress = createOpeningLoadProgress(
+  document.querySelector("#opening-progress-value"),
+);
 const experienceMode = createExperienceModeController();
 let openingPhase = "loading";
 let openingRunElapsed = 0;
@@ -319,11 +330,19 @@ const textureDisposables = [];
 const surfaceGeometryDisposables = [];
 const surfaceMaterialDisposables = [];
 const openingCriticalLoads = [];
+function addOpeningCriticalLoad(taskName, promise) {
+  const tracked = openingProgress.track(taskName, promise);
+  if (tracked) openingCriticalLoads.push(tracked);
+}
 const movingSurfaceLayers = [];
 const cloudVolumes = [];
 let nightCrystals = null;
 let sharedCloudTexture = null;
 const planet = createPlanet();
+if (settings.quality !== "high") {
+  openingProgress.complete("terrainColor");
+  openingProgress.complete("terrainNormal");
+}
 planet.receiveShadow = realismShadowsEnabled;
 scene.add(planet);
 const windVent = settings.mode === "realism" ? createPolarWindVent() : null;
@@ -361,7 +380,7 @@ const specialLandmarks = createSpecialLandmarks({
   deferBookModel: false,
   castShadow: realismShadowsEnabled,
 });
-if (specialLandmarks.ready) openingCriticalLoads.push(specialLandmarks.ready);
+addOpeningCriticalLoad("bookModel", specialLandmarks.ready);
 Object.assign(specialLandmarks.directions, {
   mountain: MOUNTAIN_DIRECTION,
   crater: CRATER_DIRECTION,
@@ -379,7 +398,7 @@ const flightPlayer = createFlightPlayer(scene, {
   bodyProfile: useGlbAssets ? "cesium-type-c" : null,
 });
 if (flightPlayer.ready) {
-  openingCriticalLoads.push(flightPlayer.ready);
+  addOpeningCriticalLoad("playerModel", flightPlayer.ready);
   void flightPlayer.ready.then(() => {
     canvas.dataset.playerBodyProfile = flightPlayer.modelVisual?.userData.bodyProfile || "cesium-man";
     canvas.dataset.playerBodyProfileVertices = String(flightPlayer.modelVisual?.userData.bodyProfileVertices || 0);
@@ -387,6 +406,7 @@ if (flightPlayer.ready) {
     canvas.dataset.playerBodyProfile = "procedural-fallback";
   });
 } else {
+  openingProgress.complete("playerModel");
   canvas.dataset.playerBodyProfile = "procedural-fallback";
 }
 flightPlayer.player.visible = settings.view === "flight";
@@ -1361,7 +1381,10 @@ const experience = settings.view === "flight"
   })
   : null;
 const experienceArt = document.querySelector("#experience-art");
-if (experienceArt?.src) openingCriticalLoads.push(waitForImageReady(experienceArt));
+addOpeningCriticalLoad(
+  "artwork",
+  experienceArt?.src ? waitForImageReady(experienceArt) : null,
+);
 
 if (settings.mode === "realism" && settings.view === "flight") {
   const protectedZoneSpecs = [
@@ -1446,6 +1469,7 @@ setupSiteMenu();
 setupInteraction();
 setupZoomProtection();
 resize();
+openingProgress.complete("bootstrap");
 let adaptiveViewportWidth = Math.max(1, window.innerWidth);
 let adaptiveViewportHeight = Math.max(1, window.innerHeight);
 window.addEventListener("resize", () => {
@@ -1941,7 +1965,7 @@ function createRealisticPlanetMaterial() {
       repeatY,
       offsetX,
       offsetY,
-      true,
+      "terrainColor",
     );
     const normal = loadPbrTexture(
       "./assets/rocks-ground-04-normal-gl-1k.jpg",
@@ -1950,7 +1974,7 @@ function createRealisticPlanetMaterial() {
       repeatY,
       offsetX,
       offsetY,
-      true,
+      "terrainNormal",
     );
     return new THREE.MeshStandardMaterial({
       map: color,
@@ -2469,13 +2493,20 @@ function scheduleDeferredOpeningAssets() {
 }
 
 function waitForImageReady(image) {
-  if (image.complete && image.naturalWidth > 0) {
-    return typeof image.decode === "function" ? image.decode().catch(() => {}) : Promise.resolve();
+  if (image.complete) {
+    if (image.naturalWidth > 0) {
+      return typeof image.decode === "function" ? image.decode().catch(() => {}) : Promise.resolve();
+    }
+    console.warn(`[opening] initial artwork failed to load: ${image.currentSrc || image.src || "unknown"}`);
+    return Promise.resolve();
   }
   return new Promise((resolve) => {
-    const finish = () => {
+    const finish = (event) => {
       image.removeEventListener("load", finish);
       image.removeEventListener("error", finish);
+      if (event?.type === "error") {
+        console.warn(`[opening] initial artwork failed to load: ${image.currentSrc || image.src || "unknown"}`);
+      }
       resolve();
     };
     image.addEventListener("load", finish, { once: true });
@@ -2502,15 +2533,20 @@ async function prepareOpening() {
   // screen.  This trades a deliberate, calm loading beat for a much steadier
   // first moment of player-controlled flight.
   renderer.compile(scene, camera);
+  openingProgress.complete("shaderCompile");
   updateFlightShadow();
   renderer.render(scene, camera);
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
+  openingProgress.complete("firstRender");
   experienceMode.markLoadReady();
   canvas.dataset.experienceLoadReady = "true";
   await experienceMode.whenSelected;
   canvas.dataset.experienceMode = experienceMode.getMode();
   experienceMode.hideSelection();
+  openingProgress.complete("startReady");
+  openingProgress.markReady();
+  await new Promise((resolve) => window.setTimeout(resolve, 220));
 
   openingPhase = "revealing";
   canvas.dataset.openingPhase = openingPhase;
@@ -2817,7 +2853,7 @@ function loadPbrTexture(
   repeatY = 15.5,
   offsetX = 0,
   offsetY = 0,
-  openingCritical = false,
+  openingTaskName = null,
 ) {
   let resolveLoad;
   const loadComplete = new Promise((resolve) => {
@@ -2839,7 +2875,7 @@ function loadPbrTexture(
   texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
   textureDisposables.push(texture);
-  if (openingCritical) openingCriticalLoads.push(loadComplete);
+  if (openingTaskName) addOpeningCriticalLoad(openingTaskName, loadComplete);
   return texture;
 }
 
@@ -4186,14 +4222,14 @@ function createSky() {
       cameraPos: { value: new THREE.Vector3() },
       sunDirection: { value: SUN_DIRECTION.clone() },
       planetRadius: { value: PLANET_RADIUS },
-      dayZenith: { value: new THREE.Color(0x65b7ff) },
-      dayHorizon: { value: new THREE.Color(0xcbe8ff) },
-      duskZenith: { value: new THREE.Color(0x382d50) },
-      duskMid: { value: new THREE.Color(0xb96670) },
-      duskHorizon: { value: new THREE.Color(0xf0a06f) },
-      nightZenith: { value: new THREE.Color(0x081321) },
-      nightHorizon: { value: new THREE.Color(0x17243a) },
-      sunColor: { value: new THREE.Color(0xffbd78) },
+      dayZenith: { value: getSkyPaletteColor("--ass-sky-day-zenith", "#65b7ff") },
+      dayHorizon: { value: getSkyPaletteColor("--ass-sky-day-horizon", "#cbe8ff") },
+      duskZenith: { value: getSkyPaletteColor("--ass-sky-dusk-zenith", "#382d50") },
+      duskMid: { value: getSkyPaletteColor("--ass-sky-dusk-mid", "#b96670") },
+      duskHorizon: { value: getSkyPaletteColor("--ass-sky-dusk-horizon", "#f0a06f") },
+      nightZenith: { value: getSkyPaletteColor("--ass-sky-night-zenith", "#081321") },
+      nightHorizon: { value: getSkyPaletteColor("--ass-sky-night-horizon", "#17243a") },
+      sunColor: { value: getSkyPaletteColor("--ass-sky-sun", "#ffbd78") },
       cloudMist: { value: 0 },
       spaceMix: { value: 0 },
     },
