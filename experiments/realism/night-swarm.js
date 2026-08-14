@@ -18,6 +18,11 @@ const PLAYER_MID_RADIUS = 34 * PLAYER_AVOIDANCE_MULTIPLIER;
 const PLAYER_NEAR_RADIUS = 17 * PLAYER_AVOIDANCE_MULTIPLIER;
 const PLAYER_PANIC_RADIUS = 7 * PLAYER_AVOIDANCE_MULTIPLIER;
 const PLAYER_SCATTER_COOLDOWN = 0.7;
+const MIN_SOURCE_ALTITUDE = 48;
+const MAX_SOURCE_ALTITUDE = 112;
+const ALTITUDE_SOFT_MARGIN = 16;
+const ALTITUDE_RETURN_FORCE = 5.5;
+const TERRAIN_SAMPLE_INTERVAL = 0.1;
 const EPSILON = 0.000001;
 
 function interpolateProfile(count, entries) {
@@ -196,6 +201,8 @@ export function createNightSwarm({
   const tangentB = new THREE.Vector3().crossVectors(habitatUp, tangentA).normalize();
   const homeSurfaceRadius = getSurfaceRadius(habitatUp);
   const homeCenter = habitatUp.clone().multiplyScalar(homeSurfaceRadius + habitatAltitude);
+  const minimumLocalY = (MIN_SOURCE_ALTITUDE - habitatAltitude) / verticalScale;
+  const maximumLocalY = (MAX_SOURCE_ALTITUDE - habitatAltitude) / verticalScale;
 
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
@@ -205,6 +212,7 @@ export function createNightSwarm({
   const followerRadius = new Float32Array(count);
   const followerPhase = new Float32Array(count);
   const followerVertical = new Float32Array(count);
+  const sourceSurfaceRadii = new Float32Array(simulatedCount);
   const color = new THREE.Color();
   for (let index = 0; index < count; index += 1) {
     const offset = index * 3;
@@ -253,6 +261,7 @@ export function createNightSwarm({
 
   const mappedDirection = new THREE.Vector3();
   const mappedPosition = new THREE.Vector3();
+  const sourceDirection = new THREE.Vector3();
   const localPlayer = new THREE.Vector3();
   const mappedCenter = new THREE.Vector3();
   const playerDirection = new THREE.Vector3();
@@ -262,6 +271,7 @@ export function createNightSwarm({
   let elapsed = 0;
   let debugElapsed = 0;
   let scatterCooldown = 0;
+  let terrainSampleElapsed = 0;
   let wasInsidePanicRadius = false;
   let disposed = false;
   let latestDiagnostics = null;
@@ -269,20 +279,35 @@ export function createNightSwarm({
   let simulationMsAverage = 0;
   let mappingMsAverage = 0;
   let timingSamples = 0;
+  let visualAltitudeMin = Infinity;
+  let visualAltitudeMax = -Infinity;
 
-  const localToWorld = (x, y, z, out) => {
+  const localToWorld = (x, y, z, out, sampledSurfaceRadius = Number.NaN) => {
     mappedDirection.copy(habitatUp)
       .addScaledVector(tangentA, x * widthScale / homeSurfaceRadius)
       .addScaledVector(tangentB, z * depthScale / homeSurfaceRadius)
       .normalize();
-    // Terrain sampling every point is retained through 2,500. High-count LOD
-    // uses the habitat's sampled radius plus added clearance, avoiding tens of
-    // thousands of terrain-noise evaluations per frame.
-    const surfaceRadius = count <= 2500
-      ? getSurfaceRadius(mappedDirection)
-      : homeSurfaceRadius;
+    // High-count LOD shares one sampled terrain radius per source boid with
+    // its visual followers, avoiding tens of thousands of terrain evaluations.
+    const surfaceRadius = Number.isFinite(sampledSurfaceRadius)
+      ? sampledSurfaceRadius
+      : count <= 2500
+        ? getSurfaceRadius(mappedDirection)
+        : homeSurfaceRadius;
     const altitude = habitatAltitude + y * verticalScale;
     return out.copy(mappedDirection).multiplyScalar(surfaceRadius + altitude);
+  };
+
+  const refreshSourceSurfaceRadii = () => {
+    const p = school.positions;
+    for (let index = 0; index < school.count; index += 1) {
+      const offset = index * 3;
+      sourceDirection.copy(habitatUp)
+        .addScaledVector(tangentA, p[offset] * widthScale / homeSurfaceRadius)
+        .addScaledVector(tangentB, p[offset + 2] * depthScale / homeSurfaceRadius)
+        .normalize();
+      sourceSurfaceRadii[index] = getSurfaceRadius(sourceDirection);
+    }
   };
 
   const worldToLocal = (world, out) => {
@@ -371,8 +396,39 @@ export function createNightSwarm({
     }
   };
 
+  const applyAltitudeBand = (delta) => {
+    const p = school.positions;
+    const v = school.velocities;
+    const lowerSoftAltitude = MIN_SOURCE_ALTITUDE + ALTITUDE_SOFT_MARGIN;
+    const upperSoftAltitude = MAX_SOURCE_ALTITUDE - ALTITUDE_SOFT_MARGIN;
+    for (let index = 0; index < school.count; index += 1) {
+      const offset = index * 3;
+      const altitude = habitatAltitude + p[offset + 1] * verticalScale;
+      if (altitude < lowerSoftAltitude) {
+        const pressure = Math.min(1, (lowerSoftAltitude - altitude) / ALTITUDE_SOFT_MARGIN);
+        v[offset + 1] += pressure * pressure * ALTITUDE_RETURN_FORCE * delta;
+      } else if (altitude > upperSoftAltitude) {
+        const pressure = Math.min(1, (altitude - upperSoftAltitude) / ALTITUDE_SOFT_MARGIN);
+        v[offset + 1] -= pressure * pressure * ALTITUDE_RETURN_FORCE * delta;
+      }
+
+      // The velocity correction handles ordinary motion. These bounds are a
+      // last-resort guard for a scatter impulse or a long frame, so no point
+      // can cross the terrain or climb indefinitely.
+      if (p[offset + 1] < minimumLocalY) {
+        p[offset + 1] = minimumLocalY;
+        v[offset + 1] = Math.max(0.04, Math.abs(v[offset + 1]) * 0.25);
+      } else if (p[offset + 1] > maximumLocalY) {
+        p[offset + 1] = maximumLocalY;
+        v[offset + 1] = Math.min(-0.04, -Math.abs(v[offset + 1]) * 0.25);
+      }
+    }
+  };
+
   const writeWorldPositions = () => {
     const p = school.positions;
+    visualAltitudeMin = Infinity;
+    visualAltitudeMax = -Infinity;
     for (let index = 0; index < count; index += 1) {
       const offset = index * 3;
       const sourceOffset = sourceIndices[index] * 3;
@@ -387,7 +443,16 @@ export function createNightSwarm({
       const localZ = p[sourceOffset + 2]
         + Math.sin(angle) * radius
         + Math.cos(angle * 0.53) * radius * 0.24;
-      localToWorld(localX, localY, localZ, mappedPosition);
+      const altitude = habitatAltitude + localY * verticalScale;
+      visualAltitudeMin = Math.min(visualAltitudeMin, altitude);
+      visualAltitudeMax = Math.max(visualAltitudeMax, altitude);
+      localToWorld(
+        localX,
+        localY,
+        localZ,
+        mappedPosition,
+        sourceSurfaceRadii[sourceIndices[index]],
+      );
       positions[offset] = mappedPosition.x;
       positions[offset + 1] = mappedPosition.y;
       positions[offset + 2] = mappedPosition.z;
@@ -447,6 +512,10 @@ export function createNightSwarm({
       depthScale,
       heightScale: verticalScale,
       habitatAltitude,
+      minimumAltitude: visualAltitudeMin,
+      maximumAltitude: visualAltitudeMax,
+      altitudeBandMin: MIN_SOURCE_ALTITUDE,
+      altitudeBandMax: MAX_SOURCE_ALTITUDE,
       pointSizeMultiplier: POINT_SIZE_MULTIPLIER,
       avoidanceMultiplier: PLAYER_AVOIDANCE_MULTIPLIER,
     });
@@ -464,12 +533,14 @@ export function createNightSwarm({
         `max speed: ${latestDiagnostics.maxSpeed.toFixed(1)}`,
         `distance from home: ${latestDiagnostics.distanceFromHome.toFixed(1)}`,
         `player distance: ${playerText}`,
+        `altitude: ${latestDiagnostics.minimumAltitude.toFixed(1)}–${latestDiagnostics.maximumAltitude.toFixed(1)}`,
         `swarm update: ${latestDiagnostics.swarmUpdateMs.toFixed(2)} ms`,
       ].join("<br>");
     }
     diagnosticsCallback?.(latestDiagnostics);
   };
 
+  refreshSourceSurfaceRadii();
   writeWorldPositions();
   updateDiagnostics();
 
@@ -497,6 +568,12 @@ export function createNightSwarm({
       const simulationStartedAt = performance.now();
       school.update(safeDelta);
       applyPlayerAvoidance(safeDelta);
+      applyAltitudeBand(safeDelta);
+      terrainSampleElapsed += safeDelta;
+      if (terrainSampleElapsed >= TERRAIN_SAMPLE_INTERVAL) {
+        terrainSampleElapsed %= TERRAIN_SAMPLE_INTERVAL;
+        refreshSourceSurfaceRadii();
+      }
       const mappingStartedAt = performance.now();
       writeWorldPositions();
       const updateFinishedAt = performance.now();

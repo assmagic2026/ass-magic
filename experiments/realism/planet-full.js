@@ -543,7 +543,7 @@ function selectNightSwarmHomeDirection() {
     const sunDepth = -candidate.dot(SUN_DIRECTION);
     // Stay unmistakably inside the night region, but avoid the exact night
     // antipode where the white sphere is the dominant landmark.
-    if (sunDepth < 0.3 || sunDepth > 0.92) continue;
+    if (sunDepth < 0.72 || sunDepth > 0.96) continue;
 
     let minimumDistance = Infinity;
     let nearestLabel = "none";
@@ -556,8 +556,8 @@ function selectNightSwarmHomeDirection() {
     }
     // Maximise the nearest spherical landmark gap. A tiny middle-night bias
     // breaks near-ties without turning the selection into a hard-coded point.
-    const discoveryBias = 1 - Math.abs(sunDepth - 0.58) / 0.62;
-    const score = minimumDistance + Math.max(0, discoveryBias) * 0.025;
+    const discoveryBias = 1 - Math.abs(sunDepth - 0.82) / 0.24;
+    const score = minimumDistance + Math.max(0, discoveryBias) * 0.035;
     if (score <= bestScore) continue;
     bestScore = score;
     bestMinimumDistance = minimumDistance;
@@ -569,6 +569,7 @@ function selectNightSwarmHomeDirection() {
     || SUN_DIRECTION.clone().multiplyScalar(-1).normalize();
   return {
     direction,
+    nightDepth: -direction.dot(SUN_DIRECTION),
     candidateCount,
     landmarkCount: brightDirections.length,
     minimumChordDistance: bestMinimumDistance,
@@ -594,12 +595,13 @@ if (
   canvas.dataset.swarmHomeClearanceDeg = THREE.MathUtils.radToDeg(
     habitatSelection.minimumAngularDistance,
   ).toFixed(1);
+  canvas.dataset.swarmHomeNightDepth = habitatSelection.nightDepth.toFixed(3);
   let swarmInitializationStarted = false;
   const initializeNightSwarm = () => {
     if (swarmInitializationStarted || rendererDisposed) return;
     swarmInitializationStarted = true;
     canvas.dataset.swarmStatus = "loading";
-    void import("./night-swarm.js?v=green-swarm-production-1").then(({ createNightSwarm }) => {
+    void import("./night-swarm.js?v=green-swarm-production-2").then(({ createNightSwarm }) => {
       if (rendererDisposed) return;
       nightSwarm = createNightSwarm({
         THREE,
