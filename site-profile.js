@@ -1,7 +1,11 @@
 (() => {
   "use strict";
 
-  const NEUTRAL_HOST = "flying.pages.dev";
+  const PREFERRED_NEUTRAL_HOST = "flying.pages.dev";
+  const NEUTRAL_HOSTS = Object.freeze([
+    PREFERRED_NEUTRAL_HOST,
+    "flying-c8s.pages.dev",
+  ]);
   const OFFICIAL_ASSET_ROOT = "https://assmagic2026.github.io/ass-magic/";
   const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
   const NEUTRAL_EXTERNAL_ASSET_PATHS = new Set([
@@ -25,8 +29,9 @@
 
   function resolveSiteProfile(hostname = "", search = "") {
     const normalizedHost = String(hostname).trim().toLowerCase();
-    const isNeutralProduction = normalizedHost === NEUTRAL_HOST
-      || normalizedHost.endsWith(`.${NEUTRAL_HOST}`);
+    const neutralRootHost = NEUTRAL_HOSTS.find((host) => normalizedHost === host
+      || normalizedHost.endsWith(`.${host}`));
+    const isNeutralProduction = Boolean(neutralRootHost);
     let isLocalNeutralPreview = false;
     if (LOCAL_HOSTS.has(normalizedHost)) {
       try {
@@ -54,7 +59,7 @@
       showCreatorStory: !neutral,
       hostname: normalizedHost,
       metadata: neutral ? NEUTRAL_METADATA : null,
-      neutralUrl: `https://${NEUTRAL_HOST}/`,
+      neutralUrl: `https://${neutralRootHost || PREFERRED_NEUTRAL_HOST}/`,
       resolveAssetUrl,
     });
   }
