@@ -303,7 +303,8 @@ function createDevilModel() {
 
 function resolveRootAsset(path) {
   if (!path) return "";
-  return new URL(path, new URL("../../", import.meta.url)).href;
+  const resolvedUrl = new URL(path, new URL("../../", import.meta.url)).href;
+  return window.assSiteProfile?.resolveAssetUrl?.(resolvedUrl) ?? resolvedUrl;
 }
 
 // Dynamic experience UI must resolve copy while it is created. The helper is

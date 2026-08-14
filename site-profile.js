@@ -2,7 +2,12 @@
   "use strict";
 
   const NEUTRAL_HOST = "flying.pages.dev";
+  const OFFICIAL_ASSET_ROOT = "https://assmagic2026.github.io/ass-magic/";
   const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+  const NEUTRAL_EXTERNAL_ASSET_PATHS = new Set([
+    "/list/nakimushi/track-15.wav",
+    "/list/nyahara/track-16.wav",
+  ]);
   const NEUTRAL_METADATA = Object.freeze({
     ja: Object.freeze({
       title: "惑星を飛行するブラウザ体験",
@@ -32,6 +37,16 @@
       }
     }
     const neutral = isNeutralProduction || isLocalNeutralPreview;
+    const resolveAssetUrl = (resolvedUrl) => {
+      if (!neutral) return resolvedUrl;
+      try {
+        const url = new URL(resolvedUrl);
+        if (!NEUTRAL_EXTERNAL_ASSET_PATHS.has(url.pathname)) return url.href;
+        return new URL(url.pathname.slice(1), OFFICIAL_ASSET_ROOT).href;
+      } catch (error) {
+        return resolvedUrl;
+      }
+    };
     return Object.freeze({
       id: neutral ? "neutral" : "official",
       neutral,
@@ -40,6 +55,7 @@
       hostname: normalizedHost,
       metadata: neutral ? NEUTRAL_METADATA : null,
       neutralUrl: `https://${NEUTRAL_HOST}/`,
+      resolveAssetUrl,
     });
   }
 
