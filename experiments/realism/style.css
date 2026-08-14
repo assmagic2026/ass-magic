@@ -23,6 +23,8 @@
   --ass-sky-display-night-horizon: #06122a;
   --ass-sky-display-night-zenith: #00040e;
   --ass-sky-display-sun: #e7ca97;
+  /* Representative daytime zenith after the production color pipeline. */
+  --ass-loading-sky-color: var(--ass-sky-display-day-zenith);
 }
 
 * {
@@ -35,34 +37,7 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background-color: var(--ass-sky-display-night-zenith, #00040e);
-  background-image:
-    radial-gradient(
-      circle at 50% 22%,
-      rgba(255, 250, 230, .98) 0,
-      rgba(255, 250, 230, .98) clamp(4px, .62vmin, 8px),
-      rgba(231, 202, 151, .78) clamp(8px, 1.5vmin, 17px),
-      rgba(231, 202, 151, .24) clamp(24px, 5vmin, 58px),
-      rgba(231, 202, 151, 0) clamp(70px, 14vmin, 170px)
-    ),
-    radial-gradient(
-      ellipse at 50% 22%,
-      rgba(231, 202, 151, .2) 0,
-      rgba(231, 202, 151, .08) 16%,
-      rgba(231, 202, 151, 0) 43%
-    ),
-    linear-gradient(
-      180deg,
-      var(--ass-sky-display-day-zenith) 0%,
-      var(--ass-sky-display-day-zenith) 12%,
-      var(--ass-sky-display-day-horizon) 31%,
-      var(--ass-sky-display-dusk-horizon) 44%,
-      var(--ass-sky-display-dusk-mid) 56%,
-      var(--ass-sky-display-dusk-zenith) 70%,
-      var(--ass-sky-display-night-horizon) 84%,
-      var(--ass-sky-display-night-zenith) 100%
-    );
-  background-repeat: no-repeat;
+  background: var(--ass-loading-sky-color, #8ec4e3);
   font-family: "Avenir Next Condensed", "Helvetica Neue", sans-serif;
 }
 
@@ -94,9 +69,7 @@ body {
   pointer-events: auto;
   opacity: 1;
   visibility: visible;
-  background-color: var(--ass-sky-display-night-zenith, #00040e);
-  background-image: inherit;
-  background-repeat: no-repeat;
+  background: var(--ass-loading-sky-color, #8ec4e3);
   transition: opacity 540ms cubic-bezier(.22,.68,.24,1), visibility 540ms step-end;
 }
 
@@ -126,6 +99,14 @@ body {
   line-height: 1;
   letter-spacing: .045em;
   text-shadow: 0 2px 18px rgba(0, 4, 14, .34);
+}
+
+html[data-site-profile="neutral"] .experience-mode-heading h1 {
+  width: calc(100vw - max(32px, env(safe-area-inset-left)) - max(32px, env(safe-area-inset-right)));
+  max-width: 100%;
+  white-space: nowrap;
+  font-size: clamp(15px, 4.7vw, 64px);
+  letter-spacing: .025em;
 }
 
 .experience-mode-heading p {

@@ -681,6 +681,7 @@ export function createWholePlanetExperience({
   const endingRestart = document.querySelector("#ending-restart-trigger");
   const endingReturnees = document.querySelector("#ending-returnees-list");
   const endingTrueReturnees = document.querySelector("#ending-true-returnees-list");
+  const endingLastCredit = endingTrueReturnees?.closest(".ending-roll-credit") || null;
   const endingAudio = new Audio(resolveRootAsset("./森の羊水　piano 1 2.m4a"));
   endingAudio.preload = "auto";
   endingAudio.volume = 0.72;
@@ -737,6 +738,7 @@ export function createWholePlanetExperience({
   let bookPageIndex = 0;
   let bookPages = [];
   let endingRollStart = 0;
+  let endingStartedAt = 0;
   let endingAudioTimer = 0;
   let endingWhiteoutTimer = 0;
   let endingBlackTimer = 0;
@@ -1123,6 +1125,7 @@ export function createWholePlanetExperience({
 
   function playEffectAudio(effect, restart = false) {
     if (!effect || !isMainExperience()) return;
+    effect.dataset.assPrimePending = "false";
     if (restart) {
       try {
         effect.currentTime = 0;
@@ -1149,6 +1152,41 @@ export function createWholePlanetExperience({
     }
   }
 
+  function primeEffectAudio(effect) {
+    if (!effect || effect.dataset?.assPrimed === "true") return;
+    effect.dataset.assPrimePending = "true";
+    effect.muted = true;
+    const result = effect.play();
+    if (!result) {
+      effect.pause();
+      effect.currentTime = 0;
+      effect.muted = false;
+      effect.dataset.assPrimePending = "false";
+      effect.dataset.assPrimed = "true";
+      return;
+    }
+    void result.then(() => {
+      if (effect.dataset.assPrimePending !== "true") return;
+      effect.pause();
+      effect.currentTime = 0;
+      effect.muted = false;
+      effect.dataset.assPrimePending = "false";
+      effect.dataset.assPrimed = "true";
+    }).catch((error) => {
+      effect.muted = false;
+      effect.dataset.assPrimePending = "false";
+      if (error?.name !== "AbortError" && error?.name !== "NotAllowedError") {
+        console.warn("Effect audio priming failed.", error);
+      }
+    });
+  }
+
+  function logEndingDebug(label) {
+    if (new URLSearchParams(window.location.search).get("endingdebug") !== "1") return;
+    const elapsed = endingStartedAt > 0 ? performance.now() - endingStartedAt : 0;
+    console.info(`[ending +${Math.round(elapsed)}ms] ${label}`);
+  }
+
   function unlockMusic(event) {
     if (event?.defaultPrevented) return;
     if (
@@ -1169,6 +1207,7 @@ export function createWholePlanetExperience({
     for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
       try {
         effect.load();
+        primeEffectAudio(effect);
       } catch (error) {
         console.warn("Effect audio preload failed.", error);
       }
@@ -1782,10 +1821,12 @@ export function createWholePlanetExperience({
       endingRollTrack.style.animation = `ending-roll ${ENDING_ROLL_DURATION}s linear forwards`;
     }
     endingRollStart = performance.now();
+    logEndingDebug("credits started");
     canvas.dataset.returnBgm = "ending-roll";
     window.clearTimeout(endingAudioTimer);
     endingAudio.currentTime = 0;
     endingAudioTimer = window.setTimeout(() => {
+      logEndingDebug("ending music requested");
       playEffectAudio(endingAudio);
     }, ENDING_ROLL_AUDIO_DELAY);
   }
@@ -3247,6 +3288,8 @@ export function createWholePlanetExperience({
   function triggerReturnEnding() {
     if (state.ending) return;
     state.ending = true;
+    endingStartedAt = performance.now();
+    logEndingDebug("ending state entered");
     state.reachedEarthWithCat = state.catFollowing === true;
     earthVisual.earth.visible = false;
     earthVisual.glow.visible = false;
@@ -3541,7 +3584,14 @@ export function createWholePlanetExperience({
     summonDevil(true);
   });
   devilUi.navigationCancel.addEventListener("click", () => stopDevilRoute(false));
-  endingRollTrack?.addEventListener("animationend", () => endingRestart?.classList.add("is-visible"));
+  endingAudio.addEventListener("playing", () => logEndingDebug("ending music started"));
+  endingRollTrack?.addEventListener("animationend", () => {
+    if (!endingRestart?.classList.contains("is-visible")) {
+      logEndingDebug("END cue triggered (animation fallback)");
+      endingRestart?.classList.add("is-visible");
+      logEndingDebug("END became visible");
+    }
+  });
   endingRestart?.addEventListener("click", () => {
     stopEffectAudio(endingAudio, true);
     stopEffectAudio(earthArrivalAudio, true);
@@ -3616,9 +3666,15 @@ export function createWholePlanetExperience({
         && state.ending
         && endingOverlay?.classList.contains("is-open")
         && endingRollStart > 0
-        && performance.now() - endingRollStart >= ENDING_ROLL_DURATION * 1000
+        && (
+          (endingLastCredit && endingLastCredit.getBoundingClientRect().bottom <= 0)
+          || performance.now() - endingRollStart >= ENDING_ROLL_DURATION * 1000
+        )
+        && !endingRestart?.classList.contains("is-visible")
       ) {
+        logEndingDebug("END cue triggered");
         endingRestart?.classList.add("is-visible");
+        logEndingDebug("END became visible");
       }
     },
     reset() {
@@ -3643,6 +3699,8 @@ export function createWholePlanetExperience({
       endingOverlay?.classList.remove("is-open", "is-transitioning");
       endingOverlay?.setAttribute("aria-hidden", "true");
       endingRestart?.classList.remove("is-visible");
+      endingRollStart = 0;
+      endingStartedAt = 0;
       devilUi.overlay.classList.remove("is-open");
       devilUi.summon.classList.remove("is-visible");
       devilUi.navigation.classList.remove("is-visible");
