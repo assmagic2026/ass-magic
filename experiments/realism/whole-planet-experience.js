@@ -4,7 +4,7 @@ import { supabaseConfig } from "../../supabase-config.js";
 import {
   EXPERIENCE_MODE,
   EXPERIENCE_MODE_SELECTED_EVENT,
-} from "./experience-mode.js?v=chill-mode-1";
+} from "./experience-mode.js?v=mobile-fullscreen-1";
 
 const CHILL_AUDIO_URL = "./assets/audio/chill-mode.mp3";
 const BOOK_CACHE_KEY = "ass-magic-book-messages-v1";
