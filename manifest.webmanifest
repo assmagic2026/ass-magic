@@ -1,0 +1,15 @@
+{
+  "id": "./",
+  "name": "Fly around a mysterious planet.",
+  "short_name": "Planet Flight",
+  "start_url": "./experiments/realism/planet-full.html?mode=realism&quality=high&view=flight",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": [
+    "fullscreen",
+    "standalone"
+  ],
+  "orientation": "any",
+  "background_color": "#182f34",
+  "theme_color": "#182f34"
+}
