@@ -77,6 +77,15 @@ body {
   bottom: 0;
 }
 
+@supports (-webkit-touch-callout: none) {
+  @media (pointer: coarse) {
+    body.experience-main .ios-browser-chrome-tint,
+    body.experience-chill .ios-browser-chrome-tint {
+      z-index: 101;
+    }
+  }
+}
+
 #stage,
 #scene {
   position: fixed;
