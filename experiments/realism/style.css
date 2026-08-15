@@ -49,7 +49,7 @@ body {
   margin: 0;
   overflow: hidden;
   /* Some mobile browsers expose this color above and below the canvas. */
-  background: #182f34;
+  background: #000;
   font-family: "Avenir Next Condensed", "Helvetica Neue", sans-serif;
 }
 
