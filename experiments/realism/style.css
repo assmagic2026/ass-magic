@@ -101,6 +101,10 @@ body {
   text-shadow: 0 2px 18px rgba(0, 4, 14, .34);
 }
 
+.experience-mode-heading {
+  transform: translateY(16px);
+}
+
 html[data-site-profile="neutral"] .experience-mode-heading h1 {
   width: calc(100vw - max(32px, env(safe-area-inset-left)) - max(32px, env(safe-area-inset-right)));
   max-width: 100%;
@@ -119,9 +123,9 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
 
 .experience-mode-options {
   display: grid;
-  width: min(508px, 100%);
-  gap: 12px;
-  transform: translateY(-16px);
+  width: min(456px, calc(100% - 16px));
+  gap: 10px;
+  transform: translateY(-12px);
 }
 
 .experience-mode-option {
@@ -129,26 +133,28 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
   isolation: isolate;
   display: grid;
   width: 100%;
-  min-height: 88px;
+  min-height: 76px;
   place-content: center;
-  gap: 8px;
-  padding: 16px 22px;
+  gap: 6px;
+  padding: 12px 18px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .24);
-  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, .38);
+  border-radius: 24px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, .13), rgba(255, 255, 255, .035) 44%, rgba(8, 10, 14, .54)),
-    rgba(9, 11, 15, .7);
+    linear-gradient(135deg, rgba(255, 255, 255, .24), rgba(255, 255, 255, .075) 46%, rgba(255, 255, 255, .025)),
+    rgba(17, 32, 45, .24);
   box-shadow:
-    0 14px 34px rgba(0, 0, 0, .26),
-    inset 0 1px 0 rgba(255, 255, 255, .18);
+    0 12px 30px rgba(14, 52, 78, .18),
+    inset 0 1px 0 rgba(255, 255, 255, .42),
+    inset 0 -1px 0 rgba(255, 255, 255, .08);
   color: #fff;
   font: inherit;
   text-align: center;
   cursor: pointer;
   transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
   -webkit-tap-highlight-color: transparent;
-  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  backdrop-filter: blur(18px) saturate(125%);
 }
 
 .experience-mode-option::after {
@@ -157,20 +163,20 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
   z-index: -1;
   inset: 1px;
   border-radius: inherit;
-  background: linear-gradient(120deg, rgba(255, 255, 255, .08), transparent 42%);
+  background: linear-gradient(120deg, rgba(255, 255, 255, .16), transparent 44%);
   pointer-events: none;
 }
 
 .experience-mode-option strong {
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(21px, 4vmin, 30px);
+  font-size: clamp(19px, 3.5vmin, 27px);
   font-weight: 400;
   letter-spacing: .055em;
 }
 
 .experience-mode-option span {
   color: rgba(255, 255, 255, .66);
-  font-size: clamp(11px, 1.95vmin, 14px);
+  font-size: clamp(10px, 1.7vmin, 13px);
   letter-spacing: .08em;
 }
 
@@ -183,11 +189,12 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
   .experience-mode-option:hover {
     border-color: rgba(255, 255, 255, .54);
     background:
-      linear-gradient(135deg, rgba(255, 255, 255, .2), rgba(255, 255, 255, .06) 44%, rgba(8, 10, 14, .5)),
-      rgba(9, 11, 15, .76);
+      linear-gradient(135deg, rgba(255, 255, 255, .3), rgba(255, 255, 255, .1) 46%, rgba(255, 255, 255, .035)),
+      rgba(17, 32, 45, .3);
     box-shadow:
-      0 20px 42px rgba(0, 0, 0, .34),
-      inset 0 1px 0 rgba(255, 255, 255, .22);
+      0 18px 38px rgba(14, 52, 78, .24),
+      inset 0 1px 0 rgba(255, 255, 255, .5),
+      inset 0 -1px 0 rgba(255, 255, 255, .1);
     transform: translateY(-2px);
   }
 }
@@ -195,11 +202,12 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
 .experience-mode-option.is-selected {
   border-color: rgba(255, 255, 255, .82);
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .08) 44%, rgba(8, 10, 14, .46)),
-    rgba(20, 23, 29, .9);
+    linear-gradient(135deg, rgba(255, 255, 255, .34), rgba(255, 255, 255, .13) 46%, rgba(255, 255, 255, .045)),
+    rgba(17, 32, 45, .42);
   box-shadow:
-    0 22px 48px rgba(0, 0, 0, .42),
-    inset 0 1px 0 rgba(255, 255, 255, .28);
+    0 18px 40px rgba(14, 52, 78, .3),
+    inset 0 1px 0 rgba(255, 255, 255, .56),
+    inset 0 -1px 0 rgba(255, 255, 255, .12);
 }
 
 .experience-mode-option:disabled {
@@ -209,8 +217,8 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
 
 #experience-mode-selection[data-load-ready="true"] .experience-mode-option:not(.is-selected) {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .025) 44%, rgba(8, 10, 14, .58)),
-    rgba(9, 11, 15, .74);
+    linear-gradient(135deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, .065) 46%, rgba(255, 255, 255, .02)),
+    rgba(17, 32, 45, .26);
 }
 
 #opening-black-box-scene {
@@ -302,6 +310,10 @@ body.is-booting .experience-music {
     font-size: clamp(30px, 9vmin, 48px);
   }
 
+  .experience-mode-heading {
+    transform: translateY(10px);
+  }
+
   .experience-mode-heading p {
     margin-top: 7px;
   }
@@ -313,8 +325,8 @@ body.is-booting .experience-music {
   }
 
   .experience-mode-option {
-    min-height: 82px;
-    padding: 15px 12px;
+    min-height: 70px;
+    padding: 10px 12px;
   }
 
   #opening-black-box-scene {
