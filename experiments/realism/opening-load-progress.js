@@ -13,7 +13,11 @@ const DEFAULT_TASKS = Object.freeze({
   startReady: 2,
 });
 
-export function createOpeningLoadProgress(output, tasks = DEFAULT_TASKS) {
+export function createOpeningLoadProgress(
+  output,
+  tasks = DEFAULT_TASKS,
+  progressBar = document.querySelector("#opening-progress-bar"),
+) {
   const entries = new Map(
     Object.entries(tasks).map(([name, weight]) => [name, {
       weight: Math.max(0, Number(weight) || 0),
@@ -35,6 +39,7 @@ export function createOpeningLoadProgress(output, tasks = DEFAULT_TASKS) {
     const next = ready ? 100 : Math.min(99, measured);
     displayed = Math.max(displayed, next);
     if (output) output.textContent = `${displayed}%`;
+    if (progressBar) progressBar.style.transform = `scaleX(${displayed / 100})`;
     document.documentElement.dataset.openingProgress = String(displayed);
   };
 

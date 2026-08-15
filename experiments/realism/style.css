@@ -1,3 +1,12 @@
+@font-face {
+  font-family: "Opening Futura";
+  src: local("Futura Medium"), local("Futura");
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  unicode-range: U+0000-024F, U+2000-206F;
+}
+
 :root {
   color-scheme: dark;
   --ink: #f4f0df;
@@ -25,6 +34,8 @@
   --ass-sky-display-sun: #e7ca97;
   /* Representative daytime zenith after the production color pipeline. */
   --ass-loading-sky-color: var(--ass-sky-display-day-zenith);
+  --opening-english-font: "Futura Medium", Futura, "Jost", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
+  --opening-mixed-font: "Opening Futura", "Jost", Georgia, "Times New Roman", serif;
 }
 
 * {
@@ -111,6 +122,30 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
   white-space: nowrap;
   font-size: clamp(15px, 4.7vw, 64px);
   letter-spacing: .025em;
+}
+
+html[data-site-profile="neutral"] .experience-mode-heading h1,
+html[lang="en"] .experience-mode-heading h1,
+.experience-mode-heading p,
+.ass-language-switch,
+.ass-language-switch button,
+#opening-loading,
+html[lang="en"] .experience-mode-option strong,
+html[lang="en"] .experience-mode-option span {
+  font-family: var(--opening-english-font);
+}
+
+.experience-mode-heading h1,
+.experience-mode-option strong {
+  font-family: var(--opening-mixed-font) !important;
+}
+
+.top-english-word {
+  font-family: var(--opening-english-font);
+}
+
+.ass-language-switch button {
+  font-family: var(--opening-english-font) !important;
 }
 
 .experience-mode-heading p {
@@ -262,14 +297,42 @@ html[data-site-profile="neutral"] .experience-mode-heading h1 {
   bottom: max(30px, calc(env(safe-area-inset-bottom) + 20px));
   left: 50%;
   display: grid;
-  grid-template-columns: auto 4ch;
-  align-items: baseline;
-  gap: .7em;
+  width: min(230px, calc(100vw - 48px));
+  gap: 9px;
   color: rgba(255, 255, 255, .82);
-  font: 500 clamp(10px, 1.8vmin, 13px)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: clamp(10px, 1.8vmin, 13px);
+  font-weight: 500;
+  line-height: 1;
   letter-spacing: .2em;
   text-shadow: 0 1px 9px rgba(0, 0, 0, .72);
   transform: translateX(-50%);
+}
+
+.opening-loading-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .7em;
+}
+
+#opening-progress-track {
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .2);
+  box-shadow: 0 1px 8px rgba(0, 0, 0, .22);
+}
+
+#opening-progress-bar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: rgba(255, 255, 255, .9);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 180ms ease-out;
+  will-change: transform;
 }
 
 #opening-progress-value {
