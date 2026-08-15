@@ -2539,13 +2539,16 @@ async function prepareOpening() {
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
   openingProgress.complete("firstRender");
+  // Loading is complete once the assets and first rendered frame are ready.
+  // Choosing Main or Chill controls the experience that follows; it is not a
+  // remaining loading task, so do not leave the visible meter below 100%.
+  openingProgress.complete("startReady");
+  openingProgress.markReady();
   experienceMode.markLoadReady();
   canvas.dataset.experienceLoadReady = "true";
   await experienceMode.whenSelected;
   canvas.dataset.experienceMode = experienceMode.getMode();
   experienceMode.hideSelection();
-  openingProgress.complete("startReady");
-  openingProgress.markReady();
   await new Promise((resolve) => window.setTimeout(resolve, 220));
 
   openingPhase = "revealing";
