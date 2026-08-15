@@ -48,7 +48,8 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--ass-loading-sky-color, #8ec4e3);
+  /* Some mobile browsers expose this color above and below the canvas. */
+  background: #182f34;
   font-family: "Avenir Next Condensed", "Helvetica Neue", sans-serif;
 }
 

@@ -6,6 +6,24 @@ export const EXPERIENCE_MODE = Object.freeze({
 
 export const EXPERIENCE_MODE_SELECTED_EVENT = "assmagic:experience-mode-selected";
 
+function requestMobileFullscreen(sourceEvent) {
+  if (
+    !sourceEvent?.isTrusted
+    || !window.matchMedia?.("(pointer: coarse)").matches
+    || document.fullscreenElement
+    || typeof document.documentElement.requestFullscreen !== "function"
+  ) return;
+
+  try {
+    const request = document.documentElement.requestFullscreen({ navigationUI: "hide" });
+    request?.catch(() => {
+      // Fullscreen is optional; unsupported browsers continue normally.
+    });
+  } catch {
+    // Some iOS browser versions reject the request synchronously.
+  }
+}
+
 export function createExperienceModeController({
   root = document.querySelector("#experience-mode-selection"),
 } = {}) {
@@ -34,6 +52,7 @@ export function createExperienceModeController({
       || ![EXPERIENCE_MODE.MAIN, EXPERIENCE_MODE.CHILL].includes(nextMode)
     ) return false;
 
+    requestMobileFullscreen(sourceEvent);
     mode = nextMode;
     applyBodyMode();
     if (hasSelectionUi) {

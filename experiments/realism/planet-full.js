@@ -17,7 +17,7 @@ import { createProductionSkater, updateProductionSkaterPose } from "./production
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 import {
   createExperienceModeController,
-} from "./experience-mode.js?v=chill-mode-1";
+} from "./experience-mode.js?v=mobile-fullscreen-1";
 import { createChillFlightControls } from "./chill-flight-controls.js?v=chill-steering-1";
 import {
   BenchmarkReporter,
