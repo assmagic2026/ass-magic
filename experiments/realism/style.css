@@ -102,7 +102,7 @@ body {
 }
 
 .experience-mode-heading {
-  transform: translateY(16px);
+  transform: translateY(160px);
 }
 
 html[data-site-profile="neutral"] .experience-mode-heading h1 {
@@ -311,7 +311,7 @@ body.is-booting .experience-music {
   }
 
   .experience-mode-heading {
-    transform: translateY(10px);
+    transform: translateY(100px);
   }
 
   .experience-mode-heading p {
