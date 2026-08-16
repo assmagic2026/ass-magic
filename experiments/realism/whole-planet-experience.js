@@ -682,28 +682,37 @@ export function createWholePlanetExperience({
   const endingReturnees = document.querySelector("#ending-returnees-list");
   const endingTrueReturnees = document.querySelector("#ending-true-returnees-list");
   const endingLastCredit = endingTrueReturnees?.closest(".ending-roll-credit") || null;
-  const endingAudio = new Audio(resolveRootAsset("./森の羊水　piano 1 2.m4a"));
-  endingAudio.preload = "auto";
-  endingAudio.volume = 0.72;
-  endingAudio.playsInline = true;
-  endingAudio.crossOrigin = "anonymous";
-  const earthArrivalAudio = new Audio(resolveRootAsset("./過去を思い出す.mp3"));
-  earthArrivalAudio.preload = "auto";
-  earthArrivalAudio.volume = 0.9;
-  earthArrivalAudio.playsInline = true;
-  earthArrivalAudio.crossOrigin = "anonymous";
-  const spaceReturnAudio = new Audio(resolveRootAsset("./死後の世界.mp3"));
-  spaceReturnAudio.preload = "auto";
-  spaceReturnAudio.loop = true;
-  spaceReturnAudio.volume = 0.78;
-  spaceReturnAudio.playsInline = true;
-  spaceReturnAudio.crossOrigin = "anonymous";
-  const clockAudio = new Audio(resolveRootAsset("./振り子時計（エコー入り）.mp3"));
-  clockAudio.loop = true;
-  clockAudio.preload = "auto";
-  clockAudio.volume = 0.48;
-  clockAudio.playsInline = true;
-  clockAudio.crossOrigin = "anonymous";
+  // Safari grants autoplay permission per media element. Keep every story
+  // transition on one persistent element and switch only its source, rather
+  // than asking the browser to authorize four independent Audio instances.
+  const clockAudio = Object.freeze({
+    name: "monochrome",
+    src: resolveRootAsset("./振り子時計（エコー入り）.mp3"),
+    loop: true,
+    volume: 0.48,
+  });
+  const spaceReturnAudio = Object.freeze({
+    name: "space-return",
+    src: resolveRootAsset("./死後の世界.mp3"),
+    loop: true,
+    volume: 0.78,
+  });
+  const earthArrivalAudio = Object.freeze({
+    name: "earth-arrival",
+    src: resolveRootAsset("./過去を思い出す.mp3"),
+    loop: false,
+    volume: 0.9,
+  });
+  const endingAudio = Object.freeze({
+    name: "ending-roll",
+    src: resolveRootAsset("./森の羊水　piano 1 2.m4a"),
+    loop: false,
+    volume: 0.72,
+  });
+  const storyAudio = new Audio();
+  storyAudio.preload = "auto";
+  storyAudio.playsInline = true;
+  storyAudio.crossOrigin = "anonymous";
   const chillAudio = new Audio(new URL(CHILL_AUDIO_URL, import.meta.url).href);
   chillAudio.loop = true;
   chillAudio.preload = "auto";
@@ -743,6 +752,8 @@ export function createWholePlanetExperience({
   let endingWhiteoutTimer = 0;
   let endingBlackTimer = 0;
   let challengeMusicWasPlaying = false;
+  let activeStoryAudio = null;
+  let pendingStoryAudio = null;
   let compassAssist = 0;
   let compassAssistTarget = null;
   const contactState = new Map();
@@ -1123,62 +1134,134 @@ export function createWholePlanetExperience({
     syncMusicUi();
   }
 
-  function playEffectAudio(effect, restart = false) {
-    if (!effect || !isMainExperience()) return;
-    effect.dataset.assPrimePending = "false";
+  function setStoryAudioStatus(cue, status) {
+    storyAudio.dataset.assPlaybackStatus = status;
+    if (activeStoryAudio === cue || pendingStoryAudio === cue) {
+      canvas.dataset.storyAudioCue = cue?.name || "unknown";
+      canvas.dataset.storyAudioStatus = status;
+    }
+  }
+
+  function configureStoryAudio(cue) {
+    if (!cue) return false;
+    const sourceChanged = storyAudio.src !== cue.src;
+    if (sourceChanged) {
+      activeStoryAudio = null;
+      pendingStoryAudio = null;
+      storyAudio.pause();
+      storyAudio.src = cue.src;
+      storyAudio.load();
+    }
+    storyAudio.loop = cue.loop;
+    storyAudio.volume = cue.volume;
+    return sourceChanged;
+  }
+
+  function playEffectAudio(cue, restart = false) {
+    if (!cue || !isMainExperience()) return;
+    const sourceChanged = configureStoryAudio(cue);
+    activeStoryAudio = cue;
+    pendingStoryAudio = cue;
+    storyAudio.dataset.assPrimePending = "false";
     if (restart) {
       try {
-        effect.currentTime = 0;
+        storyAudio.currentTime = 0;
       } catch (error) {
         console.warn("Effect audio rewind failed.", error);
       }
     }
-    effect.muted = false;
-    const result = effect.play();
-    result?.catch((error) => {
-      if (error?.name !== "AbortError") console.warn("Effect audio is waiting for a gesture.", error);
+    storyAudio.muted = false;
+    setStoryAudioStatus(cue, sourceChanged ? "loading" : "starting");
+    const result = storyAudio.play();
+    if (!result) {
+      pendingStoryAudio = null;
+      storyAudio.dataset.assPrimed = "true";
+      canvas.dataset.storyAudioPrimed = "true";
+      setStoryAudioStatus(cue, "playing");
+      return result;
+    }
+    void result.then(() => {
+      storyAudio.dataset.assPrimed = "true";
+      canvas.dataset.storyAudioPrimed = "true";
+      if (activeStoryAudio !== cue) return;
+      pendingStoryAudio = null;
+      setStoryAudioStatus(cue, "playing");
+    }).catch((error) => {
+      if (activeStoryAudio !== cue) return;
+      pendingStoryAudio = cue;
+      setStoryAudioStatus(cue, "waiting-for-gesture");
+      if (error?.name !== "AbortError" && error?.name !== "NotAllowedError") {
+        console.warn("Effect audio playback failed.", error);
+      }
     });
+    return result;
   }
 
-  function stopEffectAudio(effect, reset = false) {
-    if (!effect) return;
-    effect.pause();
+  function stopEffectAudio(cue = null, reset = false) {
+    if (
+      cue
+      && activeStoryAudio
+      && activeStoryAudio !== cue
+      && pendingStoryAudio !== cue
+    ) return;
+    activeStoryAudio = null;
+    pendingStoryAudio = null;
+    storyAudio.dataset.assPrimePending = "false";
+    storyAudio.pause();
     if (reset) {
       try {
-        effect.currentTime = 0;
+        storyAudio.currentTime = 0;
       } catch (error) {
         console.warn("Effect audio reset failed.", error);
       }
     }
+    storyAudio.dataset.assPlaybackStatus = "stopped";
+    canvas.dataset.storyAudioCue = "none";
+    canvas.dataset.storyAudioStatus = "stopped";
   }
 
-  function primeEffectAudio(effect) {
-    if (!effect || effect.dataset?.assPrimed === "true") return;
-    effect.dataset.assPrimePending = "true";
-    effect.muted = true;
-    const result = effect.play();
+  function primeStoryAudio() {
+    if (
+      activeStoryAudio
+      || storyAudio.dataset.assPrimed === "true"
+      || storyAudio.dataset.assPrimePending === "true"
+    ) return;
+    configureStoryAudio(clockAudio);
+    storyAudio.dataset.assPrimePending = "true";
+    canvas.dataset.storyAudioPrimed = "pending";
+    storyAudio.muted = true;
+    const result = storyAudio.play();
     if (!result) {
-      effect.pause();
-      effect.currentTime = 0;
-      effect.muted = false;
-      effect.dataset.assPrimePending = "false";
-      effect.dataset.assPrimed = "true";
+      storyAudio.pause();
+      storyAudio.currentTime = 0;
+      storyAudio.muted = false;
+      storyAudio.dataset.assPrimePending = "false";
+      storyAudio.dataset.assPrimed = "true";
+      canvas.dataset.storyAudioPrimed = "true";
       return;
     }
     void result.then(() => {
-      if (effect.dataset.assPrimePending !== "true") return;
-      effect.pause();
-      effect.currentTime = 0;
-      effect.muted = false;
-      effect.dataset.assPrimePending = "false";
-      effect.dataset.assPrimed = "true";
+      if (storyAudio.dataset.assPrimePending !== "true") return;
+      storyAudio.pause();
+      storyAudio.currentTime = 0;
+      storyAudio.muted = false;
+      storyAudio.dataset.assPrimePending = "false";
+      storyAudio.dataset.assPrimed = "true";
+      canvas.dataset.storyAudioPrimed = "true";
     }).catch((error) => {
-      effect.muted = false;
-      effect.dataset.assPrimePending = "false";
+      storyAudio.muted = false;
+      storyAudio.dataset.assPrimePending = "false";
+      canvas.dataset.storyAudioPrimed = "false";
       if (error?.name !== "AbortError" && error?.name !== "NotAllowedError") {
         console.warn("Effect audio priming failed.", error);
       }
     });
+  }
+
+  function retryPendingStoryAudio() {
+    if (!pendingStoryAudio || pendingStoryAudio !== activeStoryAudio) return false;
+    playEffectAudio(pendingStoryAudio, false);
+    return true;
   }
 
   function logEndingDebug(label) {
@@ -1197,27 +1280,27 @@ export function createWholePlanetExperience({
       playChillAudio();
       return;
     }
+    if (!isMainExperience()) return;
+    // The mode-selection click reaches the global capture listeners before
+    // MAIN is selected. Prime the story element again from the trusted button
+    // handler below, and keep retrying it on later gestures even
+    // after the playlist itself is already unlocked.
+    retryPendingStoryAudio();
+    primeStoryAudio();
+    void phaseAudioEngine?.unlock?.(`music-after-${event?.type || "gesture"}`);
     if (
-      !isMainExperience()
-      || audioUnlocked
+      audioUnlocked
       || musicGesturePending
       || state.phase === "challenge"
+      || state.spaceFlightActive
+      || state.ending
       || state.modalOpen
     ) return;
-    for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
-      try {
-        effect.load();
-        primeEffectAudio(effect);
-      } catch (error) {
-        console.warn("Effect audio preload failed.", error);
-      }
-    }
     musicGesturePending = true;
     const musicAttempt = playMusic();
     // playMusic() invokes audio.play() synchronously before its first await.
     // Retry Web Audio immediately afterwards in the same trusted event so the
     // music and effects join the same active iOS audio session.
-    void phaseAudioEngine?.unlock?.(`music-after-${event?.type || "gesture"}`);
     void musicAttempt.finally(() => {
       musicGesturePending = false;
     });
@@ -1225,9 +1308,7 @@ export function createWholePlanetExperience({
 
   function stopStoryAudioForChill() {
     pauseMusic();
-    for (const effect of [clockAudio, earthArrivalAudio, endingAudio, spaceReturnAudio]) {
-      stopEffectAudio(effect, true);
-    }
+    stopEffectAudio(null, true);
     // The main playlist may already have been preloaded while the choice screen
     // was open. Releasing it keeps CHILL from owning an unnecessary media
     // request or accidentally resuming main-mode music later.
@@ -1296,6 +1377,11 @@ export function createWholePlanetExperience({
       chillAudio.pause();
       canvas.dataset.chillAudio = "inactive";
       if (!audio.src) loadTrack(currentTrackIndex, false);
+      // This runs synchronously inside the trusted Main button click.  The
+      // window capture handlers have already seen that click while the mode
+      // was still PENDING, so this is the reliable iOS/Safari unlock point for
+      // challenge, space-return and ending audio.
+      primeStoryAudio();
       const musicAttempt = playMusic();
       void phaseAudioEngine?.unlock?.(`main-selection-${sourceEvent?.type || "choice"}`);
       void musicAttempt;
@@ -1824,10 +1910,9 @@ export function createWholePlanetExperience({
     logEndingDebug("credits started");
     canvas.dataset.returnBgm = "ending-roll";
     window.clearTimeout(endingAudioTimer);
-    endingAudio.currentTime = 0;
     endingAudioTimer = window.setTimeout(() => {
       logEndingDebug("ending music requested");
-      playEffectAudio(endingAudio);
+      playEffectAudio(endingAudio, true);
     }, ENDING_ROLL_AUDIO_DELAY);
   }
 
@@ -3184,8 +3269,7 @@ export function createWholePlanetExperience({
 
   function endChallenge(success) {
     document.body.classList.remove("is-monochrome");
-    clockAudio.pause();
-    clockAudio.currentTime = 0;
+    stopEffectAudio(clockAudio, true);
     if (challengeMusicWasPlaying) void playMusic();
     challengeMusicWasPlaying = false;
     if (!success) {
@@ -3216,8 +3300,7 @@ export function createWholePlanetExperience({
     document.body.classList.add("is-monochrome");
     challengeMusicWasPlaying = !audio.paused;
     pauseMusic();
-    clockAudio.currentTime = 0;
-    void clockAudio.play().catch((error) => console.warn("Clock audio is waiting for a gesture.", error));
+    playEffectAudio(clockAudio, true);
     triggerChallengeFlash("is-start");
   }
 
@@ -3584,7 +3667,33 @@ export function createWholePlanetExperience({
     summonDevil(true);
   });
   devilUi.navigationCancel.addEventListener("click", () => stopDevilRoute(false));
-  endingAudio.addEventListener("playing", () => logEndingDebug("ending music started"));
+  storyAudio.addEventListener("playing", () => {
+    if (activeStoryAudio === endingAudio) logEndingDebug("ending music started");
+  });
+  storyAudio.addEventListener("pause", () => {
+    // Safari can suspend media when the page is backgrounded. Intentional
+    // stops clear activeStoryAudio before pause(), so only an unexpected
+    // suspension reaches this recovery path.
+    if (!activeStoryAudio || storyAudio.ended) return;
+    pendingStoryAudio = activeStoryAudio;
+    setStoryAudioStatus(activeStoryAudio, "paused-retry-pending");
+  });
+  storyAudio.addEventListener("ended", () => {
+    if (!activeStoryAudio) return;
+    activeStoryAudio = null;
+    pendingStoryAudio = null;
+    canvas.dataset.storyAudioCue = "none";
+    canvas.dataset.storyAudioStatus = "ended";
+  });
+  storyAudio.addEventListener("error", () => {
+    if (!activeStoryAudio) return;
+    pendingStoryAudio = activeStoryAudio;
+    setStoryAudioStatus(activeStoryAudio, "media-error");
+    console.warn(`Story audio could not be loaded: ${activeStoryAudio.name || "unknown"}`);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) retryPendingStoryAudio();
+  });
   endingRollTrack?.addEventListener("animationend", () => {
     if (!endingRestart?.classList.contains("is-visible")) {
       logEndingDebug("END cue triggered (animation fallback)");
@@ -3593,9 +3702,7 @@ export function createWholePlanetExperience({
     }
   });
   endingRestart?.addEventListener("click", () => {
-    stopEffectAudio(endingAudio, true);
-    stopEffectAudio(earthArrivalAudio, true);
-    stopEffectAudio(spaceReturnAudio, true);
+    stopEffectAudio(null, true);
     const url = new URL(window.location.href);
     url.searchParams.delete("route");
     url.searchParams.set("start", "day");
@@ -3621,6 +3728,9 @@ export function createWholePlanetExperience({
   canvas.dataset.experienceMode = getExperienceMode();
   canvas.dataset.storyEvents = isMainExperience() ? "enabled" : "disabled";
   canvas.dataset.chillAudio = "inactive";
+  canvas.dataset.storyAudioCue = "none";
+  canvas.dataset.storyAudioStatus = "idle";
+  canvas.dataset.storyAudioPrimed = "false";
   // Begin the first track shortly after the flight appears.  Mobile browsers that
   // reject this attempt will use the existing first-touch retry path.
   window.setTimeout(() => {
@@ -3682,14 +3792,7 @@ export function createWholePlanetExperience({
       closeNativeOverlay();
       document.body.classList.remove("is-monochrome");
       document.body.classList.remove("devil-guide-navigating");
-      clockAudio.pause();
-      clockAudio.currentTime = 0;
-      earthArrivalAudio.pause();
-      earthArrivalAudio.currentTime = 0;
-      endingAudio.pause();
-      endingAudio.currentTime = 0;
-      spaceReturnAudio.pause();
-      spaceReturnAudio.currentTime = 0;
+      stopEffectAudio(null, true);
       window.clearTimeout(endingAudioTimer);
       window.clearTimeout(endingWhiteoutTimer);
       window.clearTimeout(endingBlackTimer);

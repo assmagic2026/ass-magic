@@ -12,7 +12,7 @@ import {
   updateFlightPlayer,
 } from "./whole-planet-player.js?v=tap-tricks-3";
 import { createSpecialLandmarks } from "./whole-planet-landmarks.js?v=realism-150";
-import { createWholePlanetExperience } from "./whole-planet-experience.js?v=mobile-fullscreen-1";
+import { createWholePlanetExperience } from "./whole-planet-experience.js?v=story-audio-recovery-1";
 import { createProductionSkater, updateProductionSkaterPose } from "./production-skater.js?v=approved-pose-rig-7";
 import { getUphillOllieImpulse, updateSkateGroundSpeed } from "./skate-physics.js";
 import {
