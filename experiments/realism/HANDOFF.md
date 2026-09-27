@@ -1,5 +1,7 @@
 # ASS MAGIC Realism Handoff
 
+Current publication targets and source files are listed in [AGENTS.md](../../AGENTS.md). The URLs below record this handoff's 2026-07-22 state.
+
 Updated: 2026-07-22 (phase audio + music compatibility pass)
 
 ## Scope and release model

@@ -1,5 +1,7 @@
 # ASS MAGIC | Official Site 仕様書
 
+> この文書は旧画面を中心に記録した仕様です。現在の公開URLと編集先は [AGENTS.md](AGENTS.md) を参照してください。
+
 ## 1. サイト概要
 
 - サイト名: `ASS MAGIC | Official Site`
